@@ -123,23 +123,26 @@ interface DefaultTimes {
   sun: {
     drFrom: TimeAMPM | null
     drTo: TimeAMPM | null
+    drEnabled: boolean
     svFrom: TimeAMPM | null
     svTo: TimeAMPM | null
-    enabled: boolean
+    svEnabled: boolean
   }
   weekdays: {
     drFrom: TimeAMPM | null
     drTo: TimeAMPM | null
+    drEnabled: boolean
     svFrom: TimeAMPM | null
     svTo: TimeAMPM | null
-    enabled: boolean
+    svEnabled: boolean
   }
   fri: {
     drFrom: TimeAMPM | null
     drTo: TimeAMPM | null
+    drEnabled: boolean
     svFrom: TimeAMPM | null
     svTo: TimeAMPM | null
-    enabled: boolean
+    svEnabled: boolean
   }
 }
 
@@ -178,23 +181,26 @@ export function TimesheetForm({
     sun: {
       drFrom: null,
       drTo: null,
+      drEnabled: false,
       svFrom: null,
       svTo: null,
-      enabled: false,
+      svEnabled: false,
     },
     weekdays: {
       drFrom: null,
       drTo: null,
+      drEnabled: false,
       svFrom: null,
       svTo: null,
-      enabled: false,
+      svEnabled: false,
     },
     fri: {
       drFrom: null,
       drTo: null,
+      drEnabled: false,
       svFrom: null,
       svTo: null,
-      enabled: false,
+      svEnabled: false,
     },
   })
 
@@ -306,11 +312,11 @@ export function TimesheetForm({
         }
 
         const hasValidDrTimes =
-          defaults.enabled &&
+          defaults.drEnabled &&
           defaults.drFrom !== null &&
           defaults.drTo !== null
         const hasValidSvTimes =
-          defaults.enabled &&
+          defaults.svEnabled &&
           defaults.svFrom !== null &&
           defaults.svTo !== null
 
@@ -371,11 +377,11 @@ export function TimesheetForm({
         }
 
         const hasValidDrTimes =
-          defaults.enabled &&
+          defaults.drEnabled &&
           defaults.drFrom !== null &&
           defaults.drTo !== null
         const hasValidSvTimes =
-          defaults.enabled &&
+          defaults.svEnabled &&
           defaults.svFrom !== null &&
           defaults.svTo !== null
 
@@ -475,15 +481,15 @@ export function TimesheetForm({
 
   const updateDefaultTimes = (
     dayType: 'sun' | 'weekdays' | 'fri',
-    field: 'drFrom' | 'drTo' | 'svFrom' | 'svTo' | 'enabled',
+    field: 'drFrom' | 'drTo' | 'drEnabled' | 'svFrom' | 'svTo' | 'svEnabled',
     value: TimeAMPM | null | boolean
   ) => {
-    if (field === 'enabled') {
+    if (field === 'drEnabled' || field === 'svEnabled') {
       setDefaultTimes((prev) => ({
         ...prev,
         [dayType]: {
           ...prev[dayType],
-          enabled: value as boolean,
+          [field]: value as boolean,
         },
       }))
       return
@@ -517,11 +523,11 @@ export function TimesheetForm({
         }
 
         const hasValidDrTimes =
-          defaults.enabled &&
+          defaults.drEnabled &&
           defaults.drFrom !== null &&
           defaults.drTo !== null
         const hasValidSvTimes =
-          defaults.enabled &&
+          defaults.svEnabled &&
           defaults.svFrom !== null &&
           defaults.svTo !== null
 
@@ -582,11 +588,11 @@ export function TimesheetForm({
       }
 
       const hasValidDrTimes =
-        defaults.enabled &&
+        defaults.drEnabled &&
         defaults.drFrom !== null &&
         defaults.drTo !== null
       const hasValidSvTimes =
-        defaults.enabled &&
+        defaults.svEnabled &&
         defaults.svFrom !== null &&
         defaults.svTo !== null
 
@@ -987,23 +993,26 @@ export function TimesheetForm({
       sun: {
         drFrom: defaultTimes.sun.drFrom,
         drTo: defaultTimes.sun.drTo,
+        drEnabled: defaultTimes.sun.drEnabled,
         svFrom: defaultTimes.sun.svFrom,
         svTo: defaultTimes.sun.svTo,
-        enabled: defaultTimes.sun.enabled,
+        svEnabled: defaultTimes.sun.svEnabled,
       },
       weekdays: {
         drFrom: defaultTimes.weekdays.drFrom,
         drTo: defaultTimes.weekdays.drTo,
+        drEnabled: defaultTimes.weekdays.drEnabled,
         svFrom: defaultTimes.weekdays.svFrom,
         svTo: defaultTimes.weekdays.svTo,
-        enabled: defaultTimes.weekdays.enabled,
+        svEnabled: defaultTimes.weekdays.svEnabled,
       },
       fri: {
         drFrom: defaultTimes.fri.drFrom,
         drTo: defaultTimes.fri.drTo,
+        drEnabled: defaultTimes.fri.drEnabled,
         svFrom: defaultTimes.fri.svFrom,
         svTo: defaultTimes.fri.svTo,
-        enabled: defaultTimes.fri.enabled,
+        svEnabled: defaultTimes.fri.svEnabled,
       },
     },
     dayEntries: dayEntries.map((entry) => ({
@@ -1188,19 +1197,21 @@ export function TimesheetForm({
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                     Day
                   </th>
-                  <th colSpan={2} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase border-l border-r">
+                  <th colSpan={3} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase border-l border-r">
                     DR
                   </th>
-                  <th colSpan={2} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
+                  <th colSpan={3} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
                     SV
                   </th>
                 </tr>
                 <tr>
                   <th></th>
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500">From</th>
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500 border-r">To</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500 border-l">From</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500">To</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500 border-r">USE</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500">From</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500">To</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500">USE</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -1211,7 +1222,7 @@ export function TimesheetForm({
                       <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 capitalize">
                         {dayType === 'sun' ? 'Sun' : dayType === 'fri' ? 'Fri' : 'Weekdays'}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-2 border-l">
                         <TimeFieldAMPM
                           value={defaults.drFrom}
                           onChange={(time) => updateDefaultTimes(dayType, 'drFrom', time)}
@@ -1219,13 +1230,25 @@ export function TimesheetForm({
                           className="justify-center"
                         />
                       </td>
-                      <td className="px-4 py-2 border-r">
+                      <td className="px-4 py-2">
                         <TimeFieldAMPM
                           value={defaults.drTo}
                           onChange={(time) => updateDefaultTimes(dayType, 'drTo', time)}
                           placeholder="--:--"
                           className="justify-center"
                         />
+                      </td>
+                      <td className="px-4 py-2 border-r">
+                        <div className="flex justify-center">
+                          <input
+                            type="checkbox"
+                            checked={defaults.drEnabled}
+                            onChange={(e) =>
+                              updateDefaultTimes(dayType, 'drEnabled', e.target.checked)
+                            }
+                            className="rounded border-gray-300 text-primary-600"
+                          />
+                        </div>
                       </td>
                       <td className="px-4 py-2">
                         <TimeFieldAMPM
@@ -1244,14 +1267,16 @@ export function TimesheetForm({
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="checkbox"
-                          checked={defaults.enabled}
-                          onChange={(e) =>
-                            updateDefaultTimes(dayType, 'enabled', e.target.checked)
-                          }
-                          className="rounded border-gray-300 text-primary-600"
-                        />
+                        <div className="flex justify-center">
+                          <input
+                            type="checkbox"
+                            checked={defaults.svEnabled}
+                            onChange={(e) =>
+                              updateDefaultTimes(dayType, 'svEnabled', e.target.checked)
+                            }
+                            className="rounded border-gray-300 text-primary-600"
+                          />
+                        </div>
                       </td>
                     </tr>
                   )

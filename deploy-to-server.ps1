@@ -1,76 +1,77 @@
-# Smart Steps Migration - Automated Deployment Script
-# This script helps deploy the migration to the server
+# Deployment Script for A Plus Center
+# Deploys the application to the production server
 
-param(
-    [string]$Server = "root@66.94.105.43",
-    [string]$AppDir = "/var/www/aplus-center"
-)
+Write-Host "Starting deployment to production server..." -ForegroundColor Green
 
-Write-Host "🚀 Smart Steps Migration Deployment" -ForegroundColor Cyan
-Write-Host "====================================" -ForegroundColor Cyan
-Write-Host ""
+# Configuration
+$SERVER = "root@66.94.105.43"
+$APP_DIR = "/var/www/aplus-center"
+$SSH_KEY = "$env:USERPROFILE\.ssh\id_ed25519_smartsteps"
 
-# Step 1: Copy server script to server
-Write-Host "📤 Step 1: Uploading migration script to server..." -ForegroundColor Yellow
-$serverScript = "deploy-migration-server.sh"
-if (Test-Path $serverScript) {
-    Write-Host "   Copying $serverScript to server..." -ForegroundColor Gray
-    scp $serverScript "${Server}:/tmp/$serverScript"
-    Write-Host "   ✅ Script uploaded" -ForegroundColor Green
-} else {
-    Write-Host "   ⚠️  Script not found, will use inline commands" -ForegroundColor Yellow
+Write-Host "Step 1: Pulling latest changes on server..." -ForegroundColor Cyan
+ssh -i $SSH_KEY -o IdentitiesOnly=yes $SERVER @"
+cd $APP_DIR
+git pull origin main
+"@
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to pull latest changes" -ForegroundColor Red
+    exit 1
 }
 
-Write-Host ""
-Write-Host "📋 Step 2: Ready to execute on server" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "Choose an option:" -ForegroundColor Cyan
-Write-Host "  1. Execute migration automatically via SSH" -ForegroundColor White
-Write-Host "  2. Show commands to run manually" -ForegroundColor White
-Write-Host ""
-
-$choice = Read-Host "Enter choice (1 or 2)"
-
-if ($choice -eq "1") {
-    Write-Host ""
-    Write-Host "🔄 Executing migration on server..." -ForegroundColor Yellow
-    Write-Host ""
-    
-    if (Test-Path $serverScript) {
-        $commands = @"
-cd $AppDir
-bash /tmp/$serverScript
+Write-Host "Step 2: Installing dependencies..." -ForegroundColor Cyan
+ssh -i $SSH_KEY -o IdentitiesOnly=yes $SERVER @"
+cd $APP_DIR
+npm install --production
 "@
-        ssh $Server $commands
-    } else {
-        $commands = @"
-cd $AppDir && npx prisma generate && (npx prisma migrate deploy --name add_role_dashboard_visibility || npx prisma db push) && pm2 restart aplus-center && pm2 logs aplus-center --lines 10
-"@
-        ssh $Server $commands
-    }
-    
-    Write-Host ""
-    Write-Host "✅ Migration complete!" -ForegroundColor Green
-} else {
-    Write-Host ""
-    Write-Host "📝 Manual Commands:" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "SSH into server:" -ForegroundColor Yellow
-    Write-Host "  ssh $Server" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Then run:" -ForegroundColor Yellow
-    if (Test-Path $serverScript) {
-        Write-Host "  bash /tmp/$serverScript" -ForegroundColor White
-    } else {
-        Write-Host "  cd $AppDir" -ForegroundColor White
-        Write-Host "  npx prisma generate" -ForegroundColor White
-        Write-Host "  npx prisma migrate deploy --name add_role_dashboard_visibility || npx prisma db push" -ForegroundColor White
-        Write-Host "  pm2 restart aplus-center" -ForegroundColor White
-        Write-Host "  pm2 logs aplus-center --lines 20" -ForegroundColor White
-    }
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to install dependencies" -ForegroundColor Red
+    exit 1
 }
 
+Write-Host "Step 3: Building application..." -ForegroundColor Cyan
+ssh -i $SSH_KEY -o IdentitiesOnly=yes $SERVER @"
+cd $APP_DIR
+npm run build
+"@
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Build failed" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Step 4: Running database migrations..." -ForegroundColor Cyan
+ssh -i $SSH_KEY -o IdentitiesOnly=yes $SERVER @"
+cd $APP_DIR
+npx prisma migrate deploy
+npx prisma generate
+"@
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Database migration warning (may be expected)" -ForegroundColor Yellow
+}
+
+Write-Host "Step 5: Restarting application..." -ForegroundColor Cyan
+ssh -i $SSH_KEY -o IdentitiesOnly=yes $SERVER @"
+cd $APP_DIR
+pm2 restart aplus-center
+pm2 save
+"@
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to restart application" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Step 6: Checking application status..." -ForegroundColor Cyan
+ssh -i $SSH_KEY -o IdentitiesOnly=yes $SERVER "pm2 status"
+
 Write-Host ""
-Write-Host "✅ Deployment instructions ready!" -ForegroundColor Green
+Write-Host "Deployment completed successfully!" -ForegroundColor Green
 Write-Host ""
-Write-Host "📚 For detailed instructions, see: DEPLOY_EVERYTHING.md" -ForegroundColor Cyan
+Write-Host "Next steps:" -ForegroundColor Yellow
+Write-Host "  1. Check logs with: pm2 logs aplus-center --lines 50" -ForegroundColor Gray
+Write-Host "  2. Test the application at your production URL" -ForegroundColor Gray
+Write-Host "  3. Verify timesheet functionality" -ForegroundColor Gray
+Write-Host ""
