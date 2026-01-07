@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
+import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
 import { startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns'
 
 export async function GET(request: NextRequest) {
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
       insuranceId,
       startDate,
       endDate,
+      timezone,
       entries,
     } = data
 
@@ -163,9 +165,10 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Validate minutes matches calculated duration
       const calculatedMinutes = endMinutes - startMinutes
-      if (entry.minutes !== calculatedMinutes) {
+
+      // Validate minutes matches calculated duration (allow small rounding differences)
+      if (Math.abs(entry.minutes - calculatedMinutes) > 1) {
         return NextResponse.json(
           { error: `Minutes mismatch. Expected ${calculatedMinutes}, got ${entry.minutes}` },
           { status: 400 }
@@ -180,6 +183,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Overlap validation (provider OR client OR both)
+    const overlapConflicts = await detectTimesheetOverlaps({
+      providerId,
+      clientId,
+      providerName: provider.name,
+      clientName: client.name,
+      entries,
+    })
+
+    if (overlapConflicts.length > 0) {
+      return NextResponse.json(
+        { error: 'Overlap conflicts detected', code: 'OVERLAP_CONFLICT', conflicts: overlapConflicts },
+        { status: 400 }
+      )
+    }
+
     // Create timesheet
     const timesheet = await prisma.timesheet.create({
       data: {
@@ -190,16 +209,25 @@ export async function POST(request: NextRequest) {
         insuranceId,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
+        timezone: timezone || 'America/New_York',
         status: 'DRAFT',
+        lastEditedBy: session.user.id,
+        lastEditedAt: new Date(),
         entries: {
-          create: entries.map((entry: any) => ({
-            date: new Date(entry.date),
-            startTime: entry.startTime, // Already validated as HH:mm
-            endTime: entry.endTime, // Already validated as HH:mm
-            minutes: entry.minutes, // Already validated
-            units: calculateUnits(entry.minutes),
-            notes: entry.notes || null,
-          })),
+          create: entries.map((entry: any) => {
+            // Calculate units (1 unit = 15 minutes, no rounding)
+            const units = entry.minutes / 15
+            
+            return {
+              date: new Date(entry.date),
+              startTime: entry.startTime, // Already validated as HH:mm
+              endTime: entry.endTime, // Already validated as HH:mm
+              minutes: entry.minutes, // Store actual minutes
+              units: units, // Store units (1 unit = 15 minutes)
+              notes: entry.notes || null,
+              invoiced: entry.invoiced || false,
+            }
+          }),
         },
       },
       include: {

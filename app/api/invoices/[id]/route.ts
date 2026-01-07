@@ -26,6 +26,7 @@ export async function GET(
             timesheet: {
               include: {
                 entries: true,
+                bcba: true,
               },
             },
           },

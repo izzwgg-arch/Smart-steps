@@ -18,11 +18,17 @@ import {
   parseTimeToMinutes,
   INVALID_TIME,
 } from '@/lib/timeUtils'
-import { to24Hour } from '@/lib/time'
-import { TimePartsInput } from './TimePartsInput'
-import { partsToMinutes, minutesToParts, durationMinutes } from '@/lib/timeParts'
+import { TimeFieldAMPM, TimeAMPM, timeAMPMToMinutes, minutesToTimeAMPM, timeAMPMTo24Hour } from './TimeFieldAMPM'
 import { format } from 'date-fns'
 import { calculateUnits } from '@/lib/dateUtils'
+import {
+  calculateDurationMinutes,
+  validateTimeRange,
+  formatHours,
+} from '@/lib/timesheetUtils'
+import { checkInternalOverlaps, prepareEntriesForOverlapCheck } from '@/lib/timesheetOverlapUtils'
+import { TimesheetPrintPreview } from './TimesheetPrintPreview'
+import { exportToCSV, exportToExcel, formatTimesheetForDetailedExport } from '@/lib/exportUtils'
 
 interface Provider {
   id: string
@@ -56,6 +62,7 @@ interface TimesheetEntry {
   minutes: number
   units: number
   notes: string | null
+  invoiced?: boolean
 }
 
 interface Timesheet {
@@ -67,6 +74,7 @@ interface Timesheet {
   startDate: string
   endDate: string
   status: string
+  timezone?: string
   entries: TimesheetEntry[]
 }
 
@@ -78,41 +86,59 @@ interface TimesheetFormProps {
   timesheet?: Timesheet
 }
 
-// Internal representation: minutes since midnight (0-1439) or null
+// Internal representation: TimeAMPM objects (canonical AM/PM form)
 interface DayEntry {
   date: Date
   dayName: string
-  drFromMinutes: number | null // minutes since midnight, or null
-  drToMinutes: number | null
+  drFrom: TimeAMPM | null
+  drTo: TimeAMPM | null
   drHours: number
   drUse: boolean
-  svFromMinutes: number | null
-  svToMinutes: number | null
+  svFrom: TimeAMPM | null
+  svTo: TimeAMPM | null
   svHours: number
   svUse: boolean
-  isOverridden: boolean // true if user manually edited this row (prevents auto-update)
+  drInvoiced: boolean // Track if DR entry is invoiced
+  svInvoiced: boolean // Track if SV entry is invoiced
+  // Track touched fields per field (prevents auto-update when user manually edits)
+  touched: {
+    drFrom: boolean
+    drTo: boolean
+    svFrom: boolean
+    svTo: boolean
+  }
+  // Validation errors per field
+  errors: {
+    dr: string | null
+    sv: string | null
+  }
+  // Overlap conflict tracking
+  overlapConflict?: {
+    type: 'DR' | 'SV'
+    message: string
+  }
 }
 
 interface DefaultTimes {
   sun: {
-    drFromMinutes: number | null
-    drToMinutes: number | null
-    svFromMinutes: number | null
-    svToMinutes: number | null
+    drFrom: TimeAMPM | null
+    drTo: TimeAMPM | null
+    svFrom: TimeAMPM | null
+    svTo: TimeAMPM | null
     enabled: boolean
   }
   weekdays: {
-    drFromMinutes: number | null
-    drToMinutes: number | null
-    svFromMinutes: number | null
-    svToMinutes: number | null
+    drFrom: TimeAMPM | null
+    drTo: TimeAMPM | null
+    svFrom: TimeAMPM | null
+    svTo: TimeAMPM | null
     enabled: boolean
   }
   fri: {
-    drFromMinutes: number | null
-    drToMinutes: number | null
-    svFromMinutes: number | null
-    svToMinutes: number | null
+    drFrom: TimeAMPM | null
+    drTo: TimeAMPM | null
+    svFrom: TimeAMPM | null
+    svTo: TimeAMPM | null
     enabled: boolean
   }
 }
@@ -138,29 +164,36 @@ export function TimesheetForm({
   const [insuranceId, setInsuranceId] = useState(timesheet?.insuranceId || '')
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([])
   const [totalHours, setTotalHours] = useState(0)
+  const [timezone, setTimezone] = useState<string>(timesheet?.timezone || 'America/New_York')
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [overlapConflicts, setOverlapConflicts] = useState<Array<{ index: number; type: 'DR' | 'SV'; message: string }>>([])
+  const conflictRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
+  const [printPreviewTimesheet, setPrintPreviewTimesheet] = useState<any | null>(null)
   
   // Store temporary display values for day entry inputs while typing
 
   const [defaultTimes, setDefaultTimes] = useState<DefaultTimes>({
     sun: {
-      drFromMinutes: null,
-      drToMinutes: null,
-      svFromMinutes: null,
-      svToMinutes: null,
+      drFrom: null,
+      drTo: null,
+      svFrom: null,
+      svTo: null,
       enabled: false,
     },
     weekdays: {
-      drFromMinutes: null,
-      drToMinutes: null,
-      svFromMinutes: null,
-      svToMinutes: null,
+      drFrom: null,
+      drTo: null,
+      svFrom: null,
+      svTo: null,
       enabled: false,
     },
     fri: {
-      drFromMinutes: null,
-      drToMinutes: null,
-      svFromMinutes: null,
-      svToMinutes: null,
+      drFrom: null,
+      drTo: null,
+      svFrom: null,
+      svTo: null,
       enabled: false,
     },
   })
@@ -193,6 +226,7 @@ export function TimesheetForm({
         const drEntry = dayEntries.find((e) => e.notes === 'DR')
         const svEntry = dayEntries.find((e) => e.notes === 'SV')
 
+        // Convert 24-hour strings to minutes, then to TimeAMPM
         const drFromMinutes = drEntry
           ? parseTimeToMinutes(drEntry.startTime)
           : null
@@ -206,14 +240,23 @@ export function TimesheetForm({
           ? parseTimeToMinutes(svEntry.endTime)
           : null
 
-        // Convert INVALID_TIME to null
-        const drFrom = drFromMinutes === INVALID_TIME ? null : drFromMinutes
-        const drTo = drToMinutes === INVALID_TIME ? null : drToMinutes
-        const svFrom = svFromMinutes === INVALID_TIME ? null : svFromMinutes
-        const svTo = svToMinutes === INVALID_TIME ? null : svToMinutes
+        // Convert to TimeAMPM
+        const drFrom = drFromMinutes !== null && drFromMinutes !== INVALID_TIME
+          ? minutesToTimeAMPM(drFromMinutes)
+          : null
+        const drTo = drToMinutes !== null && drToMinutes !== INVALID_TIME
+          ? minutesToTimeAMPM(drToMinutes)
+          : null
+        const svFrom = svFromMinutes !== null && svFromMinutes !== INVALID_TIME
+          ? minutesToTimeAMPM(svFromMinutes)
+          : null
+        const svTo = svToMinutes !== null && svToMinutes !== INVALID_TIME
+          ? minutesToTimeAMPM(svToMinutes)
+          : null
 
-        const drDuration = durationMinutes(drFrom, drTo)
-        const svDuration = durationMinutes(svFrom, svTo)
+        // Calculate hours
+        const drDuration = calculateDurationMinutes(drFrom, drTo)
+        const svDuration = calculateDurationMinutes(svFrom, svTo)
 
         // Guard against NaN
         const drHours = drDuration !== null ? drDuration / 60 : 0
@@ -222,15 +265,26 @@ export function TimesheetForm({
         return {
           date,
           dayName: getDayName(date),
-          drFromMinutes: drFrom,
-          drToMinutes: drTo,
+          drFrom,
+          drTo,
           drHours,
           drUse: !!drEntry,
-          svFromMinutes: svFrom,
-          svToMinutes: svTo,
+          drInvoiced: drEntry?.invoiced || false,
+          svFrom,
+          svTo,
           svHours,
           svUse: !!svEntry,
-          isOverridden: true, // Existing entries are always overridden (user data)
+          svInvoiced: svEntry?.invoiced || false,
+          touched: {
+            drFrom: true, // Existing entries are always touched
+            drTo: true,
+            svFrom: true,
+            svTo: true,
+          },
+          errors: {
+            dr: null,
+            sv: null,
+          },
         }
       })
       setDayEntries(entries)
@@ -253,18 +307,19 @@ export function TimesheetForm({
 
         const hasValidDrTimes =
           defaults.enabled &&
-          defaults.drFromMinutes !== null &&
-          defaults.drToMinutes !== null
+          defaults.drFrom !== null &&
+          defaults.drTo !== null
         const hasValidSvTimes =
           defaults.enabled &&
-          defaults.svFromMinutes !== null &&
-          defaults.svToMinutes !== null
+          defaults.svFrom !== null &&
+          defaults.svTo !== null
 
+        // Calculate hours using new utility functions
         const drDuration = hasValidDrTimes
-          ? durationMinutes(defaults.drFromMinutes, defaults.drToMinutes)
+          ? calculateDurationMinutes(defaults.drFrom, defaults.drTo)
           : null
         const svDuration = hasValidSvTimes
-          ? durationMinutes(defaults.svFromMinutes, defaults.svToMinutes)
+          ? calculateDurationMinutes(defaults.svFrom, defaults.svTo)
           : null
 
         const drHours = drDuration !== null ? drDuration / 60 : 0
@@ -273,19 +328,26 @@ export function TimesheetForm({
         return {
           date,
           dayName: getDayName(date),
-          drFromMinutes: hasValidDrTimes
-            ? defaults.drFromMinutes
-            : null,
-          drToMinutes: hasValidDrTimes ? defaults.drToMinutes : null,
+          drFrom: hasValidDrTimes ? defaults.drFrom : null,
+          drTo: hasValidDrTimes ? defaults.drTo : null,
           drHours,
           drUse: hasValidDrTimes,
-          svFromMinutes: hasValidSvTimes
-            ? defaults.svFromMinutes
-            : null,
-          svToMinutes: hasValidSvTimes ? defaults.svToMinutes : null,
+          drInvoiced: false,
+          svFrom: hasValidSvTimes ? defaults.svFrom : null,
+          svTo: hasValidSvTimes ? defaults.svTo : null,
           svHours,
           svUse: hasValidSvTimes,
-          isOverridden: false, // New entries start as not overridden
+          svInvoiced: false,
+          touched: {
+            drFrom: false, // New entries start as not touched
+            drTo: false,
+            svFrom: false,
+            svTo: false,
+          },
+          errors: {
+            dr: null,
+            sv: null,
+          },
         }
       })
       setDayEntries(entries)
@@ -293,8 +355,114 @@ export function TimesheetForm({
     }
   }, [startDate, endDate, timesheet]) // REMOVED defaultTimes - no auto-update
 
-  // REMOVED: Auto-updating useEffect that caused race conditions
-  // Now using explicit "Apply Defaults" button instead
+  // Auto-update day entries when defaults change (only non-touched fields)
+  useEffect(() => {
+    if (timesheet || !startDate || !endDate) return
+
+    setDayEntries((prevEntries) => {
+      if (prevEntries.length === 0) return prevEntries
+
+      const updated = prevEntries.map((entry) => {
+        let defaults = defaultTimes.weekdays
+        if (isSunday(entry.date)) {
+          defaults = defaultTimes.sun
+        } else if (isFriday(entry.date)) {
+          defaults = defaultTimes.fri
+        }
+
+        const hasValidDrTimes =
+          defaults.enabled &&
+          defaults.drFrom !== null &&
+          defaults.drTo !== null
+        const hasValidSvTimes =
+          defaults.enabled &&
+          defaults.svFrom !== null &&
+          defaults.svTo !== null
+
+        // Only update non-touched fields
+        const newDrFrom = entry.touched.drFrom ? entry.drFrom : (hasValidDrTimes ? defaults.drFrom : null)
+        const newDrTo = entry.touched.drTo ? entry.drTo : (hasValidDrTimes ? defaults.drTo : null)
+        const newSvFrom = entry.touched.svFrom ? entry.svFrom : (hasValidSvTimes ? defaults.svFrom : null)
+        const newSvTo = entry.touched.svTo ? entry.svTo : (hasValidSvTimes ? defaults.svTo : null)
+
+        // Recalculate hours
+        const drFromMins = timeAMPMToMinutes(newDrFrom)
+        const drToMins = timeAMPMToMinutes(newDrTo)
+        const svFromMins = timeAMPMToMinutes(newSvFrom)
+        const svToMins = timeAMPMToMinutes(newSvTo)
+
+        const drDuration = (drFromMins !== null && drToMins !== null && drToMins >= drFromMins)
+          ? drToMins - drFromMins
+          : null
+        const svDuration = (svFromMins !== null && svToMins !== null && svToMins >= svFromMins)
+          ? svToMins - svFromMins
+          : null
+
+        const drHours = drDuration !== null ? drDuration / 60 : 0
+        const svHours = svDuration !== null ? svDuration / 60 : 0
+
+        return {
+          ...entry,
+          drFrom: newDrFrom,
+          drTo: newDrTo,
+          drHours,
+          drUse: hasValidDrTimes && !entry.touched.drFrom && !entry.touched.drTo ? true : entry.drUse,
+          svFrom: newSvFrom,
+          svTo: newSvTo,
+          svHours,
+          svUse: hasValidSvTimes && !entry.touched.svFrom && !entry.touched.svTo ? true : entry.svUse,
+        }
+      })
+
+      calculateTotalHours(updated)
+      return updated
+    })
+  }, [defaultTimes, startDate, endDate, timesheet])
+
+  // Check for overlaps whenever dayEntries change
+  useEffect(() => {
+    if (dayEntries.length === 0 || !providerId || !clientId) {
+      setOverlapConflicts([])
+      return
+    }
+
+    // Check internal overlaps (within the same timesheet)
+    const conflicts = checkInternalOverlaps(dayEntries)
+    
+    // Map conflicts to entry indices
+    const conflictMap = new Map<number, { type: 'DR' | 'SV'; message: string }>()
+    
+    for (const conflict of conflicts) {
+      const entryIndex = dayEntries.findIndex(e => 
+        format(e.date, 'yyyy-MM-dd') === format(conflict.date, 'yyyy-MM-dd')
+      )
+      if (entryIndex >= 0) {
+        conflictMap.set(entryIndex, {
+          type: conflict.type,
+          message: conflict.message,
+        })
+      }
+    }
+
+    // Convert to array format
+    const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
+      index,
+      ...data,
+    }))
+
+    setOverlapConflicts(conflictsArray)
+
+    // Scroll to first conflict if any
+    if (conflictsArray.length > 0) {
+      const firstConflictIndex = conflictsArray[0].index
+      const rowElement = conflictRowRefs.current.get(firstConflictIndex)
+      if (rowElement) {
+        setTimeout(() => {
+          rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+      }
+    }
+  }, [dayEntries, providerId, clientId])
 
   const calculateTotalHours = (entries: DayEntry[]) => {
     const total = entries.reduce((sum, entry) => {
@@ -308,7 +476,7 @@ export function TimesheetForm({
   const updateDefaultTimes = (
     dayType: 'sun' | 'weekdays' | 'fri',
     field: 'drFrom' | 'drTo' | 'svFrom' | 'svTo' | 'enabled',
-    value: number | null | boolean
+    value: TimeAMPM | null | boolean
   ) => {
     if (field === 'enabled') {
       setDefaultTimes((prev) => ({
@@ -321,24 +489,18 @@ export function TimesheetForm({
       return
     }
 
-    if (typeof value !== 'number' && value !== null) return
+    if (typeof value !== 'object' && value !== null) return
 
-    const fieldKeyMinutes = `${field}Minutes` as
-      | 'drFromMinutes'
-      | 'drToMinutes'
-      | 'svFromMinutes'
-      | 'svToMinutes'
-    
     setDefaultTimes((prev) => ({
       ...prev,
       [dayType]: {
         ...prev[dayType],
-        [fieldKeyMinutes]: value,
+        [field]: value as TimeAMPM | null,
       },
     }))
   }
 
-  // Apply default times to all non-overridden rows
+  // Apply default times to all non-touched rows
   const applyDefaultsToDates = () => {
     if (timesheet) return // Don't apply in edit mode
     if (!startDate || !endDate) return
@@ -347,9 +509,6 @@ export function TimesheetForm({
       if (prevEntries.length === 0) return prevEntries
 
       const updated = prevEntries.map((entry) => {
-        // Skip overridden rows
-        if (entry.isOverridden) return entry
-
         let defaults = defaultTimes.weekdays
         if (isSunday(entry.date)) {
           defaults = defaultTimes.sun
@@ -359,18 +518,30 @@ export function TimesheetForm({
 
         const hasValidDrTimes =
           defaults.enabled &&
-          defaults.drFromMinutes !== null &&
-          defaults.drToMinutes !== null
+          defaults.drFrom !== null &&
+          defaults.drTo !== null
         const hasValidSvTimes =
           defaults.enabled &&
-          defaults.svFromMinutes !== null &&
-          defaults.svToMinutes !== null
+          defaults.svFrom !== null &&
+          defaults.svTo !== null
 
-        const drDuration = hasValidDrTimes
-          ? durationMinutes(defaults.drFromMinutes, defaults.drToMinutes)
+        // Only update non-touched fields
+        const newDrFrom = entry.touched.drFrom ? entry.drFrom : (hasValidDrTimes ? defaults.drFrom : null)
+        const newDrTo = entry.touched.drTo ? entry.drTo : (hasValidDrTimes ? defaults.drTo : null)
+        const newSvFrom = entry.touched.svFrom ? entry.svFrom : (hasValidSvTimes ? defaults.svFrom : null)
+        const newSvTo = entry.touched.svTo ? entry.svTo : (hasValidSvTimes ? defaults.svTo : null)
+
+        // Recalculate hours
+        const drFromMins = timeAMPMToMinutes(newDrFrom)
+        const drToMins = timeAMPMToMinutes(newDrTo)
+        const svFromMins = timeAMPMToMinutes(newSvFrom)
+        const svToMins = timeAMPMToMinutes(newSvTo)
+
+        const drDuration = (drFromMins !== null && drToMins !== null && drToMins >= drFromMins)
+          ? drToMins - drFromMins
           : null
-        const svDuration = hasValidSvTimes
-          ? durationMinutes(defaults.svFromMinutes, defaults.svToMinutes)
+        const svDuration = (svFromMins !== null && svToMins !== null && svToMins >= svFromMins)
+          ? svToMins - svFromMins
           : null
 
         const drHours = drDuration !== null ? drDuration / 60 : 0
@@ -378,15 +549,14 @@ export function TimesheetForm({
 
         return {
           ...entry,
-          drFromMinutes: hasValidDrTimes ? defaults.drFromMinutes : null,
-          drToMinutes: hasValidDrTimes ? defaults.drToMinutes : null,
+          drFrom: newDrFrom,
+          drTo: newDrTo,
           drHours,
-          drUse: hasValidDrTimes,
-          svFromMinutes: hasValidSvTimes ? defaults.svFromMinutes : null,
-          svToMinutes: hasValidSvTimes ? defaults.svToMinutes : null,
+          drUse: hasValidDrTimes && !entry.touched.drFrom && !entry.touched.drTo ? true : entry.drUse,
+          svFrom: newSvFrom,
+          svTo: newSvTo,
           svHours,
-          svUse: hasValidSvTimes,
-          isOverridden: false, // Still not overridden after applying defaults
+          svUse: hasValidSvTimes && !entry.touched.svFrom && !entry.touched.svTo ? true : entry.svUse,
         }
       })
 
@@ -413,18 +583,24 @@ export function TimesheetForm({
 
       const hasValidDrTimes =
         defaults.enabled &&
-        defaults.drFromMinutes !== null &&
-        defaults.drToMinutes !== null
+        defaults.drFrom !== null &&
+        defaults.drTo !== null
       const hasValidSvTimes =
         defaults.enabled &&
-        defaults.svFromMinutes !== null &&
-        defaults.svToMinutes !== null
+        defaults.svFrom !== null &&
+        defaults.svTo !== null
 
-      const drDuration = hasValidDrTimes
-        ? durationMinutes(defaults.drFromMinutes, defaults.drToMinutes)
+      // Recalculate hours
+      const drFromMins = hasValidDrTimes ? timeAMPMToMinutes(defaults.drFrom) : null
+      const drToMins = hasValidDrTimes ? timeAMPMToMinutes(defaults.drTo) : null
+      const svFromMins = hasValidSvTimes ? timeAMPMToMinutes(defaults.svFrom) : null
+      const svToMins = hasValidSvTimes ? timeAMPMToMinutes(defaults.svTo) : null
+
+      const drDuration = (drFromMins !== null && drToMins !== null && drToMins >= drFromMins)
+        ? drToMins - drFromMins
         : null
-      const svDuration = hasValidSvTimes
-        ? durationMinutes(defaults.svFromMinutes, defaults.svToMinutes)
+      const svDuration = (svFromMins !== null && svToMins !== null && svToMins >= svFromMins)
+        ? svToMins - svFromMins
         : null
 
       const drHours = drDuration !== null ? drDuration / 60 : 0
@@ -433,15 +609,20 @@ export function TimesheetForm({
       const updated = [...prevEntries]
       updated[index] = {
         ...entry,
-        drFromMinutes: hasValidDrTimes ? defaults.drFromMinutes : null,
-        drToMinutes: hasValidDrTimes ? defaults.drToMinutes : null,
+        drFrom: hasValidDrTimes ? defaults.drFrom : null,
+        drTo: hasValidDrTimes ? defaults.drTo : null,
         drHours,
         drUse: hasValidDrTimes,
-        svFromMinutes: hasValidSvTimes ? defaults.svFromMinutes : null,
-        svToMinutes: hasValidSvTimes ? defaults.svToMinutes : null,
+        svFrom: hasValidSvTimes ? defaults.svFrom : null,
+        svTo: hasValidSvTimes ? defaults.svTo : null,
         svHours,
         svUse: hasValidSvTimes,
-        isOverridden: false, // Reset to not overridden
+        touched: {
+          drFrom: false, // Reset touched flags
+          drTo: false,
+          svFrom: false,
+          svTo: false,
+        },
       }
 
       calculateTotalHours(updated)
@@ -452,7 +633,7 @@ export function TimesheetForm({
   const updateDayEntry = (
     index: number,
     field: 'drFrom' | 'drTo' | 'svFrom' | 'svTo' | 'drUse' | 'svUse',
-    value: number | null | boolean
+    value: TimeAMPM | null | boolean
   ) => {
     const updated = [...dayEntries]
 
@@ -460,54 +641,169 @@ export function TimesheetForm({
       updated[index] = {
         ...updated[index],
         [field]: value as boolean,
-        isOverridden: true, // Manual edit means overridden
       }
+      
       setDayEntries(updated)
       calculateTotalHours(updated)
+      setHasUnsavedChanges(true)
       return
     }
 
-    if (typeof value !== 'number' && value !== null) return
+    if (typeof value !== 'object' && value !== null) return
 
-    const fieldKeyMinutes = `${field}Minutes` as
-      | 'drFromMinutes'
-      | 'drToMinutes'
-      | 'svFromMinutes'
-      | 'svToMinutes'
-
+    // Mark field as touched
+    const touchedField = field as 'drFrom' | 'drTo' | 'svFrom' | 'svTo'
     updated[index] = {
       ...updated[index],
-      [fieldKeyMinutes]: value,
-      isOverridden: true, // Manual edit means overridden
+      [field]: value as TimeAMPM | null,
+      touched: {
+        ...updated[index].touched,
+        [touchedField]: true,
+      },
     }
 
-    // Recalculate hours
+    // Recalculate hours using new utility functions
     if (field === 'drFrom' || field === 'drTo') {
-      const startMinutes = updated[index].drFromMinutes
-      const endMinutes = updated[index].drToMinutes
-
-      if (startMinutes !== null && endMinutes !== null) {
-        const duration = durationMinutes(startMinutes, endMinutes)
-        updated[index].drHours = duration !== null ? duration / 60 : 0
+      const startTime = updated[index].drFrom
+      const endTime = updated[index].drTo
+      
+      if (startTime && endTime) {
+        const duration = calculateDurationMinutes(startTime, endTime)
+        if (duration !== null) {
+          updated[index].drHours = duration / 60
+          // Validate
+          const error = validateTimeRange(startTime, endTime)
+          updated[index].errors.dr = error
+        } else {
+          updated[index].drHours = 0
+          updated[index].errors.dr = 'Invalid time range'
+        }
       } else {
         updated[index].drHours = 0
+        updated[index].errors.dr = null
       }
     }
 
     if (field === 'svFrom' || field === 'svTo') {
-      const startMinutes = updated[index].svFromMinutes
-      const endMinutes = updated[index].svToMinutes
-
-      if (startMinutes !== null && endMinutes !== null) {
-        const duration = durationMinutes(startMinutes, endMinutes)
-        updated[index].svHours = duration !== null ? duration / 60 : 0
+      const startTime = updated[index].svFrom
+      const endTime = updated[index].svTo
+      
+      if (startTime && endTime) {
+        const duration = calculateDurationMinutes(startTime, endTime)
+        if (duration !== null) {
+          updated[index].svHours = duration / 60
+          // Validate
+          const error = validateTimeRange(startTime, endTime)
+          updated[index].errors.sv = error
+        } else {
+          updated[index].svHours = 0
+          updated[index].errors.sv = 'Invalid time range'
+        }
       } else {
         updated[index].svHours = 0
+        updated[index].errors.sv = null
       }
     }
 
     setDayEntries(updated)
     calculateTotalHours(updated)
+    setHasUnsavedChanges(true)
+    
+    // Auto-save after 2 seconds of inactivity
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveDraft()
+    }, 2000)
+  }
+
+  // Auto-save draft to localStorage
+  const autoSaveDraft = async () => {
+    if (timesheet) return // Don't auto-save existing timesheets
+    
+    try {
+      const draft = {
+        providerId,
+        clientId,
+        bcbaId,
+        insuranceId,
+        startDate: startDate?.toISOString(),
+        endDate: endDate?.toISOString(),
+        timezone,
+        defaultTimes,
+        dayEntries: dayEntries.map(entry => ({
+          date: entry.date.toISOString(),
+          drFrom: entry.drFrom,
+          drTo: entry.drTo,
+          drUse: entry.drUse,
+          svFrom: entry.svFrom,
+          svTo: entry.svTo,
+          svUse: entry.svUse,
+          touched: entry.touched,
+        })),
+        savedAt: new Date().toISOString(),
+      }
+      localStorage.setItem('timesheet-draft', JSON.stringify(draft))
+      setLastSavedAt(new Date())
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      console.error('Auto-save failed:', error)
+    }
+  }
+
+  // Load draft from localStorage on mount
+  useEffect(() => {
+    if (timesheet) return // Don't load draft for existing timesheets
+    
+    try {
+      const draftStr = localStorage.getItem('timesheet-draft')
+      if (draftStr) {
+        const draft = JSON.parse(draftStr)
+        // Only load if draft is recent (within 7 days)
+        const savedAt = new Date(draft.savedAt)
+        const daysSince = (Date.now() - savedAt.getTime()) / (1000 * 60 * 60 * 24)
+        if (daysSince < 7) {
+          if (confirm('Found a saved draft. Would you like to restore it?')) {
+            setProviderId(draft.providerId || '')
+            setClientId(draft.clientId || '')
+            setBcbaId(draft.bcbaId || '')
+            setInsuranceId(draft.insuranceId || '')
+            if (draft.startDate) setStartDate(new Date(draft.startDate))
+            if (draft.endDate) setEndDate(new Date(draft.endDate))
+            if (draft.timezone) setTimezone(draft.timezone)
+            if (draft.defaultTimes) setDefaultTimes(draft.defaultTimes)
+            // Day entries will be regenerated when dates are set
+          } else {
+            localStorage.removeItem('timesheet-draft')
+          }
+        } else {
+          localStorage.removeItem('timesheet-draft')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load draft:', error)
+    }
+  }, [timesheet])
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
+        return e.returnValue
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedChanges])
+
+  // Clear draft on successful save
+  const clearDraft = () => {
+    localStorage.removeItem('timesheet-draft')
+    setHasUnsavedChanges(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -528,64 +824,94 @@ export function TimesheetForm({
       return
     }
 
+    // Check for validation errors
+    const hasErrors = dayEntries.some(entry => entry.errors.dr || entry.errors.sv)
+    if (hasErrors) {
+      toast.error('Please fix validation errors before submitting')
+      return
+    }
+
+    // Check for overlap conflicts
+    if (overlapConflicts.length > 0) {
+      toast.error('Please fix overlap conflicts before submitting')
+      return
+    }
+
+    // Check for invoiced entries (double billing prevention)
+    const hasInvoicedEntries = dayEntries.some(
+      entry => (entry.drUse && entry.drInvoiced) || (entry.svUse && entry.svInvoiced)
+    )
+    if (hasInvoicedEntries) {
+      const confirmed = confirm(
+        'Warning: Some entries are already invoiced. Editing them may cause double billing. Continue?'
+      )
+      if (!confirmed) return
+    }
+
     const entries = dayEntries
       .filter((entry) => entry.drUse || entry.svUse)
       .flatMap((entry) => {
         const result = []
         if (entry.drUse) {
-          const startMinutes = entry.drFromMinutes
-          const endMinutes = entry.drToMinutes
-
           // Guard against invalid times
-          if (startMinutes === null || endMinutes === null) {
+          if (entry.drFrom === null || entry.drTo === null) {
             toast.error(
               `Invalid DR times for ${format(entry.date, 'MMM d')}: Please enter both start and end times`
             )
             return []
           }
 
-          const duration = durationMinutes(startMinutes, endMinutes)
-          if (duration === null || duration <= 0) {
+          // Use new calculation function
+          const duration = calculateDurationMinutes(entry.drFrom, entry.drTo)
+          if (duration === null) {
             toast.error(
-              `Invalid DR time range for ${format(entry.date, 'MMM d')}: End time must be after start time`
+              `Invalid DR time range for ${format(entry.date, 'MMM d')}: ${entry.errors.dr || 'Invalid times'}`
             )
             return []
           }
 
+          // Calculate units (1 unit = 15 minutes, no rounding)
+          const units = duration / 15
+
           result.push({
             date: entry.date.toISOString(),
-            startTime: to24Hour(startMinutes),
-            endTime: to24Hour(endMinutes),
+            startTime: timeAMPMTo24Hour(entry.drFrom),
+            endTime: timeAMPMTo24Hour(entry.drTo),
             minutes: duration,
+            units: units,
             notes: 'DR',
+            invoiced: entry.drInvoiced,
           })
         }
         if (entry.svUse) {
-          const startMinutes = entry.svFromMinutes
-          const endMinutes = entry.svToMinutes
-
           // Guard against invalid times
-          if (startMinutes === null || endMinutes === null) {
+          if (entry.svFrom === null || entry.svTo === null) {
             toast.error(
               `Invalid SV times for ${format(entry.date, 'MMM d')}: Please enter both start and end times`
             )
             return []
           }
 
-          const duration = durationMinutes(startMinutes, endMinutes)
-          if (duration === null || duration <= 0) {
+          // Use new calculation function
+          const duration = calculateDurationMinutes(entry.svFrom, entry.svTo)
+          if (duration === null) {
             toast.error(
-              `Invalid SV time range for ${format(entry.date, 'MMM d')}: End time must be after start time`
+              `Invalid SV time range for ${format(entry.date, 'MMM d')}: ${entry.errors.sv || 'Invalid times'}`
             )
             return []
           }
 
+          // Calculate units (1 unit = 15 minutes, no rounding)
+          const units = duration / 15
+
           result.push({
             date: entry.date.toISOString(),
-            startTime: to24Hour(startMinutes),
-            endTime: to24Hour(endMinutes),
+            startTime: timeAMPMTo24Hour(entry.svFrom),
+            endTime: timeAMPMTo24Hour(entry.svTo),
             minutes: duration,
+            units: units,
             notes: 'SV',
+            invoiced: entry.svInvoiced,
           })
         }
         return result
@@ -612,17 +938,38 @@ export function TimesheetForm({
           insuranceId,
           startDate: startDate.toISOString(),
           endDate: endDate.toISOString(),
+          timezone,
           entries,
         }),
       })
 
       if (res.ok) {
+        clearDraft() // Clear auto-saved draft on success
         toast.success(`Timesheet ${timesheet ? 'updated' : 'created'} successfully`)
         router.push('/timesheets')
         router.refresh()
       } else {
         const data = await res.json()
-        toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
+        if (data?.code === 'OVERLAP_CONFLICT' && Array.isArray(data?.conflicts)) {
+          const next = (data.conflicts as Array<any>)
+            .map((c) => {
+              const idx = dayEntries.findIndex((d) => format(d.date, 'yyyy-MM-dd') === c.date)
+              const type = c.entryType === 'SV' ? 'SV' : 'DR'
+              return idx >= 0 ? { index: idx, type, message: c.message || 'Overlap detected' } : null
+            })
+            .filter(Boolean) as Array<{ index: number; type: 'DR' | 'SV'; message: string }>
+
+          setOverlapConflicts(next)
+          if (next.length > 0) {
+            const rowElement = conflictRowRefs.current.get(next[0].index)
+            if (rowElement) {
+              setTimeout(() => rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+            }
+          }
+          toast.error('Overlap conflicts detected. Please fix highlighted rows.')
+        } else {
+          toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
+        }
       }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
@@ -638,65 +985,67 @@ export function TimesheetForm({
   const debugData = {
     defaultTimes: {
       sun: {
-        drFrom: defaultTimes.sun.drFromMinutes,
-        drTo: defaultTimes.sun.drToMinutes,
-        svFrom: defaultTimes.sun.svFromMinutes,
-        svTo: defaultTimes.sun.svToMinutes,
+        drFrom: defaultTimes.sun.drFrom,
+        drTo: defaultTimes.sun.drTo,
+        svFrom: defaultTimes.sun.svFrom,
+        svTo: defaultTimes.sun.svTo,
         enabled: defaultTimes.sun.enabled,
       },
       weekdays: {
-        drFrom: defaultTimes.weekdays.drFromMinutes,
-        drTo: defaultTimes.weekdays.drToMinutes,
-        svFrom: defaultTimes.weekdays.svFromMinutes,
-        svTo: defaultTimes.weekdays.svToMinutes,
+        drFrom: defaultTimes.weekdays.drFrom,
+        drTo: defaultTimes.weekdays.drTo,
+        svFrom: defaultTimes.weekdays.svFrom,
+        svTo: defaultTimes.weekdays.svTo,
         enabled: defaultTimes.weekdays.enabled,
       },
       fri: {
-        drFrom: defaultTimes.fri.drFromMinutes,
-        drTo: defaultTimes.fri.drToMinutes,
-        svFrom: defaultTimes.fri.svFromMinutes,
-        svTo: defaultTimes.fri.svToMinutes,
+        drFrom: defaultTimes.fri.drFrom,
+        drTo: defaultTimes.fri.drTo,
+        svFrom: defaultTimes.fri.svFrom,
+        svTo: defaultTimes.fri.svTo,
         enabled: defaultTimes.fri.enabled,
       },
     },
     dayEntries: dayEntries.map((entry) => ({
       date: format(entry.date, 'yyyy-MM-dd'),
       dayName: entry.dayName,
-      drFrom: entry.drFromMinutes,
-      drTo: entry.drToMinutes,
+      drFrom: entry.drFrom,
+      drTo: entry.drTo,
       drHours: entry.drHours,
       drUse: entry.drUse,
-      svFrom: entry.svFromMinutes,
-      svTo: entry.svToMinutes,
+      svFrom: entry.svFrom,
+      svTo: entry.svTo,
       svHours: entry.svHours,
       svUse: entry.svUse,
-      isOverridden: entry.isOverridden,
+      touched: entry.touched,
     })),
     savePayload: (() => {
       const entries = dayEntries
         .filter((entry) => entry.drUse || entry.svUse)
         .flatMap((entry) => {
           const result = []
-          if (entry.drUse && entry.drFromMinutes !== null && entry.drToMinutes !== null) {
-            const duration = durationMinutes(entry.drFromMinutes, entry.drToMinutes)
-            if (duration !== null) {
+          if (entry.drUse && entry.drFrom !== null && entry.drTo !== null) {
+            const startMins = timeAMPMToMinutes(entry.drFrom)
+            const endMins = timeAMPMToMinutes(entry.drTo)
+            if (startMins !== null && endMins !== null && endMins >= startMins) {
               result.push({
                 date: entry.date.toISOString(),
-                startTime: to24Hour(entry.drFromMinutes),
-                endTime: to24Hour(entry.drToMinutes),
-                minutes: duration,
+                startTime: timeAMPMTo24Hour(entry.drFrom),
+                endTime: timeAMPMTo24Hour(entry.drTo),
+                minutes: endMins - startMins,
                 notes: 'DR',
               })
             }
           }
-          if (entry.svUse && entry.svFromMinutes !== null && entry.svToMinutes !== null) {
-            const duration = durationMinutes(entry.svFromMinutes, entry.svToMinutes)
-            if (duration !== null) {
+          if (entry.svUse && entry.svFrom !== null && entry.svTo !== null) {
+            const startMins = timeAMPMToMinutes(entry.svFrom)
+            const endMins = timeAMPMToMinutes(entry.svTo)
+            if (startMins !== null && endMins !== null && endMins >= startMins) {
               result.push({
                 date: entry.date.toISOString(),
-                startTime: to24Hour(entry.svFromMinutes),
-                endTime: to24Hour(entry.svToMinutes),
-                minutes: duration,
+                startTime: timeAMPMTo24Hour(entry.svFrom),
+                endTime: timeAMPMTo24Hour(entry.svTo),
+                minutes: endMins - startMins,
                 notes: 'SV',
               })
             }
@@ -790,7 +1139,44 @@ export function TimesheetForm({
               />
             </div>
           </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Timezone
+            </label>
+            <select
+              value={timezone}
+              onChange={(e) => {
+                setTimezone(e.target.value)
+                setHasUnsavedChanges(true)
+              }}
+              disabled={timesheet?.status === 'LOCKED'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            >
+              <option value="America/New_York">Eastern Time (America/New_York)</option>
+              <option value="America/Chicago">Central Time (America/Chicago)</option>
+              <option value="America/Denver">Mountain Time (America/Denver)</option>
+              <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+            </select>
+          </div>
         </div>
+
+
+        {/* Auto-save Status */}
+        {!timesheet && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div className="flex items-center">
+              <div className={`h-2 w-2 rounded-full mr-2 ${hasUnsavedChanges ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+              <span className="text-sm text-gray-700">
+                {hasUnsavedChanges ? 'Unsaved changes' : 'All changes saved'}
+              </span>
+            </div>
+            {lastSavedAt && (
+              <span className="text-xs text-gray-500">
+                Last saved: {format(lastSavedAt, 'h:mm a')}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Default Times Section */}
         <div className="bg-white shadow rounded-lg p-6">
@@ -826,34 +1212,34 @@ export function TimesheetForm({
                         {dayType === 'sun' ? 'Sun' : dayType === 'fri' ? 'Fri' : 'Weekdays'}
                       </td>
                       <td className="px-4 py-2">
-                        <TimePartsInput
-                          value={defaults.drFromMinutes}
-                          onChange={(minutes) => updateDefaultTimes(dayType, 'drFrom', minutes)}
-                          placeholder="--:-- AM"
+                        <TimeFieldAMPM
+                          value={defaults.drFrom}
+                          onChange={(time) => updateDefaultTimes(dayType, 'drFrom', time)}
+                          placeholder="--:--"
                           className="justify-center"
                         />
                       </td>
                       <td className="px-4 py-2 border-r">
-                        <TimePartsInput
-                          value={defaults.drToMinutes}
-                          onChange={(minutes) => updateDefaultTimes(dayType, 'drTo', minutes)}
-                          placeholder="--:-- PM"
+                        <TimeFieldAMPM
+                          value={defaults.drTo}
+                          onChange={(time) => updateDefaultTimes(dayType, 'drTo', time)}
+                          placeholder="--:--"
                           className="justify-center"
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <TimePartsInput
-                          value={defaults.svFromMinutes}
-                          onChange={(minutes) => updateDefaultTimes(dayType, 'svFrom', minutes)}
-                          placeholder="--:-- AM"
+                        <TimeFieldAMPM
+                          value={defaults.svFrom}
+                          onChange={(time) => updateDefaultTimes(dayType, 'svFrom', time)}
+                          placeholder="--:--"
                           className="justify-center"
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <TimePartsInput
-                          value={defaults.svToMinutes}
-                          onChange={(minutes) => updateDefaultTimes(dayType, 'svTo', minutes)}
-                          placeholder="--:-- PM"
+                        <TimeFieldAMPM
+                          value={defaults.svTo}
+                          onChange={(time) => updateDefaultTimes(dayType, 'svTo', time)}
+                          placeholder="--:--"
                           className="justify-center"
                         />
                       </td>
@@ -981,7 +1367,6 @@ export function TimesheetForm({
                 <thead>
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">DATE</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">DAY</th>
                     <th colSpan={4} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase border-l border-r">DR</th>
                     <th colSpan={4} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">SV</th>
                     {!timesheet && (
@@ -989,7 +1374,6 @@ export function TimesheetForm({
                     )}
                   </tr>
                   <tr>
-                    <th></th>
                     <th></th>
                     <th className="px-2 py-1 text-xs font-medium text-gray-500 border-l">FROM</th>
                     <th className="px-2 py-1 text-xs font-medium text-gray-500">TO</th>
@@ -1003,71 +1387,111 @@ export function TimesheetForm({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {dayEntries.map((entry, index) => (
-                    <tr key={index}>
+                  {dayEntries.map((entry, index) => {
+                    const drConflict = overlapConflicts.find(c => c.index === index && c.type === 'DR')
+                    const svConflict = overlapConflicts.find(c => c.index === index && c.type === 'SV')
+                    const hasConflict = drConflict || svConflict
+                    
+                    return (
+                    <tr 
+                      key={index} 
+                      ref={(el) => {
+                        if (el && hasConflict) {
+                          conflictRowRefs.current.set(index, el)
+                        } else {
+                          conflictRowRefs.current.delete(index)
+                        }
+                      }}
+                      className={hasConflict ? 'bg-red-50' : ''}
+                    >
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                         {format(entry.date, 'EEE M/d/yyyy')}
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                        {entry.dayName}
-                      </td>
-                      <td className="px-2 py-2 border-l">
-                        <TimePartsInput
-                          value={entry.drFromMinutes}
-                          onChange={(minutes) => updateDayEntry(index, 'drFrom', minutes)}
-                          placeholder="--:-- AM"
-                          className="justify-center"
+                      <td className={`px-2 py-2 border-l ${drConflict ? 'bg-red-100' : ''}`}>
+                        <TimeFieldAMPM
+                          value={entry.drFrom}
+                          onChange={(time) => updateDayEntry(index, 'drFrom', time)}
+                          placeholder="--:--"
+                          className={`justify-center ${drConflict ? 'border-red-500' : ''}`}
+                          disabled={timesheet?.status === 'LOCKED'}
                         />
                       </td>
-                      <td className="px-2 py-2">
-                        <TimePartsInput
-                          value={entry.drToMinutes}
-                          onChange={(minutes) => updateDayEntry(index, 'drTo', minutes)}
-                          placeholder="--:-- PM"
-                          className="justify-center"
+                      <td className={`px-2 py-2 ${drConflict ? 'bg-red-100' : ''}`}>
+                        <TimeFieldAMPM
+                          value={entry.drTo}
+                          onChange={(time) => updateDayEntry(index, 'drTo', time)}
+                          placeholder="--:--"
+                          className={`justify-center ${drConflict ? 'border-red-500' : ''}`}
+                          disabled={timesheet?.status === 'LOCKED'}
                         />
                       </td>
                       <td className="px-2 py-2 text-sm text-gray-700">
-                        {entry.drHours > 0 ? entry.drHours.toFixed(2) : '-'}
+                        {entry.drHours > 0 ? formatHours(entry.drHours) : '-'}
                       </td>
                       <td className="px-2 py-2 border-r">
-                        <input
-                          type="checkbox"
-                          checked={entry.drUse}
-                          onChange={(e) => updateDayEntry(index, 'drUse', e.target.checked)}
-                          className="rounded border-gray-300 text-primary-600"
+                        <div className="flex flex-col items-center">
+                          <input
+                            type="checkbox"
+                            checked={entry.drUse}
+                            onChange={(e) => updateDayEntry(index, 'drUse', e.target.checked)}
+                            disabled={timesheet?.status === 'LOCKED'}
+                            className="rounded border-gray-300 text-primary-600"
+                          />
+                          {entry.drInvoiced && (
+                            <span className="text-xs text-red-600 mt-1" title="Already invoiced">⚠</span>
+                          )}
+                        </div>
+                        {entry.errors.dr && (
+                          <div className="text-xs text-red-600 mt-1">{entry.errors.dr}</div>
+                        )}
+                        {drConflict && (
+                          <div className="text-xs text-red-600 mt-1 font-semibold">Overlap!</div>
+                        )}
+                      </td>
+                      <td className={`px-2 py-2 ${svConflict ? 'bg-red-100' : ''}`}>
+                        <TimeFieldAMPM
+                          value={entry.svFrom}
+                          onChange={(time) => updateDayEntry(index, 'svFrom', time)}
+                          placeholder="--:--"
+                          className={`justify-center ${svConflict ? 'border-red-500' : ''}`}
+                          disabled={timesheet?.status === 'LOCKED'}
                         />
                       </td>
-                      <td className="px-2 py-2">
-                        <TimePartsInput
-                          value={entry.svFromMinutes}
-                          onChange={(minutes) => updateDayEntry(index, 'svFrom', minutes)}
-                          placeholder="--:-- AM"
-                          className="justify-center"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <TimePartsInput
-                          value={entry.svToMinutes}
-                          onChange={(minutes) => updateDayEntry(index, 'svTo', minutes)}
-                          placeholder="--:-- PM"
-                          className="justify-center"
+                      <td className={`px-2 py-2 ${svConflict ? 'bg-red-100' : ''}`}>
+                        <TimeFieldAMPM
+                          value={entry.svTo}
+                          onChange={(time) => updateDayEntry(index, 'svTo', time)}
+                          placeholder="--:--"
+                          className={`justify-center ${svConflict ? 'border-red-500' : ''}`}
+                          disabled={timesheet?.status === 'LOCKED'}
                         />
                       </td>
                       <td className="px-2 py-2 text-sm text-gray-700">
-                        {entry.svHours > 0 ? entry.svHours.toFixed(2) : '-'}
+                        {entry.svHours > 0 ? formatHours(entry.svHours) : '-'}
                       </td>
                       <td className="px-2 py-2">
-                        <input
-                          type="checkbox"
-                          checked={entry.svUse}
-                          onChange={(e) => updateDayEntry(index, 'svUse', e.target.checked)}
-                          className="rounded border-gray-300 text-primary-600"
-                        />
+                        <div className="flex flex-col items-center">
+                          <input
+                            type="checkbox"
+                            checked={entry.svUse}
+                            onChange={(e) => updateDayEntry(index, 'svUse', e.target.checked)}
+                            disabled={timesheet?.status === 'LOCKED'}
+                            className="rounded border-gray-300 text-primary-600"
+                          />
+                          {entry.svInvoiced && (
+                            <span className="text-xs text-red-600 mt-1" title="Already invoiced">⚠</span>
+                          )}
+                        </div>
+                        {entry.errors.sv && (
+                          <div className="text-xs text-red-600 mt-1">{entry.errors.sv}</div>
+                        )}
+                        {svConflict && (
+                          <div className="text-xs text-red-600 mt-1 font-semibold">Overlap!</div>
+                        )}
                       </td>
                       {!timesheet && (
                         <td className="px-2 py-2 text-center">
-                          {entry.isOverridden && (
+                          {(entry.touched.drFrom || entry.touched.drTo || entry.touched.svFrom || entry.touched.svTo) && (
                             <button
                               type="button"
                               onClick={() => resetRowToDefault(index)}
@@ -1080,7 +1504,8 @@ export function TimesheetForm({
                         </td>
                       )}
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1103,7 +1528,7 @@ export function TimesheetForm({
           </Link>
           <button
             type="submit"
-            disabled={loading || dayEntries.length === 0}
+            disabled={loading || dayEntries.length === 0 || overlapConflicts.length > 0}
             className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (timesheet ? 'Updating...' : 'Creating...') : (timesheet ? 'Update Timesheet' : 'Create Timesheet')}

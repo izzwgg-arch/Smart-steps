@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Download, Search, MoreVertical, Edit, Trash2, Eye, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Download, Search, MoreVertical, Edit, Trash2, Eye, FileText, FileSpreadsheet, Zap, Calendar, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { exportToCSV, exportToExcel, formatInvoicesForExport } from '@/lib/exportUtils'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 
 interface Invoice {
   id: string
@@ -36,6 +38,15 @@ export function InvoicesList() {
   const [userRole, setUserRole] = useState<string>('USER')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [billingPeriod, setBillingPeriod] = useState<{
+    current: { startDate: string; endDate: string; label: string }
+    next: { startDate: string; endDate: string; label: string }
+  } | null>(null)
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null)
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null)
+  const [useCustomPeriod, setUseCustomPeriod] = useState(false)
 
   useEffect(() => {
     fetchInvoices()
@@ -44,9 +55,70 @@ export function InvoicesList() {
       .then((data) => {
         if (data?.user?.role) {
           setUserRole(data.user.role)
+          // Load billing period info for admins
+          if (data.user.role === 'ADMIN') {
+            fetchBillingPeriodInfo()
+          }
         }
       })
   }, [page, statusFilter])
+
+  const fetchBillingPeriodInfo = async () => {
+    try {
+      const res = await fetch('/api/invoices/generate')
+      if (res.ok) {
+        const data = await res.json()
+        setBillingPeriod(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch billing period info:', error)
+    }
+  }
+
+  const handleGenerateInvoices = async () => {
+    if (useCustomPeriod && (!customStartDate || !customEndDate)) {
+      toast.error('Please select both start and end dates for custom period')
+      return
+    }
+
+    setGenerating(true)
+    try {
+      const body: any = {}
+      if (useCustomPeriod && customStartDate && customEndDate) {
+        body.startDate = customStartDate.toISOString()
+        body.endDate = customEndDate.toISOString()
+      }
+
+      const res = await fetch('/api/invoices/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        toast.success(
+          `Generated ${data.invoicesCreated} invoice(s) for ${data.clientsProcessed} client(s)`
+        )
+        setShowGenerateModal(false)
+        fetchInvoices() // Refresh list
+        if (data.errors && data.errors.length > 0) {
+          console.warn('Invoice generation warnings:', data.errors)
+        }
+      } else {
+        toast.error(data.message || 'Failed to generate invoices')
+        if (data.errors && data.errors.length > 0) {
+          console.error('Invoice generation errors:', data.errors)
+        }
+      }
+    } catch (error) {
+      toast.error('Failed to generate invoices')
+      console.error('Error generating invoices:', error)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   useEffect(() => {
     const delayDebounce = setTimeout(() => {
@@ -189,6 +261,13 @@ export function InvoicesList() {
                   </div>
                 )}
               </div>
+              <button
+                onClick={() => setShowGenerateModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2"
+              >
+                <Zap className="w-4 h-4" />
+                <span>Generate Invoices</span>
+              </button>
               <Link
                 href="/invoices/new"
                 className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center space-x-2"
@@ -363,6 +442,130 @@ export function InvoicesList() {
           >
             Next
           </button>
+        </div>
+      )}
+
+      {/* Manual Invoice Generation Modal */}
+      {showGenerateModal && userRole === 'ADMIN' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-bold">Generate Invoices</h2>
+              <button
+                onClick={() => setShowGenerateModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Billing Period Info */}
+              {billingPeriod && !useCustomPeriod && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <Calendar className="h-5 w-5 text-blue-600 mt-0.5 mr-3" />
+                    <div>
+                      <h3 className="text-sm font-medium text-blue-800">Current Billing Period</h3>
+                      <p className="mt-1 text-sm text-blue-700">
+                        {billingPeriod.current.label}
+                      </p>
+                      <p className="mt-1 text-xs text-blue-600">
+                        {new Date(billingPeriod.current.startDate).toLocaleDateString()} - {new Date(billingPeriod.current.endDate).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Period Toggle */}
+              <div>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={useCustomPeriod}
+                    onChange={(e) => setUseCustomPeriod(e.target.checked)}
+                    className="rounded border-gray-300 text-primary-600 mr-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Use custom date range</span>
+                </label>
+              </div>
+
+              {/* Custom Date Range */}
+              {useCustomPeriod && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Start Date <span className="text-red-500">*</span>
+                    </label>
+                    <DatePicker
+                      selected={customStartDate}
+                      onChange={(date) => setCustomStartDate(date)}
+                      dateFormat="MM/dd/yyyy"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      placeholderText="mm/dd/yyyy"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      End Date <span className="text-red-500">*</span>
+                    </label>
+                    <DatePicker
+                      selected={customEndDate}
+                      onChange={(date) => setCustomEndDate(date)}
+                      dateFormat="MM/dd/yyyy"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      placeholderText="mm/dd/yyyy"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Info Box */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-yellow-800 mb-2">Invoice Generation Rules</h3>
+                <ul className="text-sm text-yellow-700 space-y-1 list-disc list-inside">
+                  <li>Only APPROVED timesheets are included</li>
+                  <li>Entries already marked as invoiced are excluded</li>
+                  <li>One invoice per Client (aggregates all timesheets for the client)</li>
+                  <li>Billing period: Monday to Monday (whole week)</li>
+                  <li>1 unit = 15 minutes (rounded UP to nearest 15 minutes)</li>
+                  <li>Rate: Insurance rate per unit (snapshotted at generation time)</li>
+                  <li>This operation is idempotent (safe to run multiple times)</li>
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowGenerateModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  disabled={generating}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleGenerateInvoices}
+                  disabled={generating}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {generating ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Generating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      <span>Generate Invoices</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

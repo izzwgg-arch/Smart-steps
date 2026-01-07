@@ -48,51 +48,51 @@ enum AuditAction {
 }
 
 model User {
-  id                String   @id @default(cuid())
-  username          String   @unique
-  email             String   @unique
-  password          String
-  role              UserRole @default(USER)
-  customRoleId      String?
-  active            Boolean  @default(true)
-  activationStart   DateTime?
-  activationEnd     DateTime?
-  resetToken        String?
-  resetTokenExpiry  DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  deletedAt         DateTime?
-  
-  timesheets        Timesheet[]
-  invoicesCreated   Invoice[] @relation("InvoiceCreator")
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  customRole        Role?    @relation(fields: [customRoleId], references: [id])
+  id               String    @id @default(cuid())
+  username         String    @unique
+  email            String    @unique
+  password         String
+  role             UserRole  @default(USER)
+  customRoleId     String?
+  active           Boolean   @default(true)
+  activationStart  DateTime?
+  activationEnd    DateTime?
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  timesheets      Timesheet[]
+  invoicesCreated Invoice[]      @relation("InvoiceCreator")
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  customRole      Role?          @relation(fields: [customRoleId], references: [id])
 }
 
 model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique
+  id          String    @id @default(cuid())
+  name        String    @unique
   description String?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
-  
-  permissions RolePermission[]
+
+  permissions         RolePermission[]
   dashboardVisibility RoleDashboardVisibility[]
-  users       User[]
+  users               User[]
 }
 
 model Permission {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
-  category    String   // e.g., "providers", "clients", "timesheets", "invoices", "users", "reports", "analytics"
+  category    String // e.g., "providers", "clients", "timesheets", "invoices", "users", "reports", "analytics"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  roles       RolePermission[]
+
+  roles RolePermission[]
 }
 
 model RolePermission {
@@ -107,26 +107,26 @@ model RolePermission {
   canExport    Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  
-  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
   @@unique([roleId, permissionId])
 }
 
 model Provider {
-  id          String   @id @default(cuid())
-  name        String
-  email       String?
-  phone       String?
-  signature   String? // Base64 or file path
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deletedAt   DateTime?
-  
-  timesheets  Timesheet[]
-  invoices    InvoiceEntry[]
+  id        String    @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  signature String? // Base64 or file path
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  timesheets Timesheet[]
+  invoices   InvoiceEntry[]
 }
 
 model Client {
@@ -139,90 +139,95 @@ model Client {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
-  
-  insurance   Insurance @relation(fields: [insuranceId], references: [id])
-  timesheets  Timesheet[]
-  invoices    Invoice[]
+
+  insurance  Insurance   @relation(fields: [insuranceId], references: [id])
+  timesheets Timesheet[]
+  invoices   Invoice[]
 }
 
 model BCBA {
-  id          String    @id @default(cuid())
-  name        String
-  email       String?
-  phone       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  
-  timesheets  Timesheet[]
+  id        String    @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  timesheets Timesheet[]
 }
 
 model Insurance {
-  id              String   @id @default(cuid())
-  name            String   @unique
-  ratePerUnit     Decimal  @db.Decimal(10, 2)
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  deletedAt       DateTime?
-  
-  clients         Client[]
-  timesheets      Timesheet[] @relation("TimesheetInsurance")
-  invoiceEntries  InvoiceEntry[]
-  rateHistory     InsuranceRateHistory[]
+  id          String    @id @default(cuid())
+  name        String    @unique
+  ratePerUnit Decimal   @db.Decimal(10, 2)
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  clients        Client[]
+  timesheets     Timesheet[]            @relation("TimesheetInsurance")
+  invoiceEntries InvoiceEntry[]
+  rateHistory    InsuranceRateHistory[]
 }
 
 model InsuranceRateHistory {
-  id           String    @id @default(cuid())
-  insuranceId  String
-  ratePerUnit  Decimal   @db.Decimal(10, 2)
-  effectiveFrom DateTime @default(now())
+  id            String    @id @default(cuid())
+  insuranceId   String
+  ratePerUnit   Decimal   @db.Decimal(10, 2)
+  effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime?
-  createdAt    DateTime  @default(now())
-  
-  insurance    Insurance @relation(fields: [insuranceId], references: [id])
+  createdAt     DateTime  @default(now())
+
+  insurance Insurance @relation(fields: [insuranceId], references: [id])
 }
 
 model Timesheet {
-  id            String          @id @default(cuid())
-  userId        String
-  providerId    String
-  clientId      String
-  bcbaId        String
-  insuranceId   String
-  status        TimesheetStatus @default(DRAFT)
-  startDate     DateTime
-  endDate       DateTime
+  id              String          @id @default(cuid())
+  userId          String
+  providerId      String
+  clientId        String
+  bcbaId          String
+  insuranceId     String
+  status          TimesheetStatus @default(DRAFT)
+  startDate       DateTime
+  endDate         DateTime
+  timezone        String          @default("America/New_York") // IANA timezone identifier
   rejectionReason String?
-  submittedAt   DateTime?
-  approvedAt    DateTime?
-  lockedAt      DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  deletedAt     DateTime?
-  
-  user          User            @relation(fields: [userId], references: [id])
-  provider      Provider        @relation(fields: [providerId], references: [id])
-  client        Client          @relation(fields: [clientId], references: [id])
-  bcba          BCBA            @relation(fields: [bcbaId], references: [id])
-  insurance     Insurance       @relation("TimesheetInsurance", fields: [insuranceId], references: [id])
-  entries       TimesheetEntry[]
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  lockedAt        DateTime?
+  lastEditedBy    String? // User ID who last edited
+  lastEditedAt    DateTime? // Timestamp of last edit
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  user           User             @relation(fields: [userId], references: [id])
+  provider       Provider         @relation(fields: [providerId], references: [id])
+  client         Client           @relation(fields: [clientId], references: [id])
+  bcba           BCBA             @relation(fields: [bcbaId], references: [id])
+  insurance      Insurance        @relation("TimesheetInsurance", fields: [insuranceId], references: [id])
+  entries        TimesheetEntry[]
   invoiceEntries InvoiceEntry[]
 }
 
 model TimesheetEntry {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   timesheetId String
   date        DateTime
-  startTime   String // HH:mm format
-  endTime     String // HH:mm format
+  startTime   String // HH:mm format (24-hour)
+  endTime     String // HH:mm format (24-hour)
   minutes     Int
-  units       Decimal   @db.Decimal(10, 2) // minutes / 15
+  units       Decimal  @db.Decimal(10, 2) // minutes / 15, rounded up
   notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  timesheet  Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  overnight   Boolean  @default(false) // True if session crosses midnight
+  invoiced    Boolean  @default(false) // True if included in an invoice
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
 }
 
 model Invoice {
@@ -233,8 +238,8 @@ model Invoice {
   startDate       DateTime
   endDate         DateTime
   totalAmount     Decimal       @db.Decimal(10, 2)
-  paidAmount      Decimal       @db.Decimal(10, 2) @default(0)
-  adjustments     Decimal       @db.Decimal(10, 2) @default(0)
+  paidAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  adjustments     Decimal       @default(0) @db.Decimal(10, 2)
   outstanding     Decimal       @db.Decimal(10, 2)
   checkNumber     String?
   notes           String?
@@ -245,69 +250,69 @@ model Invoice {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   deletedAt       DateTime?
-  
-  client          Client        @relation(fields: [clientId], references: [id])
-  creator         User          @relation("InvoiceCreator", fields: [createdBy], references: [id])
-  parentInvoice   Invoice?      @relation("InvoiceVersion", fields: [parentInvoiceId], references: [id])
-  versions        Invoice[]     @relation("InvoiceVersion")
+
+  client          Client              @relation(fields: [clientId], references: [id])
+  creator         User                @relation("InvoiceCreator", fields: [createdBy], references: [id])
+  parentInvoice   Invoice?            @relation("InvoiceVersion", fields: [parentInvoiceId], references: [id])
+  versions        Invoice[]           @relation("InvoiceVersion")
   entries         InvoiceEntry[]
   payments        Payment[]
   adjustmentsList InvoiceAdjustment[]
 }
 
 model InvoiceEntry {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   invoiceId   String
   timesheetId String
   providerId  String
   insuranceId String
-  units       Decimal   @db.Decimal(10, 2)
-  rate        Decimal   @db.Decimal(10, 2) // Rate at time of invoice creation
-  amount      Decimal   @db.Decimal(10, 2)
-  createdAt   DateTime  @default(now())
-  
-  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  timesheet   Timesheet @relation(fields: [timesheetId], references: [id])
-  provider    Provider  @relation(fields: [providerId], references: [id])
-  insurance   Insurance @relation(fields: [insuranceId], references: [id])
+  units       Decimal  @db.Decimal(10, 2)
+  rate        Decimal  @db.Decimal(10, 2) // Rate at time of invoice creation
+  amount      Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+
+  invoice   Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+  provider  Provider  @relation(fields: [providerId], references: [id])
+  insurance Insurance @relation(fields: [insuranceId], references: [id])
 }
 
 model Payment {
-  id            String   @id @default(cuid())
-  invoiceId     String
-  amount        Decimal  @db.Decimal(10, 2)
-  paymentDate   DateTime
+  id              String    @id @default(cuid())
+  invoiceId       String
+  amount          Decimal   @db.Decimal(10, 2)
+  paymentDate     DateTime
   referenceNumber String?
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  deletedAt     DateTime?
-  
-  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
 }
 
 model InvoiceAdjustment {
-  id          String   @id @default(cuid())
-  invoiceId   String
-  amount      Decimal  @db.Decimal(10, 2) // Can be positive or negative
-  reason      String
-  createdAt   DateTime @default(now())
-  createdBy   String
-  
-  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  invoiceId String
+  amount    Decimal  @db.Decimal(10, 2) // Can be positive or negative
+  reason    String
+  createdAt DateTime @default(now())
+  createdBy String
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {
-  id          String      @id @default(cuid())
-  action      AuditAction
-  entity      String // Model name
-  entityId    String
-  userId      String
-  oldValues   String? // JSON
-  newValues   String? // JSON
-  createdAt   DateTime    @default(now())
-  
-  user        User        @relation(fields: [userId], references: [id])
+  id        String      @id @default(cuid())
+  action    AuditAction
+  entity    String // Model name
+  entityId  String
+  userId    String
+  oldValues String? // JSON
+  newValues String? // JSON
+  createdAt DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Notification {
@@ -317,30 +322,30 @@ model Notification {
   message   String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
-  
-  user      User     @relation(fields: [userId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model ScheduledJob {
-  id          String   @id @default(cuid())
-  jobType     String // 'INVOICE_GENERATION'
-  schedule    String // Cron expression
-  lastRun     DateTime?
-  nextRun     DateTime
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String    @id @default(cuid())
+  jobType   String // 'INVOICE_GENERATION'
+  schedule  String // Cron expression
+  lastRun   DateTime?
+  nextRun   DateTime
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model RoleDashboardVisibility {
-  id          String   @id @default(cuid())
-  roleId      String
-  section     String   // e.g., "quickAccess.users", "quickAccess.analytics", "sections.pendingApprovals", "sections.recentActivity", "sections.recentInvoices"
-  visible     Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  
+  id        String   @id @default(cuid())
+  roleId    String
+  section   String // e.g., "quickAccess.users", "quickAccess.analytics", "sections.pendingApprovals", "sections.recentActivity", "sections.recentInvoices"
+  visible   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
   @@unique([roleId, section])
 }

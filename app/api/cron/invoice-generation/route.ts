@@ -69,8 +69,8 @@ export async function GET() {
     // Return basic info about the job
     return NextResponse.json({
       job: 'invoice-generation',
-      schedule: 'Every Friday at 4:00 PM ET',
-      cronExpression: '0 16 * * 5',
+      schedule: 'Every Tuesday at 7:00 AM ET',
+      cronExpression: '0 7 * * 2',
       timezone: 'America/New_York',
       status: 'active',
     })

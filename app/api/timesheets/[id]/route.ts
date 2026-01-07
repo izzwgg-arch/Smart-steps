@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
+import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
 
 export async function GET(
   request: NextRequest,
@@ -65,7 +66,13 @@ export async function PUT(
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
 
-    // Only DRAFT timesheets can be edited
+    // Only DRAFT timesheets can be edited (LOCKED timesheets cannot be edited)
+    if (timesheet.status === 'LOCKED') {
+      return NextResponse.json(
+        { error: 'Locked timesheets cannot be edited' },
+        { status: 400 }
+      )
+    }
     if (timesheet.status !== 'DRAFT') {
       return NextResponse.json(
         { error: 'Only draft timesheets can be edited' },
@@ -120,9 +127,10 @@ export async function PUT(
         )
       }
 
-      // Validate minutes matches calculated duration
       const calculatedMinutes = endMinutes - startMinutes
-      if (entry.minutes !== calculatedMinutes) {
+
+      // Validate minutes matches calculated duration (allow small rounding differences)
+      if (Math.abs(entry.minutes - calculatedMinutes) > 1) {
         return NextResponse.json(
           { error: `Minutes mismatch. Expected ${calculatedMinutes}, got ${entry.minutes}` },
           { status: 400 }
@@ -137,6 +145,31 @@ export async function PUT(
       }
     }
 
+    // Overlap validation (provider OR client OR both), excluding the current timesheet
+    const providerId = timesheetData.providerId || timesheet.providerId
+    const clientId = timesheetData.clientId || timesheet.clientId
+
+    const [provider, client] = await Promise.all([
+      prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } }),
+      prisma.client.findUnique({ where: { id: clientId }, select: { name: true } }),
+    ])
+
+    const overlapConflicts = await detectTimesheetOverlaps({
+      providerId,
+      clientId,
+      providerName: provider?.name || 'Unknown Provider',
+      clientName: client?.name || 'Unknown Client',
+      entries,
+      excludeTimesheetId: params.id,
+    })
+
+    if (overlapConflicts.length > 0) {
+      return NextResponse.json(
+        { error: 'Overlap conflicts detected', code: 'OVERLAP_CONFLICT', conflicts: overlapConflicts },
+        { status: 400 }
+      )
+    }
+
     // Update timesheet
     const updated = await prisma.$transaction(async (tx) => {
       // Delete existing entries
@@ -149,15 +182,23 @@ export async function PUT(
         where: { id: params.id },
         data: {
           ...timesheetData,
+          lastEditedBy: session.user.id,
+          lastEditedAt: new Date(),
           entries: {
-            create: entries.map((entry: any) => ({
-              date: new Date(entry.date),
-              startTime: entry.startTime, // Already validated as HH:mm
-              endTime: entry.endTime, // Already validated as HH:mm
-              minutes: entry.minutes, // Already validated
-              units: calculateUnits(entry.minutes),
-              notes: entry.notes || null,
-            })),
+            create: entries.map((entry: any) => {
+              // Calculate units (1 unit = 15 minutes, no rounding)
+              const units = entry.minutes / 15
+              
+              return {
+                date: new Date(entry.date),
+                startTime: entry.startTime, // Already validated as HH:mm
+                endTime: entry.endTime, // Already validated as HH:mm
+                minutes: entry.minutes, // Store actual minutes
+                units: units, // Store units (1 unit = 15 minutes)
+                notes: entry.notes || null,
+                invoiced: entry.invoiced || false,
+              }
+            }),
           },
         },
         include: {

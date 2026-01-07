@@ -7,6 +7,7 @@ import { ArrowLeft, Plus, DollarSign, Edit, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { format } from 'date-fns'
+import { to12Hour } from '@/lib/dateUtils'
 
 interface InvoiceDetailProps {
   invoiceId: string
@@ -42,6 +43,18 @@ interface Invoice {
     timesheet: {
       startDate: string
       endDate: string
+      bcba: {
+        name: string
+      }
+      entries: Array<{
+        id: string
+        date: string
+        startTime: string
+        endTime: string
+        minutes: number
+        units: number | string
+        notes: string | null
+      }>
     }
   }>
   payments: Array<{
@@ -156,7 +169,10 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                     <span>Edit</span>
                   </Link>
                 )}
-                <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 flex items-center space-x-2">
+                <button 
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 flex items-center space-x-2"
+                >
                   <Printer className="w-4 h-4" />
                   <span>Print</span>
                 </button>
@@ -188,6 +204,24 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                   {format(new Date(invoice.endDate), 'MMM d, yyyy')}
                 </p>
               </div>
+              <div>
+                <label className="text-sm text-gray-500">Provider(s)</label>
+                <p className="font-medium">
+                  {Array.from(
+                    new Set(invoice.entries.map((e) => e.provider.name))
+                  ).join(', ')}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-500">BCBA(s)</label>
+                <p className="font-medium">
+                  {Array.from(
+                    new Set(
+                      invoice.entries.map((e) => e.timesheet.bcba?.name || 'N/A')
+                    )
+                  ).join(', ')}
+                </p>
+              </div>
               {invoice.checkNumber && (
                 <div>
                   <label className="text-sm text-gray-500">Check Number</label>
@@ -203,50 +237,180 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
             )}
           </div>
 
-          {/* Entries */}
+          {/* Entries - Detailed Line Items */}
           <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-4">Invoice Entries</h2>
+            <h2 className="text-lg font-semibold mb-4">Invoice Line Items</h2>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead>
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                      Provider
+                      Date
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                      Period
+                      Day
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                      Provider
+                    </th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
+                      DR From/To
+                    </th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
+                      SV From/To
+                    </th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                      Minutes
                     </th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                       Units
                     </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      Rate
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      Amount
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {invoice.entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="px-4 py-2 text-sm">{entry.provider.name}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {format(new Date(entry.timesheet.startDate), 'MMM d')} -{' '}
-                        {format(new Date(entry.timesheet.endDate), 'MMM d')}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-right">
-                        {parseFloat(entry.units.toString()).toFixed(2)}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-right">
-                        {formatCurrency(entry.rate)}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-right font-medium">
-                        {formatCurrency(entry.amount)}
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    // Flatten all timesheet entries and group by date
+                    const allEntries: Array<{
+                      date: Date
+                      dayName: string
+                      provider: string
+                      drFrom: string | null
+                      drTo: string | null
+                      svFrom: string | null
+                      svTo: string | null
+                      drMinutes: number
+                      svMinutes: number
+                      drUnits: number
+                      svUnits: number
+                    }> = []
+
+                    invoice.entries.forEach((invoiceEntry) => {
+                      invoiceEntry.timesheet.entries.forEach((tsEntry) => {
+                        const entryDate = new Date(tsEntry.date)
+                        const dayName = format(entryDate, 'EEE').toLowerCase()
+                        
+                        // Find or create entry for this date
+                        let dateEntry = allEntries.find(
+                          (e) => format(e.date, 'yyyy-MM-dd') === format(entryDate, 'yyyy-MM-dd')
+                        )
+
+                        if (!dateEntry) {
+                          dateEntry = {
+                            date: entryDate,
+                            dayName,
+                            provider: invoiceEntry.provider.name,
+                            drFrom: null,
+                            drTo: null,
+                            svFrom: null,
+                            svTo: null,
+                            drMinutes: 0,
+                            svMinutes: 0,
+                            drUnits: 0,
+                            svUnits: 0,
+                          }
+                          allEntries.push(dateEntry)
+                        }
+
+                        // Add DR or SV entry
+                        if (tsEntry.notes === 'DR') {
+                          dateEntry.drFrom = to12Hour(tsEntry.startTime)
+                          dateEntry.drTo = to12Hour(tsEntry.endTime)
+                          dateEntry.drMinutes = tsEntry.minutes
+                          dateEntry.drUnits = parseFloat(tsEntry.units.toString())
+                        } else if (tsEntry.notes === 'SV') {
+                          dateEntry.svFrom = to12Hour(tsEntry.startTime)
+                          dateEntry.svTo = to12Hour(tsEntry.endTime)
+                          dateEntry.svMinutes = tsEntry.minutes
+                          dateEntry.svUnits = parseFloat(tsEntry.units.toString())
+                        }
+                      })
+                    })
+
+                    // Sort by date
+                    allEntries.sort((a, b) => a.date.getTime() - b.date.getTime())
+
+                    return allEntries.map((entry, index) => (
+                      <tr key={index}>
+                        <td className="px-4 py-2 text-sm">
+                          {format(entry.date, 'M/d/yyyy')}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-500 capitalize">
+                          {entry.dayName}
+                        </td>
+                        <td className="px-4 py-2 text-sm">{entry.provider}</td>
+                        <td className="px-4 py-2 text-sm text-center">
+                          {entry.drFrom && entry.drTo ? (
+                            <span>
+                              {entry.drFrom} - {entry.drTo}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-center">
+                          {entry.svFrom && entry.svTo ? (
+                            <span>
+                              {entry.svFrom} - {entry.svTo}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-right">
+                          {entry.drMinutes + entry.svMinutes}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-right">
+                          {(entry.drUnits + entry.svUnits).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))
+                  })()}
                 </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
+                      Totals:
+                    </td>
+                    <td className="px-4 py-2 text-sm font-semibold text-right">
+                      {(() => {
+                        let totalMinutes = 0
+                        invoice.entries.forEach((entry) => {
+                          entry.timesheet.entries.forEach((tsEntry) => {
+                            totalMinutes += tsEntry.minutes
+                          })
+                        })
+                        return totalMinutes
+                      })()}
+                    </td>
+                    <td className="px-4 py-2 text-sm font-semibold text-right">
+                      {(() => {
+                        let totalUnits = 0
+                        invoice.entries.forEach((entry) => {
+                          entry.timesheet.entries.forEach((tsEntry) => {
+                            totalUnits += parseFloat(tsEntry.units.toString())
+                          })
+                        })
+                        return totalUnits.toFixed(2)
+                      })()}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
+                      Rate per Unit:
+                    </td>
+                    <td colSpan={2} className="px-4 py-2 text-sm font-semibold text-right">
+                      {formatCurrency(invoice.entries[0]?.rate || 0)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
+                      Total Amount Due:
+                    </td>
+                    <td colSpan={2} className="px-4 py-2 text-sm font-bold text-right text-primary-600">
+                      {formatCurrency(invoice.totalAmount)}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

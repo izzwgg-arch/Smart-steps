@@ -47,9 +47,18 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
   const formatTime = (time: string): string => {
     if (!time || time === '--:--') return ''
     const [hours, minutes] = time.split(':')
-    const hour = parseInt(hours)
+    const hour = parseInt(hours, 10)
+    if (isNaN(hour)) return ''
+    
     const ampm = hour >= 12 ? 'PM' : 'AM'
-    const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour
+    let displayHour = hour
+    if (hour === 0) {
+      displayHour = 12 // 00:xx = 12:xx AM
+    } else if (hour > 12) {
+      displayHour = hour - 12 // 13:xx = 1:xx PM
+    }
+    // hour === 12 stays as 12 (12:xx PM)
+    
     return `${displayHour}:${minutes.padStart(2, '0')} ${ampm}`
   }
 
@@ -108,8 +117,8 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
             {/* Period */}
             <div className="mb-4">
               <span className="font-semibold">Period:</span>{' '}
-              {format(new Date(timesheet.startDate), 'EEE M/d/yyyy')} -{' '}
-              {format(new Date(timesheet.endDate), 'EEE M/d/yyyy')}
+              {format(new Date(timesheet.startDate), 'EEE M/d/yyyy').toLowerCase()} -{' '}
+              {format(new Date(timesheet.endDate), 'EEE M/d/yyyy').toLowerCase()}
             </div>
 
             {/* Table */}
@@ -144,7 +153,7 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                       return (
                         <tr key={index}>
                           <td className="border border-gray-800 px-4 py-2">
-                            {showDate ? format(entryDate, 'EEE M/d/yyyy') : ''}
+                            {showDate ? format(entryDate, 'EEE M/d/yyyy').toLowerCase() : ''}
                           </td>
                           <td className="border border-gray-800 px-4 py-2">
                             {formatTime(entry.startTime)}

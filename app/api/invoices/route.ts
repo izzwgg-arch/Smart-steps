@@ -212,6 +212,17 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      // Mark all timesheet entries as invoiced
+      const timesheetEntryIds = timesheets.flatMap(ts => ts.entries.map((e: any) => e.id))
+      await tx.timesheetEntry.updateMany({
+        where: {
+          id: { in: timesheetEntryIds },
+        },
+        data: {
+          invoiced: true,
+        },
+      })
+
       // Lock timesheets
       await tx.timesheet.updateMany({
         where: {

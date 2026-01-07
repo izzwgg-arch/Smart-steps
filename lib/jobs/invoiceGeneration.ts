@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
+import { calculateWeeklyBillingPeriod, formatBillingPeriod } from '@/lib/billingPeriodUtils'
 
 export interface InvoiceGenerationResult {
   success: boolean
@@ -9,10 +10,18 @@ export interface InvoiceGenerationResult {
 }
 
 /**
- * Generate invoices automatically for all approved, unlocked timesheets.
- * Groups timesheets by client and creates one invoice per client.
+ * Generate invoices automatically for approved timesheets in the weekly billing period.
+ * 
+ * Billing Period: Monday 12:00 AM → Monday 11:59 PM (whole week, Monday to Monday)
+ * Groups by Client (one invoice per client)
+ * Uses rounding policy: Round UP to nearest 15 minutes
+ * Rate: Insurance rate per unit (1 unit = 15 minutes)
+ * 
+ * This function is idempotent - safe to run multiple times without creating duplicates.
  */
-export async function generateInvoicesForApprovedTimesheets(): Promise<InvoiceGenerationResult> {
+export async function generateInvoicesForApprovedTimesheets(
+  customBillingPeriod?: { startDate: Date; endDate: Date }
+): Promise<InvoiceGenerationResult> {
   const result: InvoiceGenerationResult = {
     success: true,
     invoicesCreated: 0,
@@ -21,34 +30,80 @@ export async function generateInvoicesForApprovedTimesheets(): Promise<InvoiceGe
   }
 
   try {
-    // Find all approved timesheets that haven't been invoiced yet
+    // Calculate billing period
+    const calculatedPeriod = calculateWeeklyBillingPeriod()
+    const billingPeriod = customBillingPeriod 
+      ? { 
+          startDate: customBillingPeriod.startDate, 
+          endDate: customBillingPeriod.endDate,
+          periodLabel: formatBillingPeriod(customBillingPeriod.startDate, customBillingPeriod.endDate)
+        }
+      : calculatedPeriod
+    const { startDate, endDate, periodLabel } = billingPeriod
+
+    console.log(`[INVOICE GENERATION] Starting for billing period: ${periodLabel}`)
+    console.log(`[INVOICE GENERATION] Period: ${startDate.toISOString()} to ${endDate.toISOString()}`)
+
+    // Find all approved timesheets in the billing period that haven't been fully invoiced
+    // Only include entries that are NOT already invoiced
     const approvedTimesheets = await prisma.timesheet.findMany({
       where: {
         status: 'APPROVED',
-        lockedAt: null, // Not already invoiced
         deletedAt: null,
+        // Timesheet must overlap with billing period
+        OR: [
+          {
+            AND: [
+              { startDate: { lte: endDate } },
+              { endDate: { gte: startDate } },
+            ],
+          },
+        ],
+        // Must have at least one non-invoiced entry
+        entries: {
+          some: {
+            invoiced: false,
+            date: {
+              gte: startDate,
+              lte: endDate,
+            },
+          },
+        },
       },
       include: {
-        entries: true,
+        entries: {
+          where: {
+            // Only include entries in the billing period that are not invoiced
+            date: {
+              gte: startDate,
+              lte: endDate,
+            },
+            invoiced: false,
+          },
+        },
         insurance: true,
         provider: true,
         client: true,
       },
       orderBy: [
         { clientId: 'asc' },
+        { insuranceId: 'asc' },
         { startDate: 'asc' },
       ],
     })
 
     if (approvedTimesheets.length === 0) {
-      console.log('No approved timesheets found for invoice generation')
+      console.log(`[INVOICE GENERATION] No approved timesheets with non-invoiced entries found for period: ${periodLabel}`)
       return result
     }
 
-    // Group timesheets by client
+    // Group timesheets by Client (one invoice per client)
     const timesheetsByClient = new Map<string, typeof approvedTimesheets>()
     
     for (const timesheet of approvedTimesheets) {
+      // Skip if no eligible entries
+      if (timesheet.entries.length === 0) continue
+      
       const clientId = timesheet.clientId
       if (!timesheetsByClient.has(clientId)) {
         timesheetsByClient.set(clientId, [])
@@ -60,15 +115,19 @@ export async function generateInvoicesForApprovedTimesheets(): Promise<InvoiceGe
 
     const invoicesCreated: any[] = []
 
-    // Process each client
-    for (const [clientId, clientTimesheets] of timesheetsByClient) {
+    // Process each Client (one invoice per client)
+    for (const [clientId, timesheets] of timesheetsByClient) {
       try {
-        const invoice = await generateInvoiceForClient(clientId, clientTimesheets)
+        const invoice = await generateInvoiceForClient(
+          clientId,
+          timesheets,
+          billingPeriod
+        )
         invoicesCreated.push(invoice)
         result.invoicesCreated++
       } catch (error) {
         const errorMessage = `Failed to generate invoice for client ${clientId}: ${error instanceof Error ? error.message : 'Unknown error'}`
-        console.error(errorMessage, error)
+        console.error(`[INVOICE GENERATION] ${errorMessage}`, error)
         result.errors.push(errorMessage)
         result.success = false
       }
@@ -97,62 +156,80 @@ export async function generateInvoicesForApprovedTimesheets(): Promise<InvoiceGe
 type TimesheetWithRelations = Awaited<ReturnType<typeof prisma.timesheet.findMany>>[0] & {
   entries: Array<{
     id: string
+    date: Date
+    startTime: string
+    endTime: string
+    minutes: number
     units: Decimal
+    notes: string | null
+    overnight: boolean
+    invoiced: boolean
   }>
   insurance: {
+    id: string
+    name: string
     ratePerUnit: Decimal
   }
   provider: {
     id: string
+    name: string
   }
   client: {
     id: string
+    name: string
   }
 }
 
 /**
- * Generate a single invoice for a client's approved timesheets
+ * Generate a single invoice for a Client
+ * 
+ * Aggregates all timesheets for the client within the billing period.
+ * Uses insurance rate per unit (1 unit = 15 minutes).
+ * 
+ * This function is idempotent - it checks for existing invoices before creating new ones.
  */
 async function generateInvoiceForClient(
   clientId: string,
-  timesheets: TimesheetWithRelations[]
+  timesheets: TimesheetWithRelations[],
+  billingPeriod: { startDate: Date; endDate: Date; periodLabel: string }
 ) {
   if (timesheets.length === 0) {
     throw new Error('No timesheets provided')
   }
 
-  // Find the date range covering all timesheets
-  const dates = timesheets.flatMap(ts => [ts.startDate, ts.endDate])
-  const startDate = new Date(Math.min(...dates.map(d => d.getTime())))
-  const endDate = new Date(Math.max(...dates.map(d => d.getTime())))
+  // Use the billing period dates
+  const { startDate, endDate, periodLabel } = billingPeriod
 
-  // Check if an invoice already exists for this client and date range
+  // IDEMPOTENCY CHECK: Check if an invoice already exists for this client + billing period
   const existingInvoice = await prisma.invoice.findFirst({
     where: {
       clientId,
       deletedAt: null,
-      OR: [
-        {
-          AND: [
-            { startDate: { lte: endDate } },
-            { endDate: { gte: startDate } },
-          ],
-        },
-      ],
+      // Check if invoice covers the same billing period (within 1 day tolerance)
+      startDate: {
+        gte: new Date(startDate.getTime() - 24 * 60 * 60 * 1000), // 1 day before
+        lte: new Date(startDate.getTime() + 24 * 60 * 60 * 1000), // 1 day after
+      },
+      endDate: {
+        gte: new Date(endDate.getTime() - 24 * 60 * 60 * 1000),
+        lte: new Date(endDate.getTime() + 24 * 60 * 60 * 1000),
+      },
     },
   })
 
   if (existingInvoice) {
-    // Check if any of these timesheets are already in an invoice
-    const timesheetIds = timesheets.map(ts => ts.id)
-    const existingEntries = await prisma.invoiceEntry.findMany({
+    // Check if all eligible entries are already invoiced
+    const timesheetEntryIds = timesheets.flatMap(ts => ts.entries.map(e => e.id))
+    const alreadyInvoiced = await prisma.timesheetEntry.findMany({
       where: {
-        timesheetId: { in: timesheetIds },
+        id: { in: timesheetEntryIds },
+        invoiced: true,
       },
     })
 
-    if (existingEntries.length > 0) {
-      throw new Error(`Some timesheets are already included in invoice ${existingInvoice.invoiceNumber}`)
+    if (alreadyInvoiced.length === timesheetEntryIds.length) {
+      console.log(`[INVOICE GENERATION] All entries already invoiced for client ${clientId} in period ${periodLabel}`)
+      throw new Error(`Invoice already exists for this billing period: ${existingInvoice.invoiceNumber}`)
     }
   }
 
@@ -175,30 +252,82 @@ async function generateInvoiceForClient(
     invoiceCount + 1
   ).padStart(5, '0')}`
 
-  // Calculate totals
+  // Get client to find their insurance
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    include: { insurance: true },
+  })
+
+  if (!client) {
+    throw new Error(`Client ${clientId} not found`)
+  }
+
+  // Get insurance rate (snapshot at generation time)
+  // All timesheets for a client should have the same insurance, but we'll use the client's insurance
+  const insurance = client.insurance
+  const ratePerUnit = parseFloat(insurance.ratePerUnit.toString())
+  if (isNaN(ratePerUnit) || ratePerUnit < 0) {
+    throw new Error(`Invalid insurance rate: ${insurance.ratePerUnit}`)
+  }
+
+  // Calculate totals using rounding policy (round UP to nearest 15 minutes)
+  // 1 unit = 15 minutes
   let totalAmount = new Decimal(0)
+  let totalMinutes = 0
+  let totalUnits = 0
   const invoiceEntries: any[] = []
 
   for (const timesheet of timesheets) {
-    const rate = parseFloat(timesheet.insurance.ratePerUnit.toString())
-
     for (const entry of timesheet.entries) {
-      const amount = new Decimal(entry.units.toString()).times(rate)
+      // Use the stored minutes (already calculated with rounding policy)
+      const minutes = entry.minutes
+      
+      // Calculate units: 1 unit = 15 minutes (no rounding)
+      // Units are stored directly from timesheet entries
+      const units = minutes / 15
+      
+      // Calculate amount using snapshot rate (rate per unit)
+      const amount = new Decimal(units).times(ratePerUnit)
+      
+      // Guard against NaN
+      if (isNaN(minutes) || isNaN(units) || isNaN(amount.toNumber())) {
+        console.error(`[INVOICE GENERATION] Invalid calculation for entry ${entry.id}: minutes=${minutes}, units=${units}`)
+        throw new Error(`Invalid calculation for timesheet entry ${entry.id}`)
+      }
+
       totalAmount = totalAmount.plus(amount)
+      totalMinutes += minutes
+      totalUnits += units
 
       invoiceEntries.push({
         timesheetId: timesheet.id,
         providerId: timesheet.providerId,
         insuranceId: timesheet.insuranceId,
-        units: entry.units,
-        rate: rate,
+        units: new Decimal(units),
+        rate: ratePerUnit, // Snapshot rate per unit
         amount: amount,
       })
     }
   }
 
-  // Create invoice and lock timesheets in a transaction
+  if (invoiceEntries.length === 0) {
+    throw new Error('No eligible entries found for invoice generation')
+  }
+
+  // Create invoice and lock timesheets in a transaction (atomic operation)
+  // If any step fails, the entire transaction is rolled back
   const newInvoice = await prisma.$transaction(async (tx) => {
+    // Validate we have entries before creating invoice
+    if (invoiceEntries.length === 0) {
+      throw new Error('No eligible entries found for invoice generation')
+    }
+
+    // Validate totals are not NaN
+    if (isNaN(totalAmount.toNumber()) || isNaN(totalUnits) || isNaN(totalMinutes)) {
+      throw new Error(`Invalid totals calculated: amount=${totalAmount}, units=${totalUnits}, minutes=${totalMinutes}`)
+    }
+
+    // Create invoice
     const invoice = await tx.invoice.create({
       data: {
         invoiceNumber,
@@ -217,20 +346,41 @@ async function generateInvoiceForClient(
       },
     })
 
-    // Lock all timesheets included in this invoice
-    await tx.timesheet.updateMany({
-      where: {
-        id: { in: timesheets.map((t) => t.id) },
-      },
-      data: {
-        status: 'LOCKED',
-        lockedAt: new Date(),
-      },
-    })
+    // Mark all timesheet entries as invoiced (prevents double billing)
+    const timesheetEntryIds = timesheets.flatMap(ts => ts.entries.map(e => e.id))
+    if (timesheetEntryIds.length > 0) {
+      await tx.timesheetEntry.updateMany({
+        where: {
+          id: { in: timesheetEntryIds },
+        },
+        data: {
+          invoiced: true,
+        },
+      })
+    }
 
-    console.log(`Generated invoice ${invoiceNumber} for client ${clientId} with ${timesheets.length} timesheets`)
+    // Lock all timesheets included in this invoice (prevents further edits)
+    const timesheetIds = timesheets.map((t) => t.id)
+    if (timesheetIds.length > 0) {
+      await tx.timesheet.updateMany({
+        where: {
+          id: { in: timesheetIds },
+        },
+        data: {
+          status: 'LOCKED',
+          lockedAt: new Date(),
+        },
+      })
+    }
+
+    console.log(
+      `[INVOICE GENERATION] Generated invoice ${invoiceNumber} for client ${clientId} ` +
+      `(${timesheets.length} timesheets, ${invoiceEntries.length} entries, ${totalMinutes} minutes, ${totalUnits.toFixed(2)} units, $${totalAmount.toFixed(2)})`
+    )
     
     return invoice
+  }, {
+    timeout: 30000, // 30 second timeout for large transactions
   })
 
   return newInvoice

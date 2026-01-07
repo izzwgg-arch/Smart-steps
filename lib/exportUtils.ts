@@ -83,10 +83,8 @@ export function formatClientsForExport(clients: any[]) {
 export function formatTimesheetsForExport(timesheets: any[]) {
   return timesheets.map((ts) => {
     const totalMinutes = ts.entries?.reduce((sum: number, e: any) => sum + e.minutes, 0) || 0
-    const totalUnits = ts.entries?.reduce((sum: number, e: any) => sum + Number(e.units), 0) || 0
     
     return {
-      ID: ts.id,
       Client: ts.client?.name || '',
       Provider: ts.provider?.name || '',
       BCBA: ts.bcba?.name || '',
@@ -94,10 +92,67 @@ export function formatTimesheetsForExport(timesheets: any[]) {
       'End Date': formatDate(ts.endDate),
       Status: ts.status,
       'Total Hours': (totalMinutes / 60).toFixed(2),
-      'Total Units': totalUnits.toFixed(2),
       'Created Date': formatDate(ts.createdAt),
     }
   })
+}
+
+/**
+ * Format a single timesheet with detailed entries for export
+ */
+export function formatTimesheetForDetailedExport(timesheet: any) {
+  const rows: any[] = []
+  
+  // Header row with timesheet info
+  rows.push({
+    'Client': timesheet.client?.name || '',
+    'Provider': timesheet.provider?.name || '',
+    'BCBA': timesheet.bcba?.name || '',
+    'Insurance': timesheet.insurance?.name || '',
+    'Start Date': formatDate(timesheet.startDate),
+    'End Date': formatDate(timesheet.endDate),
+    'Timezone': timesheet.timezone || 'America/New_York',
+    'Status': timesheet.status,
+    'Created Date': formatDate(timesheet.createdAt),
+    'Last Edited': timesheet.lastEditedAt ? formatDate(timesheet.lastEditedAt) : '',
+  })
+  
+  // Empty row
+  rows.push({})
+  
+  // Entry rows
+  if (timesheet.entries && timesheet.entries.length > 0) {
+    rows.push({
+      'Date': 'Date',
+      'Type': 'Type',
+      'Start Time': 'Start Time',
+      'End Time': 'End Time',
+      'Hours': 'Hours',
+      'Invoiced': 'Invoiced',
+    })
+    
+    timesheet.entries.forEach((entry: any) => {
+      // Format times to 12-hour with AM/PM
+      const formatTime12Hour = (time24: string) => {
+        if (!time24 || time24 === '--:--') return ''
+        const [hours, minutes] = time24.split(':').map(Number)
+        const hour12 = hours % 12 || 12
+        const ampm = hours >= 12 ? 'PM' : 'AM'
+        return `${hour12}:${minutes.toString().padStart(2, '0')} ${ampm}`
+      }
+      
+      rows.push({
+        'Date': formatDate(entry.date),
+        'Type': entry.notes || '',
+        'Start Time': formatTime12Hour(entry.startTime),
+        'End Time': formatTime12Hour(entry.endTime),
+        'Hours': (entry.minutes / 60).toFixed(2),
+        'Invoiced': entry.invoiced ? 'Yes' : 'No',
+      })
+    })
+  }
+  
+  return rows
 }
 
 /**

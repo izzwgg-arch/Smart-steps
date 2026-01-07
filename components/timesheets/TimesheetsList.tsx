@@ -7,7 +7,7 @@ import { Plus, Download, Search, MoreVertical, Printer, Edit, Trash2, Send, Chec
 import toast from 'react-hot-toast'
 import { formatDate } from '@/lib/utils'
 import { TimesheetPrintPreview } from './TimesheetPrintPreview'
-import { exportToCSV, exportToExcel, formatTimesheetsForExport } from '@/lib/exportUtils'
+import { exportToCSV, exportToExcel, formatTimesheetsForExport, formatTimesheetForDetailedExport } from '@/lib/exportUtils'
 
 interface Timesheet {
   id: string
@@ -356,6 +356,46 @@ export function TimesheetsList() {
                           >
                             <Printer className="w-4 h-4 mr-2" />
                             Print
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/timesheets/${timesheet.id}`)
+                                if (res.ok) {
+                                  const data = await res.json()
+                                  const exportData = formatTimesheetForDetailedExport(data)
+                                exportToCSV(exportData, `timesheet-${new Date().toISOString().split('T')[0]}`)
+                                  setSelectedTimesheet(null)
+                                  toast.success('Timesheet exported to CSV')
+                                }
+                              } catch (error) {
+                                toast.error('Failed to export timesheet')
+                              }
+                            }}
+                            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Export CSV
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/timesheets/${timesheet.id}`)
+                                if (res.ok) {
+                                  const data = await res.json()
+                                  const exportData = formatTimesheetForDetailedExport(data)
+                                exportToExcel(exportData, `timesheet-${new Date().toISOString().split('T')[0]}`, 'Timesheet')
+                                  setSelectedTimesheet(null)
+                                  toast.success('Timesheet exported to Excel')
+                                }
+                              } catch (error) {
+                                toast.error('Failed to export timesheet')
+                              }
+                            }}
+                            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 mr-2" />
+                            Export Excel
                           </button>
                           {timesheet.status === 'DRAFT' && (
                             <Link

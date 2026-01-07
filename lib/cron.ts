@@ -5,10 +5,10 @@ import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz'
 
 const TIMEZONE = 'America/New_York'
 
-// Schedule: Every Friday at 4:00 PM ET
-// Cron expression: 0 16 * * 5
-// Minute (0), Hour (16 = 4 PM), Day of month (*), Month (*), Day of week (5 = Friday)
-const INVOICE_GENERATION_SCHEDULE = '0 16 * * 5'
+// Schedule: Every Tuesday at 7:00 AM ET
+// Cron expression: 0 7 * * 2
+// Minute (0), Hour (7 = 7 AM), Day of month (*), Month (*), Day of week (2 = Tuesday)
+const INVOICE_GENERATION_SCHEDULE = '0 7 * * 2'
 
 let invoiceGenerationTask: cron.ScheduledTask | null = null
 
@@ -25,7 +25,9 @@ export function initializeCronJobs() {
 }
 
 /**
- * Initialize the automatic invoice generation job (Friday 4:00 PM ET)
+ * Initialize the automatic invoice generation job (Tuesday 7:00 AM ET)
+ * Generates invoices for the previous week's billing period (Monday 12:00 AM → Monday 11:59 PM)
+ * One invoice per client, aggregating all timesheets for the week
  */
 function initializeInvoiceGenerationJob() {
   if (invoiceGenerationTask) {
@@ -136,21 +138,21 @@ function getNextRunTime(cronExpression: string, timezone: string): Date {
   const now = utcToZonedTime(new Date(), timezone)
   const nextRun = new Date(now)
 
-  // Calculate days until next Friday
-  const currentDay = now.getDay() // 0 = Sunday, 5 = Friday
-  let daysUntilFriday = (dayOfWeek - currentDay + 7) % 7
+  // Calculate days until next Tuesday
+  const currentDay = now.getDay() // 0 = Sunday, 2 = Tuesday
+  let daysUntilTuesday = (dayOfWeek - currentDay + 7) % 7
 
-  // If it's already Friday and past the scheduled time, schedule for next Friday
+  // If it's already Tuesday and past the scheduled time, schedule for next Tuesday
   if (currentDay === dayOfWeek) {
     const scheduledTime = new Date(now)
     scheduledTime.setHours(hour, minute, 0, 0)
     if (now >= scheduledTime) {
-      daysUntilFriday = 7
+      daysUntilTuesday = 7
     }
   }
 
-  // If daysUntilFriday is 0, it means we're scheduling for today
-  if (daysUntilFriday === 0 && currentDay === dayOfWeek) {
+  // If daysUntilTuesday is 0, it means we're scheduling for today
+  if (daysUntilTuesday === 0 && currentDay === dayOfWeek) {
     const scheduledTime = new Date(now)
     scheduledTime.setHours(hour, minute, 0, 0)
     if (now < scheduledTime) {
@@ -159,8 +161,8 @@ function getNextRunTime(cronExpression: string, timezone: string): Date {
     }
   }
 
-  // Set to next Friday
-  nextRun.setDate(nextRun.getDate() + daysUntilFriday)
+  // Set to next Tuesday
+  nextRun.setDate(nextRun.getDate() + daysUntilTuesday)
   nextRun.setHours(hour, minute, 0, 0)
 
   return zonedTimeToUtc(nextRun, timezone)
