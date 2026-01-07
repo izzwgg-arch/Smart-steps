@@ -12,7 +12,7 @@ export default async function NewBCBAPage() {
   }
 
   return (
-    <div className="min-h-screen bg-amber-50">
+    <div className="min-h-screen bg-cyan-50">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
         <BCBAForm />
