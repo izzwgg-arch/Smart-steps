@@ -12,6 +12,10 @@ interface Timesheet {
     name: string
     phone?: string | null
     id?: string
+    idNumber?: string | null
+    clientId?: string | null
+    medicaidId?: string | null
+    externalId?: string | null
   }
   provider: {
     name: string
@@ -98,7 +102,12 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                   <span className="font-semibold">Phone:</span> {timesheet.client.phone || ''}
                 </div>
                 <div>
-                  <span className="font-semibold">ID Number:</span> {timesheet.client.id || ''}
+                  <span className="font-semibold">ID Number:</span>{' '}
+                  {timesheet.client.idNumber || 
+                   timesheet.client.clientId || 
+                   timesheet.client.medicaidId || 
+                   timesheet.client.externalId || 
+                   ''}
                 </div>
               </div>
               <div>
@@ -146,14 +155,11 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                     })
                     .map((entry, index) => {
                       const entryDate = new Date(entry.date)
-                      const prevEntry = index > 0 ? timesheet.entries[index - 1] : null
-                      const prevDate = prevEntry ? new Date(prevEntry.date) : null
-                      const showDate = !prevDate || entryDate.getTime() !== prevDate.getTime()
 
                       return (
                         <tr key={index}>
                           <td className="border border-gray-800 px-4 py-2">
-                            {showDate ? format(entryDate, 'EEE M/d/yyyy').toLowerCase() : ''}
+                            {format(entryDate, 'EEE M/d/yyyy').toLowerCase()}
                           </td>
                           <td className="border border-gray-800 px-4 py-2">
                             {formatTime(entry.startTime)}
