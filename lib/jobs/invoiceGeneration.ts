@@ -120,9 +120,17 @@ export async function generateInvoicesForApprovedTimesheets(
     // Process each Client (one invoice per client)
     for (const [clientId, timesheets] of timesheetsByClient) {
       try {
+        // Filter out timesheets without insurance (shouldn't happen with isBCBA filter, but safety check)
+        const timesheetsWithInsurance = timesheets.filter((ts): ts is TimesheetWithInsurance => ts.insurance !== null)
+        
+        if (timesheetsWithInsurance.length === 0) {
+          console.log(`[INVOICE GENERATION] Skipping client ${clientId}: no timesheets with insurance`)
+          continue
+        }
+        
         const invoice = await generateInvoiceForClient(
           clientId,
-          timesheets,
+          timesheetsWithInsurance,
           billingPeriod
         )
         invoicesCreated.push(invoice)
@@ -171,7 +179,7 @@ type TimesheetWithRelations = Awaited<ReturnType<typeof prisma.timesheet.findMan
     id: string
     name: string
     ratePerUnit: Decimal
-  }
+  } | null
   provider: {
     id: string
     name: string
@@ -179,6 +187,15 @@ type TimesheetWithRelations = Awaited<ReturnType<typeof prisma.timesheet.findMan
   client: {
     id: string
     name: string
+  }
+}
+
+// Type for timesheets that definitely have insurance (for invoice generation)
+type TimesheetWithInsurance = Omit<TimesheetWithRelations, 'insurance'> & {
+  insurance: {
+    id: string
+    name: string
+    ratePerUnit: Decimal
   }
 }
 
