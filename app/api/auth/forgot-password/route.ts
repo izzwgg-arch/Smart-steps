@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from '@/lib/email'
 import { hashToken, generateSecureToken, checkRateLimit } from '@/lib/security'
-import { logAudit } from '@/lib/audit'
+import { createAuditLog } from '@/lib/audit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,9 +57,15 @@ export async function POST(request: NextRequest) {
     })
 
     // Log audit
-    await logAudit('SUBMIT', 'User', user.id, 'system', {
-      action: 'password_reset_requested',
-      email: user.email,
+    await createAuditLog({
+      action: 'SUBMIT',
+      entity: 'User',
+      entityId: user.id,
+      userId: 'system',
+      newValues: {
+        action: 'password_reset_requested',
+        email: user.email,
+      },
     })
 
     // Generate reset link

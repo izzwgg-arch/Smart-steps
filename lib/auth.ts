@@ -3,7 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from './prisma'
 import bcrypt from 'bcryptjs'
 import { isWithinScheduledWindow } from './utils'
-import { logAudit } from './audit'
+import { createAuditLog } from './audit'
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
@@ -57,10 +57,16 @@ export const authOptions: NextAuthOptions = {
           // Lock account after max attempts
           if (failedAttempts >= maxAttempts) {
             updateData.lockedUntil = new Date(Date.now() + lockDuration)
-            await logAudit('SUBMIT', 'User', user.id, 'system', {
-              action: 'account_locked',
-              reason: 'too_many_failed_login_attempts',
-              email: user.email,
+            await createAuditLog({
+              action: 'SUBMIT',
+              entity: 'User',
+              entityId: user.id,
+              userId: 'system',
+              newValues: {
+                action: 'account_locked',
+                reason: 'too_many_failed_login_attempts',
+                email: user.email,
+              },
             })
           }
 
@@ -70,10 +76,16 @@ export const authOptions: NextAuthOptions = {
           })
 
           // Log failed login attempt
-          await logAudit('SUBMIT', 'User', user.id, 'system', {
-            action: 'failed_login_attempt',
-            email: user.email,
-            attempts: failedAttempts,
+          await createAuditLog({
+            action: 'SUBMIT',
+            entity: 'User',
+            entityId: user.id,
+            userId: 'system',
+            newValues: {
+              action: 'failed_login_attempt',
+              email: user.email,
+              attempts: failedAttempts,
+            },
           })
 
           throw new Error('Invalid credentials')
@@ -91,9 +103,15 @@ export const authOptions: NextAuthOptions = {
         }
 
         // Log successful login
-        await logAudit('SUBMIT', 'User', user.id, user.id, {
-          action: 'login_success',
-          email: user.email,
+        await createAuditLog({
+          action: 'SUBMIT',
+          entity: 'User',
+          entityId: user.id,
+          userId: user.id,
+          newValues: {
+            action: 'login_success',
+            email: user.email,
+          },
         })
 
         return {

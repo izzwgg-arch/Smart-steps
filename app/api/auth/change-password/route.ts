@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validatePassword } from '@/lib/utils'
-import { logAudit } from '@/lib/audit'
+import { createAuditLog } from '@/lib/audit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,9 +79,15 @@ export async function POST(request: NextRequest) {
     })
 
     // Log audit
-    await logAudit('UPDATE', 'User', user.id, user.id, {
-      action: 'password_changed',
-      email: user.email,
+    await createAuditLog({
+      action: 'UPDATE',
+      entity: 'User',
+      entityId: user.id,
+      userId: user.id,
+      newValues: {
+        action: 'password_changed',
+        email: user.email,
+      },
     })
 
     return NextResponse.json({

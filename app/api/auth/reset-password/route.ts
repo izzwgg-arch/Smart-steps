@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validatePassword } from '@/lib/utils'
 import { hashToken } from '@/lib/security'
-import { logAudit } from '@/lib/audit'
+import { createAuditLog } from '@/lib/audit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -63,9 +63,15 @@ export async function POST(request: NextRequest) {
     })
 
     // Log audit
-    await logAudit('UPDATE', 'User', user.id, 'system', {
-      action: 'password_reset_completed',
-      email: user.email,
+    await createAuditLog({
+      action: 'UPDATE',
+      entity: 'User',
+      entityId: user.id,
+      userId: 'system',
+      newValues: {
+        action: 'password_reset_completed',
+        email: user.email,
+      },
     })
 
     return NextResponse.json({
