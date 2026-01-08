@@ -121,7 +121,7 @@ export async function generateInvoicesForApprovedTimesheets(
     for (const [clientId, timesheets] of timesheetsByClient) {
       try {
         // Filter out timesheets without insurance (shouldn't happen with isBCBA filter, but safety check)
-        const timesheetsWithInsurance = timesheets.filter((ts): ts is TimesheetWithInsurance => ts.insurance !== null)
+        const timesheetsWithInsurance = timesheets.filter((ts) => ts.insurance !== null) as TimesheetWithInsurance[]
         
         if (timesheetsWithInsurance.length === 0) {
           console.log(`[INVOICE GENERATION] Skipping client ${clientId}: no timesheets with insurance`)
