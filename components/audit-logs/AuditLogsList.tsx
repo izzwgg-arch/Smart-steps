@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Search, Filter } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { subDays } from 'date-fns'
@@ -241,7 +241,7 @@ export function AuditLogsList() {
                   {logs.map((log) => (
                     <tr key={log.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(log.createdAt)}
+                        {formatDateTime(log.createdAt)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span

@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       ipAddress: activity.ipAddress,
       userAgent: activity.userAgent,
       metadata: activity.metadata ? JSON.parse(activity.metadata) : null,
-      createdAt: activity.createdAt,
+      createdAt: activity.createdAt instanceof Date ? activity.createdAt.toISOString() : activity.createdAt,
     }))
 
     return NextResponse.json({ activities: formattedActivities })

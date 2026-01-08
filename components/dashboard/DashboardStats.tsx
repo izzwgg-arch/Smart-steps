@@ -11,7 +11,7 @@ import {
   AlertCircle,
   TrendingUp,
 } from 'lucide-react'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime, formatRelativeTime } from '@/lib/utils'
 
 interface DashboardStats {
   stats: {
@@ -298,9 +298,14 @@ export function DashboardStats({
                       <p className="text-xs text-gray-500 mt-1">
                         by {activity.userEmail}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {formatDate(activity.createdAt)}
+                      <p className="text-xs text-gray-400 mt-1" title={activity.createdAt ? formatDateTime(activity.createdAt) : '—'}>
+                        {activity.createdAt ? formatDateTime(activity.createdAt) : '—'}
                       </p>
+                      {activity.createdAt && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {formatRelativeTime(activity.createdAt)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

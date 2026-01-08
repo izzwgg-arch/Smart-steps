@@ -66,9 +66,10 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({ where }),
     ])
 
-    // Parse JSON values
+    // Parse JSON values and serialize dates
     const parsedLogs = auditLogs.map((log) => ({
       ...log,
+      createdAt: log.createdAt instanceof Date ? log.createdAt.toISOString() : log.createdAt,
       oldValues: log.oldValues ? JSON.parse(log.oldValues) : null,
       newValues: log.newValues ? JSON.parse(log.newValues) : null,
     }))
