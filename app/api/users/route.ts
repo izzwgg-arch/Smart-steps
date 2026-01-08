@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Send invite email if using temp password
-    if (useTempPassword && data.sendInviteEmail !== false) {
+    if (useTempPassword && data.sendInviteEmail !== false && tempPassword) {
       try {
         const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
         const loginUrl = `${baseUrl}/login`
