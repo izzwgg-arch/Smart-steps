@@ -181,33 +181,53 @@ export async function PUT(
       })
 
       // Update timesheet
+      const updateData: any = {
+        providerId: timesheetData.providerId || timesheet.providerId,
+        clientId: timesheetData.clientId || timesheet.clientId,
+        bcbaId: timesheetData.bcbaId || timesheet.bcbaId,
+        insuranceId: (timesheetData as any).insuranceId !== undefined ? (timesheetData as any).insuranceId : timesheet.insuranceId,
+        startDate: (timesheetData as any).startDate ? new Date((timesheetData as any).startDate) : timesheet.startDate,
+        endDate: (timesheetData as any).endDate ? new Date((timesheetData as any).endDate) : timesheet.endDate,
+        timezone: (timesheetData as any).timezone || timesheet.timezone,
+        lastEditedBy: session.user.id,
+        lastEditedAt: new Date(),
+      }
+
+      // Add BCBA-specific fields if provided
+      if ((timesheetData as any).isBCBA !== undefined) {
+        updateData.isBCBA = (timesheetData as any).isBCBA
+      } else if ((timesheet as any).isBCBA !== undefined) {
+        updateData.isBCBA = (timesheet as any).isBCBA
+      }
+      
+      if ((timesheetData as any).serviceType !== undefined) {
+        updateData.serviceType = (timesheetData as any).serviceType
+      }
+      
+      if ((timesheetData as any).sessionData !== undefined) {
+        updateData.sessionData = (timesheetData as any).sessionData
+      }
+
+      updateData.entries = {
+        create: entries.map((entry: any) => {
+          // Calculate units (1 unit = 15 minutes, no rounding)
+          const units = entry.minutes / 15
+          
+          return {
+            date: new Date(entry.date),
+            startTime: entry.startTime, // Already validated as HH:mm
+            endTime: entry.endTime, // Already validated as HH:mm
+            minutes: entry.minutes, // Store actual minutes
+            units: units, // Store units (1 unit = 15 minutes)
+            notes: entry.notes || null,
+            invoiced: entry.invoiced || false,
+          }
+        }),
+      }
+
       const updatedTimesheet = await tx.timesheet.update({
         where: { id: params.id },
-        data: {
-          ...timesheetData,
-          insuranceId: timesheetData.insuranceId || null, // Allow null for BCBA timesheets
-          isBCBA: timesheetData.isBCBA !== undefined ? timesheetData.isBCBA : timesheet.isBCBA,
-          serviceType: timesheetData.serviceType || null,
-          sessionData: timesheetData.sessionData || null,
-          lastEditedBy: session.user.id,
-          lastEditedAt: new Date(),
-          entries: {
-            create: entries.map((entry: any) => {
-              // Calculate units (1 unit = 15 minutes, no rounding)
-              const units = entry.minutes / 15
-              
-              return {
-                date: new Date(entry.date),
-                startTime: entry.startTime, // Already validated as HH:mm
-                endTime: entry.endTime, // Already validated as HH:mm
-                minutes: entry.minutes, // Store actual minutes
-                units: units, // Store units (1 unit = 15 minutes)
-                notes: entry.notes || null,
-                invoiced: entry.invoiced || false,
-              }
-            }),
-          },
-        },
+        data: updateData,
         include: {
           client: true,
           provider: true,

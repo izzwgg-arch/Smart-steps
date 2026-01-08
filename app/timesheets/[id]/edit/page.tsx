@@ -72,7 +72,7 @@ export default async function EditTimesheetPage({
     providerId: timesheet.providerId,
     clientId: timesheet.clientId,
     bcbaId: timesheet.bcbaId,
-    insuranceId: timesheet.insuranceId,
+    insuranceId: timesheet.insuranceId || '',
     startDate: timesheet.startDate.toISOString(),
     endDate: timesheet.endDate.toISOString(),
     status: timesheet.status,

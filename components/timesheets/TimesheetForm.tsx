@@ -71,7 +71,7 @@ interface Timesheet {
   providerId: string
   clientId: string
   bcbaId: string
-  insuranceId: string
+  insuranceId: string | null
   startDate: string
   endDate: string
   status: string
