@@ -211,6 +211,11 @@ model Timesheet {
   insurance      Insurance        @relation("TimesheetInsurance", fields: [insuranceId], references: [id])
   entries        TimesheetEntry[]
   invoiceEntries InvoiceEntry[]
+
+  // Indexes for overlap detection queries
+  @@index([providerId, deletedAt])
+  @@index([clientId, deletedAt])
+  @@index([deletedAt])
 }
 
 model TimesheetEntry {
@@ -228,6 +233,10 @@ model TimesheetEntry {
   updatedAt   DateTime @updatedAt
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+
+  // Indexes for overlap detection queries
+  @@index([date])
+  @@index([timesheetId, date])
 }
 
 model Invoice {

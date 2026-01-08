@@ -88,6 +88,37 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
         canExport: rp.canExport,
       }
     })
+
+    // For CUSTOM roles, also grant dashboard permissions based on underlying permissions
+    const dashboardPermissionMap: Record<string, string[]> = {
+      'dashboard.timesheets': ['timesheets.view', 'timesheets.create', 'timesheets.update'],
+      'dashboard.invoices': ['invoices.view'],
+      'dashboard.providers': ['providers.view'],
+      'dashboard.clients': ['clients.view'],
+      'dashboard.reports': ['reports.view'],
+      'dashboard.analytics': ['analytics.view'],
+      'dashboard.users': ['users.view'],
+      'dashboard.bcbas': ['bcbas.view'],
+      'dashboard.insurance': ['insurance.view'],
+    }
+
+    for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
+      // Only add if not already set explicitly
+      if (!permissions[dashboardPerm]) {
+        const hasUnderlying = underlyingPerms.some(up => permissions[up]?.canView === true)
+        if (hasUnderlying) {
+          permissions[dashboardPerm] = {
+            canView: true,
+            canCreate: false,
+            canUpdate: false,
+            canDelete: false,
+            canApprove: false,
+            canExport: false,
+          }
+        }
+      }
+    }
+
     return permissions
   }
 
@@ -116,6 +147,34 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
     }
   })
 
+  // For USER roles, grant dashboard permissions based on underlying permissions
+  // If user has timesheets.view, grant dashboard.timesheets
+  const dashboardPermissionMap: Record<string, string[]> = {
+    'dashboard.timesheets': ['timesheets.view', 'timesheets.create', 'timesheets.update'],
+    'dashboard.invoices': ['invoices.view'],
+    'dashboard.providers': ['providers.view'],
+    'dashboard.clients': ['clients.view'],
+    'dashboard.reports': ['reports.view'],
+    'dashboard.analytics': ['analytics.view'],
+    'dashboard.users': ['users.view'],
+    'dashboard.bcbas': ['bcbas.view'],
+    'dashboard.insurance': ['insurance.view'],
+  }
+
+  for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
+    const hasUnderlying = underlyingPerms.some(up => permissions[up]?.canView === true)
+    if (hasUnderlying) {
+      permissions[dashboardPerm] = {
+        canView: true,
+        canCreate: false,
+        canUpdate: false,
+        canDelete: false,
+        canApprove: false,
+        canExport: false,
+      }
+    }
+  }
+
   return permissions
 }
 
@@ -132,8 +191,30 @@ export async function canSeeDashboardSection(userId: string, section: string): P
     return true
   }
 
-  // Check permission
-  return permissions[permissionName]?.canView === true
+  // Check explicit dashboard permission first
+  if (permissions[permissionName]?.canView === true) {
+    return true
+  }
+
+  // Fallback: Check underlying permissions if dashboard permission doesn't exist
+  const underlyingPermissionMap: Record<string, string[]> = {
+    'timesheets': ['timesheets.view', 'timesheets.create', 'timesheets.update'],
+    'invoices': ['invoices.view'],
+    'providers': ['providers.view'],
+    'clients': ['clients.view'],
+    'reports': ['reports.view'],
+    'analytics': ['analytics.view'],
+    'users': ['users.view'],
+    'bcbas': ['bcbas.view'],
+    'insurance': ['insurance.view'],
+  }
+
+  const underlyingPerms = underlyingPermissionMap[section]
+  if (underlyingPerms) {
+    return underlyingPerms.some(up => permissions[up]?.canView === true)
+  }
+
+  return false
 }
 
 /**

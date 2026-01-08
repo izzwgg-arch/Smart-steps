@@ -257,6 +257,68 @@ export default async function DashboardPage() {
               showRecentInvoices={isSectionVisible('sections.recentInvoices')}
             />
           </div>
+
+          {/* Debug Permissions Panel (Admin/Dev Only) */}
+          {(session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN') && process.env.NODE_ENV === 'development' && (
+            <div className="mt-8 bg-white shadow rounded-lg p-6">
+              <details className="cursor-pointer">
+                <summary className="text-lg font-semibold text-gray-900 mb-4">
+                  🔍 Debug: User Permissions & Dashboard Visibility
+                </summary>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-2">User Info</h4>
+                    <div className="bg-gray-50 p-3 rounded text-sm">
+                      <p><strong>Role:</strong> {session.user.role}</p>
+                      <p><strong>User ID:</strong> {session.user.id}</p>
+                      {user?.customRoleId && <p><strong>Custom Role ID:</strong> {user.customRoleId}</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-2">Dashboard Visibility</h4>
+                    <div className="bg-gray-50 p-3 rounded text-sm space-y-1">
+                      {Object.entries(dashboardVisibility).map(([section, visible]) => (
+                        <p key={section}>
+                          <strong>{section}:</strong> {visible ? '✅ Visible' : '❌ Hidden'}
+                        </p>
+                      ))}
+                      {Object.keys(dashboardVisibility).length === 0 && (
+                        <p className="text-gray-500">No custom dashboard visibility settings</p>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-2">Dashboard Cards Visibility</h4>
+                    <div className="bg-gray-50 p-3 rounded text-sm space-y-1">
+                      {cards.map(card => (
+                        <p key={card.href}>
+                          <strong>{card.title}:</strong> {canSeeSection(card.permissionKey) ? '✅ Visible' : '❌ Hidden'}
+                        </p>
+                      ))}
+                      {adminCards.map(card => (
+                        <p key={card.href}>
+                          <strong>{card.title}:</strong> {canSeeSection(card.permissionKey) ? '✅ Visible' : '❌ Hidden'}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-2">Permissions (Sample)</h4>
+                    <div className="bg-gray-50 p-3 rounded text-sm space-y-1 max-h-48 overflow-y-auto">
+                      {Object.entries(userPermissions).slice(0, 20).map(([perm, value]) => (
+                        <p key={perm}>
+                          <strong>{perm}:</strong> {value.canView ? '✅' : '❌'} View, {value.canCreate ? '✅' : '❌'} Create
+                        </p>
+                      ))}
+                      {Object.keys(userPermissions).length > 20 && (
+                        <p className="text-gray-500 italic">... and {Object.keys(userPermissions).length - 20} more</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
         </div>
       </main>
     </div>

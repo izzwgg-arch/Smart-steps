@@ -433,12 +433,12 @@ export function TimesheetForm({
     }
 
     // Check internal overlaps (within the same timesheet)
-    const conflicts = checkInternalOverlaps(dayEntries)
+    const internalConflicts = checkInternalOverlaps(dayEntries)
     
-    // Map conflicts to entry indices
-    const conflictMap = new Map<number, { type: 'DR' | 'SV'; message: string }>()
+    // Map internal conflicts to entry indices
+    const conflictMap = new Map<number, { type: 'DR' | 'SV'; message: string; isExternal?: boolean }>()
     
-    for (const conflict of conflicts) {
+    for (const conflict of internalConflicts) {
       const entryIndex = dayEntries.findIndex(e => 
         format(e.date, 'yyyy-MM-dd') === format(conflict.date, 'yyyy-MM-dd')
       )
@@ -446,29 +446,123 @@ export function TimesheetForm({
         conflictMap.set(entryIndex, {
           type: conflict.type,
           message: conflict.message,
+          isExternal: false,
         })
       }
     }
 
-    // Convert to array format
-    const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
-      index,
-      ...data,
-    }))
+    // Check external overlaps (against existing saved timesheets)
+    const checkExternalOverlaps = async () => {
+      try {
+        // Prepare entries for API call
+        const entriesForCheck = dayEntries
+          .filter(e => {
+            const hasDr = e.drUse && e.drFrom && e.drTo
+            const hasSv = e.svUse && e.svFrom && e.svTo
+            return hasDr || hasSv
+          })
+          .flatMap(e => {
+            const result: Array<{
+              date: string
+              startTime: string
+              endTime: string
+              notes: string | null
+            }> = []
+            
+            if (e.drUse && e.drFrom && e.drTo) {
+              result.push({
+                date: e.date.toISOString(),
+                startTime: timeAMPMTo24Hour(e.drFrom),
+                endTime: timeAMPMTo24Hour(e.drTo),
+                notes: 'DR',
+              })
+            }
+            
+            if (e.svUse && e.svFrom && e.svTo) {
+              result.push({
+                date: e.date.toISOString(),
+                startTime: timeAMPMTo24Hour(e.svFrom),
+                endTime: timeAMPMTo24Hour(e.svTo),
+                notes: 'SV',
+              })
+            }
+            
+            return result
+          })
 
-    setOverlapConflicts(conflictsArray)
+        if (entriesForCheck.length === 0) {
+          const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
+            index,
+            ...data,
+          }))
+          setOverlapConflicts(conflictsArray)
+          return
+        }
 
-    // Scroll to first conflict if any
-    if (conflictsArray.length > 0) {
-      const firstConflictIndex = conflictsArray[0].index
-      const rowElement = conflictRowRefs.current.get(firstConflictIndex)
-      if (rowElement) {
-        setTimeout(() => {
-          rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }, 100)
+        const res = await fetch('/api/timesheets/check-overlaps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            providerId,
+            clientId,
+            entries: entriesForCheck,
+            excludeTimesheetId: timesheet?.id,
+          }),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          if (data.hasOverlaps && Array.isArray(data.conflicts)) {
+            // Map external conflicts to entry indices
+            for (const conflict of data.conflicts) {
+              const entryIndex = dayEntries.findIndex(e => 
+                format(e.date, 'yyyy-MM-dd') === conflict.date
+              )
+              if (entryIndex >= 0) {
+                const existing = conflictMap.get(entryIndex)
+                if (!existing || !existing.isExternal) {
+                  conflictMap.set(entryIndex, {
+                    type: conflict.entryType === 'SV' ? 'SV' : 'DR',
+                    message: conflict.message || `Overlap detected on ${conflict.date}`,
+                    isExternal: true,
+                  })
+                }
+              }
+            }
+          }
+        }
+
+        // Convert to array format
+        const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
+          index,
+          ...data,
+        }))
+
+        setOverlapConflicts(conflictsArray)
+
+        // Scroll to first conflict if any
+        if (conflictsArray.length > 0) {
+          const firstConflictIndex = conflictsArray[0].index
+          const rowElement = conflictRowRefs.current.get(firstConflictIndex)
+          if (rowElement) {
+            setTimeout(() => {
+              rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }, 100)
+          }
+        }
+      } catch (error) {
+        console.error('Error checking external overlaps:', error)
+        // Still show internal conflicts even if external check fails
+        const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
+          index,
+          ...data,
+        }))
+        setOverlapConflicts(conflictsArray)
       }
     }
-  }, [dayEntries, providerId, clientId])
+
+    checkExternalOverlaps()
+  }, [dayEntries, providerId, clientId, timesheet?.id])
 
   const calculateTotalHours = (entries: DayEntry[]) => {
     const total = entries.reduce((sum, entry) => {
@@ -1469,8 +1563,10 @@ export function TimesheetForm({
                         {entry.errors.dr && (
                           <div className="text-xs text-red-600 mt-1">{entry.errors.dr}</div>
                         )}
-                        {drConflict && (
-                          <div className="text-xs text-red-600 mt-1 font-semibold">Overlap!</div>
+                                        {drConflict && (
+                          <div className="text-xs text-red-600 mt-1 font-semibold" title={drConflict.message}>
+                            Overlap!
+                          </div>
                         )}
                       </td>
                       <td className={`px-2 py-2 ${svConflict ? 'bg-red-100' : ''}`}>
@@ -1511,7 +1607,9 @@ export function TimesheetForm({
                           <div className="text-xs text-red-600 mt-1">{entry.errors.sv}</div>
                         )}
                         {svConflict && (
-                          <div className="text-xs text-red-600 mt-1 font-semibold">Overlap!</div>
+                          <div className="text-xs text-red-600 mt-1 font-semibold" title={svConflict.message}>
+                            Overlap!
+                          </div>
                         )}
                       </td>
                       {!timesheet && (
@@ -1540,6 +1638,35 @@ export function TimesheetForm({
         {dayEntries.length === 0 && startDate && endDate && (
           <div className="bg-white shadow rounded-lg p-12 text-center text-gray-500">
             Select a start and end date to generate days.
+          </div>
+        )}
+
+        {/* Overlap Conflict Messages */}
+        {overlapConflicts.length > 0 && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-red-800 mb-2 flex items-center">
+              <span className="mr-2">⚠️</span>
+              Overlap Conflicts Detected
+            </h3>
+            <p className="text-sm text-red-700 mb-3">
+              Please fix the following conflicts before saving:
+            </p>
+            <ul className="list-disc list-inside space-y-2">
+              {overlapConflicts.map((conflict, idx) => {
+                const entry = dayEntries[conflict.index]
+                if (!entry) return null
+                return (
+                  <li key={idx} className="text-sm text-red-700">
+                    <strong>{format(entry.date, 'MM/dd/yyyy')}</strong> - {conflict.type}: {conflict.message}
+                    {conflict.isExternal && (
+                      <span className="ml-2 text-xs bg-red-200 px-2 py-0.5 rounded">
+                        (Existing Timesheet)
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         )}
 
