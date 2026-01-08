@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Download, Search, MoreVertical, Edit, Trash2, Eye, FileText, FileSpreadsheet, Zap, Calendar, X } from 'lucide-react'
+import { Plus, Download, Search, Edit, Trash2, Eye, FileText, FileSpreadsheet, Zap, Calendar, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { exportToCSV, exportToExcel, formatInvoicesForExport } from '@/lib/exportUtils'
+import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 
@@ -34,7 +35,6 @@ export function InvoicesList() {
   const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('USER')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
@@ -367,52 +367,33 @@ export function InvoicesList() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <div className="relative">
-                    <button
-                      onClick={() =>
-                        setSelectedInvoice(
-                          selectedInvoice === invoice.id ? null : invoice.id
-                        )
-                      }
-                      className="p-1 hover:bg-gray-200 rounded"
+                  <RowActionsMenu>
+                    <Link
+                      href={`/invoices/${invoice.id}`}
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
-                      <MoreVertical className="w-5 h-5 text-gray-500" />
-                    </button>
-                    {selectedInvoice === invoice.id && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                        <div className="py-1">
-                          <Link
-                            href={`/invoices/${invoice.id}`}
-                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <Eye className="w-4 h-4 mr-2" />
-                            View
-                          </Link>
-                          {userRole === 'ADMIN' && invoice.status === 'DRAFT' && (
-                            <>
-                              <Link
-                                href={`/invoices/${invoice.id}/edit`}
-                                className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                Edit
-                              </Link>
-                              <button
-                                onClick={() => {
-                                  handleDelete(invoice.id)
-                                  setSelectedInvoice(null)
-                                }}
-                                className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      <Eye className="w-4 h-4 mr-2" />
+                      View
+                    </Link>
+                    {userRole === 'ADMIN' && invoice.status === 'DRAFT' && (
+                      <>
+                        <Link
+                          href={`/invoices/${invoice.id}/edit`}
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </Link>
+                        <button
+                          onClick={() => handleDelete(invoice.id)}
+                          className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </button>
+                      </>
                     )}
-                  </div>
+                  </RowActionsMenu>
                 </td>
               </tr>
             ))}

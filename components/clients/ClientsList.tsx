@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Download, Search, MoreVertical, Edit, Trash2, FileText, FileSpreadsheet, Upload } from 'lucide-react'
+import { Plus, Download, Search, Edit, Trash2, FileText, FileSpreadsheet, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { exportToCSV, exportToExcel, formatClientsForExport } from '@/lib/exportUtils'
 import { ImportModal } from '@/components/shared/ImportModal'
+import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 
 interface Client {
   id: string
@@ -23,7 +24,6 @@ export function ClientsList() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
@@ -233,38 +233,22 @@ export function ClientsList() {
                   >
                     {client.active ? 'ACTIVE' : 'INACTIVE'}
                   </span>
-                  <div className="relative">
-                    <button
-                      onClick={() =>
-                        setSelectedClient(
-                          selectedClient === client.id ? null : client.id
-                        )
-                      }
-                      className="p-1 hover:bg-gray-200 rounded"
+                  <RowActionsMenu>
+                    <Link
+                      href={`/clients/${client.id}/edit`}
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
-                      <MoreVertical className="w-5 h-5 text-gray-500" />
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(client.id)}
+                      className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
                     </button>
-                    {selectedClient === client.id && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                        <div className="py-1">
-                          <Link
-                            href={`/clients/${client.id}/edit`}
-                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
-                          </Link>
-                          <button
-                            onClick={() => handleDelete(client.id)}
-                            className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  </RowActionsMenu>
                 </div>
               </div>
             </li>

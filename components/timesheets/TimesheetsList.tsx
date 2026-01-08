@@ -3,11 +3,12 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Download, Search, MoreVertical, Printer, Edit, Trash2, Send, Check, X, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Download, Search, Printer, Edit, Trash2, Send, Check, X, FileText, FileSpreadsheet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatDate } from '@/lib/utils'
 import { TimesheetPrintPreview } from './TimesheetPrintPreview'
 import { exportToCSV, exportToExcel, formatTimesheetsForExport, formatTimesheetForDetailedExport } from '@/lib/exportUtils'
+import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 
 interface Timesheet {
   id: string
@@ -33,7 +34,6 @@ export function TimesheetsList() {
   const [searchTerm, setSearchTerm] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [selectedTimesheet, setSelectedTimesheet] = useState<string | null>(null)
   const [printTimesheet, setPrintTimesheet] = useState<Timesheet | null>(null)
   const [userRole, setUserRole] = useState<string>('USER')
   const [showExportMenu, setShowExportMenu] = useState(false)
@@ -325,139 +325,108 @@ export function TimesheetsList() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <div className="relative">
+                  <RowActionsMenu>
                     <button
-                      onClick={() =>
-                        setSelectedTimesheet(
-                          selectedTimesheet === timesheet.id ? null : timesheet.id
-                        )
-                      }
-                      className="p-1 hover:bg-gray-200 rounded"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/timesheets/${timesheet.id}`)
+                          if (res.ok) {
+                            const data = await res.json()
+                            setPrintTimesheet(data)
+                          }
+                        } catch (error) {
+                          toast.error('Failed to load timesheet')
+                        }
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
-                      <MoreVertical className="w-5 h-5 text-gray-500" />
+                      <Printer className="w-4 h-4 mr-2" />
+                      Print
                     </button>
-                    {selectedTimesheet === timesheet.id && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                        <div className="py-1">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`/api/timesheets/${timesheet.id}`)
-                                if (res.ok) {
-                                  const data = await res.json()
-                                  setPrintTimesheet(data)
-                                  setSelectedTimesheet(null)
-                                }
-                              } catch (error) {
-                                toast.error('Failed to load timesheet')
-                              }
-                            }}
-                            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <Printer className="w-4 h-4 mr-2" />
-                            Print
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`/api/timesheets/${timesheet.id}`)
-                                if (res.ok) {
-                                  const data = await res.json()
-                                  const exportData = formatTimesheetForDetailedExport(data)
-                                exportToCSV(exportData, `timesheet-${new Date().toISOString().split('T')[0]}`)
-                                  setSelectedTimesheet(null)
-                                  toast.success('Timesheet exported to CSV')
-                                }
-                              } catch (error) {
-                                toast.error('Failed to export timesheet')
-                              }
-                            }}
-                            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <FileText className="w-4 h-4 mr-2" />
-                            Export CSV
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`/api/timesheets/${timesheet.id}`)
-                                if (res.ok) {
-                                  const data = await res.json()
-                                  const exportData = formatTimesheetForDetailedExport(data)
-                                exportToExcel(exportData, `timesheet-${new Date().toISOString().split('T')[0]}`, 'Timesheet')
-                                  setSelectedTimesheet(null)
-                                  toast.success('Timesheet exported to Excel')
-                                }
-                              } catch (error) {
-                                toast.error('Failed to export timesheet')
-                              }
-                            }}
-                            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <FileSpreadsheet className="w-4 h-4 mr-2" />
-                            Export Excel
-                          </button>
-                          {timesheet.status === 'DRAFT' && (
-                            <Link
-                              href={`/timesheets/${timesheet.id}/edit`}
-                              className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </Link>
-                          )}
-                          {timesheet.status === 'DRAFT' && (
-                            <button
-                              onClick={() => {
-                                handleSubmit(timesheet.id)
-                                setSelectedTimesheet(null)
-                              }}
-                              className="flex items-center w-full px-4 py-2 text-sm text-blue-700 hover:bg-gray-100"
-                            >
-                              <Send className="w-4 h-4 mr-2" />
-                              Submit
-                            </button>
-                          )}
-                          {userRole === 'ADMIN' && timesheet.status === 'SUBMITTED' && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  handleApprove(timesheet.id)
-                                  setSelectedTimesheet(null)
-                                }}
-                                className="flex items-center w-full px-4 py-2 text-sm text-green-700 hover:bg-gray-100"
-                              >
-                                <Check className="w-4 h-4 mr-2" />
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => {
-                                  handleReject(timesheet.id)
-                                  setSelectedTimesheet(null)
-                                }}
-                                className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                              >
-                                <X className="w-4 h-4 mr-2" />
-                                Reject
-                              </button>
-                            </>
-                          )}
-                          {timesheet.status === 'DRAFT' && (
-                            <button
-                              onClick={() => {
-                                handleDelete(timesheet.id)
-                                setSelectedTimesheet(null)
-                              }}
-                              className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/timesheets/${timesheet.id}`)
+                          if (res.ok) {
+                            const data = await res.json()
+                            const exportData = formatTimesheetForDetailedExport(data)
+                            exportToCSV(exportData, `timesheet-${new Date().toISOString().split('T')[0]}`)
+                            toast.success('Timesheet exported to CSV')
+                          }
+                        } catch (error) {
+                          toast.error('Failed to export timesheet')
+                        }
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      Export CSV
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/timesheets/${timesheet.id}`)
+                          if (res.ok) {
+                            const data = await res.json()
+                            const exportData = formatTimesheetForDetailedExport(data)
+                            exportToExcel(exportData, `timesheet-${new Date().toISOString().split('T')[0]}`, 'Timesheet')
+                            toast.success('Timesheet exported to Excel')
+                          }
+                        } catch (error) {
+                          toast.error('Failed to export timesheet')
+                        }
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />
+                      Export Excel
+                    </button>
+                    {timesheet.status === 'DRAFT' && (
+                      <Link
+                        href={`/timesheets/${timesheet.id}/edit`}
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit
+                      </Link>
                     )}
-                  </div>
+                    {timesheet.status === 'DRAFT' && (
+                      <button
+                        onClick={() => handleSubmit(timesheet.id)}
+                        className="flex items-center w-full px-4 py-2 text-sm text-blue-700 hover:bg-gray-100"
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        Submit
+                      </button>
+                    )}
+                    {userRole === 'ADMIN' && timesheet.status === 'SUBMITTED' && (
+                      <>
+                        <button
+                          onClick={() => handleApprove(timesheet.id)}
+                          className="flex items-center w-full px-4 py-2 text-sm text-green-700 hover:bg-gray-100"
+                        >
+                          <Check className="w-4 h-4 mr-2" />
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject(timesheet.id)}
+                          className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    {timesheet.status === 'DRAFT' && (
+                      <button
+                        onClick={() => handleDelete(timesheet.id)}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
+                      </button>
+                    )}
+                  </RowActionsMenu>
                 </td>
               </tr>
             ))}

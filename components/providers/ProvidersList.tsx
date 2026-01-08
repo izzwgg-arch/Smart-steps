@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Download, Search, MoreVertical, Edit, Trash2, FileText, FileSpreadsheet, Upload } from 'lucide-react'
+import { Plus, Download, Search, Edit, Trash2, FileText, FileSpreadsheet, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { exportToCSV, exportToExcel, formatProvidersForExport } from '@/lib/exportUtils'
 import { ImportModal } from '@/components/shared/ImportModal'
+import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 
 interface Provider {
   id: string
@@ -20,7 +21,6 @@ export function ProvidersList() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
@@ -224,38 +224,22 @@ export function ProvidersList() {
                   >
                     {provider.active ? 'ACTIVE' : 'INACTIVE'}
                   </span>
-                  <div className="relative">
-                    <button
-                      onClick={() =>
-                        setSelectedProvider(
-                          selectedProvider === provider.id ? null : provider.id
-                        )
-                      }
-                      className="p-1 hover:bg-gray-200 rounded"
+                  <RowActionsMenu>
+                    <Link
+                      href={`/providers/${provider.id}/edit`}
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
-                      <MoreVertical className="w-5 h-5 text-gray-500" />
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(provider.id)}
+                      className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
                     </button>
-                    {selectedProvider === provider.id && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                        <div className="py-1">
-                          <Link
-                            href={`/providers/${provider.id}/edit`}
-                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
-                          </Link>
-                          <button
-                            onClick={() => handleDelete(provider.id)}
-                            className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  </RowActionsMenu>
                 </div>
               </div>
             </li>
