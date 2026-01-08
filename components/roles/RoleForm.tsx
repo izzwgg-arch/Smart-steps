@@ -659,17 +659,30 @@ export function RoleForm({ role }: RoleFormProps) {
                                     <span className="text-xs font-medium text-gray-700">
                                       Selected Users ({selectedUserIds.length})
                                     </span>
-                                    {selectedUserIds.length > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedUserIds([])
-                                        }}
-                                        className="text-xs text-red-600 hover:text-red-800"
-                                      >
-                                        Clear All
-                                      </button>
-                                    )}
+                                    <div className="flex gap-2">
+                                      {users.length > 0 && selectedUserIds.length < users.length && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedUserIds(users.map(u => u.id))
+                                          }}
+                                          className="text-xs text-blue-600 hover:text-blue-800"
+                                        >
+                                          Select All
+                                        </button>
+                                      )}
+                                      {selectedUserIds.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedUserIds([])
+                                          }}
+                                          className="text-xs text-red-600 hover:text-red-800"
+                                        >
+                                          Clear All
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                   
                                   <div className="relative" ref={userSelectorRef}>
@@ -684,6 +697,26 @@ export function RoleForm({ role }: RoleFormProps) {
                                     
                                     {showUserSelector && (
                                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                                        {users.length > 0 && (
+                                          <div className="sticky top-0 bg-gray-50 border-b px-3 py-2 flex items-center justify-between">
+                                            <span className="text-xs text-gray-600">
+                                              {users.filter(u => 
+                                                !userSearch || 
+                                                u.username?.toLowerCase().includes(userSearch.toLowerCase()) ||
+                                                u.email?.toLowerCase().includes(userSearch.toLowerCase())
+                                              ).length} users
+                                            </span>
+                                            {userSearch && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setUserSearch('')}
+                                                className="text-xs text-gray-500 hover:text-gray-700"
+                                              >
+                                                Clear search
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
                                         {users
                                           .filter(u => 
                                             !userSearch || 

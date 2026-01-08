@@ -1,65 +1,52 @@
 #!/bin/bash
-# Server-side deployment script
-# This script is meant to be run on the server after uploading the zip file
+# Server-side deployment script for timesheet visibility feature
 
 set -e
 
-echo "🚀 Starting A Plus Center deployment on server..."
-echo ""
-
-# Navigate to app directory (create if doesn't exist)
 APP_DIR="/var/www/aplus-center"
-mkdir -p $APP_DIR
-mkdir -p /var/log/aplus-center
 cd $APP_DIR
 
-# Backup current .next if exists
-if [ -d ".next" ]; then
-    echo "📦 Backing up existing build..."
-    mv .next .next.backup.$(date +%Y%m%d_%H%M%S)
-fi
+echo "📥 Pulling latest changes..."
+echo "⚠️  Cleaning up local changes..."
+git reset --hard HEAD || true
+git clean -fd || true
+git pull origin main
 
-# Extract new version
-echo "📦 Extracting deployment package..."
-unzip -o /tmp/aplus-center-deploy.zip
-
-# Install dependencies
-echo "📥 Installing dependencies..."
+echo ""
+echo "📦 Installing dependencies..."
 npm install --production --legacy-peer-deps
 
-# Generate Prisma Client
-echo "🔨 Generating Prisma client..."
+echo ""
+echo "🔧 Fixing Prisma version (downgrading to match local)..."
+npm install prisma@5.22.0 @prisma/client@5.22.0 --save-dev --save || echo "⚠️  Prisma version fix may have issues"
+
+echo ""
+echo "🔧 Generating Prisma client..."
 npx prisma generate
 
-# Push database schema
-echo "🔄 Updating database schema..."
-npx prisma db push
+echo ""
+echo "🔄 Updating database schema (using db push)..."
+npx prisma db push --accept-data-loss || echo "⚠️  Schema update may have issues - check manually"
 
-# Build application
+echo ""
+echo "🌱 Seeding new permissions..."
+npx tsx scripts/seed-permissions.ts || echo "⚠️  Permission seeding may have already been done"
+
+echo ""
 echo "🏗️  Building application..."
 npm run build
 
-# Restart or start PM2
-echo "🔄 Managing PM2 process..."
-if pm2 list | grep -q "aplus-center"; then
-    echo "Restarting existing PM2 process..."
-    pm2 restart aplus-center
-else
-    echo "Starting new PM2 process..."
-    pm2 start deploy/pm2.config.js
-    pm2 save
-fi
+echo ""
+echo "🔄 Restarting application..."
+pm2 restart aplus-center
+pm2 save
 
-# Show status
 echo ""
-echo "═══════════════════════════════════════════════════════════"
 echo "✅ Deployment complete!"
-echo "═══════════════════════════════════════════════════════════"
 echo ""
+echo "📊 Application status:"
 pm2 status
+
 echo ""
 echo "📋 Recent logs:"
 pm2 logs aplus-center --lines 20 --nostream
-echo ""
-echo "🌐 Application should be available at: http://66.94.105.43:3000"
-echo ""

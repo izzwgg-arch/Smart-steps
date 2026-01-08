@@ -40,6 +40,7 @@ export function TimesheetsList() {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const [canViewAllTimesheets, setCanViewAllTimesheets] = useState(false)
+  const [hasViewSelectedUsers, setHasViewSelectedUsers] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string>('')
   const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; username: string; email: string }>>([])
 
@@ -57,20 +58,47 @@ export function TimesheetsList() {
         const hasViewAll = data.permissions['timesheets.viewAll']?.canView === true
         const hasViewSelected = data.permissions['timesheets.viewSelectedUsers']?.canView === true
         setCanViewAllTimesheets(hasViewAll || hasViewSelected)
+        setHasViewSelectedUsers(hasViewSelected)
         
         // If user can view others, fetch available users
         if (hasViewAll || hasViewSelected) {
-          fetch('/api/users?limit=1000&active=true').then(res => res.json()).then(userData => {
+          // First get the visibility scope to know which users to show
+          Promise.all([
+            fetch('/api/user/timesheet-scope').then(res => res.json()),
+            fetch('/api/users?limit=1000&active=true').then(res => res.json())
+          ]).then(([scopeData, userData]) => {
             if (userData?.users) {
-              setAvailableUsers(userData.users.map((u: any) => ({
+              let usersToShow = userData.users.map((u: any) => ({
                 id: u.id,
                 username: u.username || u.email,
                 email: u.email,
-              })))
+              }))
+              
+              // If user has viewSelectedUsers (not viewAll), filter to only allowed users
+              if (hasViewSelected && scopeData?.scope && !scopeData.scope.viewAll) {
+                const allowedIds = scopeData.scope.allowedUserIds
+                usersToShow = usersToShow.filter((u: any) => allowedIds.includes(u.id))
+              }
+              
+              setAvailableUsers(usersToShow)
             }
+          }).catch(err => {
+            console.error('Failed to fetch users or scope:', err)
+            // Fallback: fetch all users if scope fetch fails
+            fetch('/api/users?limit=1000&active=true').then(res => res.json()).then(userData => {
+              if (userData?.users) {
+                setAvailableUsers(userData.users.map((u: any) => ({
+                  id: u.id,
+                  username: u.username || u.email,
+                  email: u.email,
+                })))
+              }
+            })
           })
         }
       }
+    }).catch(err => {
+      console.error('Failed to fetch permissions:', err)
     })
   }, [page, rowsPerPage])
 
@@ -241,7 +269,18 @@ export function TimesheetsList() {
     <div className="px-4 py-6 sm:px-0">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Timesheets</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">Timesheets</h1>
+            {canViewAllTimesheets && (
+              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                hasViewSelectedUsers 
+                  ? 'bg-blue-100 text-blue-800' 
+                  : 'bg-green-100 text-green-800'
+              }`}>
+                {hasViewSelectedUsers ? 'Scope: Selected Users' : 'Scope: All Users'}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex space-x-3">
           <div className="relative" ref={exportMenuRef}>
