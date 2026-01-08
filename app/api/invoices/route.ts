@@ -166,6 +166,11 @@ export async function POST(request: NextRequest) {
     const invoiceEntries: any[] = []
 
     for (const timesheet of timesheets) {
+      // Skip BCBA timesheets (they don't have insurance)
+      if (!timesheet.insurance || timesheet.isBCBA) {
+        continue
+      }
+
       const rate = parseFloat(timesheet.insurance.ratePerUnit.toString())
 
       for (const entry of timesheet.entries) {
@@ -175,7 +180,7 @@ export async function POST(request: NextRequest) {
         invoiceEntries.push({
           timesheetId: timesheet.id,
           providerId: timesheet.providerId,
-          insuranceId: timesheet.insuranceId,
+          insuranceId: timesheet.insuranceId!,
           units: entry.units,
           rate: rate,
           amount: amount,
