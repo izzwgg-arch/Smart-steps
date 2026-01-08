@@ -15,6 +15,7 @@ import {
   FileCheck,
   Shield,
   Receipt,
+  ClipboardList,
 } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -89,7 +90,7 @@ export default async function DashboardPage() {
       title: 'BCBA Timesheets',
       description: 'Manage BCBA time tracking and hours',
       href: '/bcba-timesheets',
-      icon: Calendar,
+      icon: ClipboardList,
       color: 'bg-teal-500',
       permissionKey: 'dashboard.timesheets',
     },
