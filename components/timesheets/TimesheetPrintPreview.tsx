@@ -41,13 +41,18 @@ interface TimesheetPrintPreviewProps {
 }
 
 export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPreviewProps) {
+  // Detect if this is a BCBA timesheet (no DR/SV entries)
+  const isBCBATimesheet = !timesheet.entries.some((e) => e.notes === 'DR' || e.notes === 'SV')
+  
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
   const svEntries = timesheet.entries.filter((e) => e.notes === 'SV')
+  const bcbaEntries = timesheet.entries.filter((e) => !e.notes || e.notes === '')
   
   const totalDR = drEntries.reduce((sum, e) => sum + e.minutes / 60, 0)
   const totalSV = svEntries.reduce((sum, e) => sum + e.minutes / 60, 0)
-  const total = totalDR + totalSV
+  const totalBCBA = bcbaEntries.reduce((sum, e) => sum + e.minutes / 60, 0)
+  const total = isBCBATimesheet ? totalBCBA : totalDR + totalSV
 
   const formatTime = (time: string): string => {
     if (!time || time === '--:--') return ''
@@ -109,11 +114,13 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 </div>
                 <div>
                   <span className="font-semibold">ID Number:</span>{' '}
-                  {timesheet.client.idNumber || 
-                   timesheet.client.clientId || 
-                   timesheet.client.medicaidId || 
-                   timesheet.client.externalId || 
-                   ''}
+                  {isBCBATimesheet 
+                    ? (timesheet.client.id || '')
+                    : (timesheet.client.idNumber || 
+                       timesheet.client.clientId || 
+                       timesheet.client.medicaidId || 
+                       timesheet.client.externalId || 
+                       '')}
                 </div>
               </div>
               <div>
@@ -145,8 +152,12 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                     <th className="border border-gray-800 px-4 py-2 text-left font-semibold">IN</th>
                     <th className="border border-gray-800 px-4 py-2 text-left font-semibold">OUT</th>
                     <th className="border border-gray-800 px-4 py-2 text-left font-semibold">HOURS</th>
-                    <th className="border border-gray-800 px-4 py-2 text-left font-semibold">TYPE</th>
-                    <th className="border border-gray-800 px-4 py-2 text-left font-semibold">LOCATION</th>
+                    {!isBCBATimesheet && (
+                      <>
+                        <th className="border border-gray-800 px-4 py-2 text-left font-semibold">TYPE</th>
+                        <th className="border border-gray-800 px-4 py-2 text-left font-semibold">LOCATION</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -176,10 +187,14 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                           <td className="border border-gray-800 px-4 py-2">
                             {(entry.minutes / 60).toFixed(1)}
                           </td>
-                          <td className="border border-gray-800 px-4 py-2">
-                            {entry.notes || '-'}
-                          </td>
-                          <td className="border border-gray-800 px-4 py-2">Home</td>
+                          {!isBCBATimesheet && (
+                            <>
+                              <td className="border border-gray-800 px-4 py-2">
+                                {entry.notes || '-'}
+                              </td>
+                              <td className="border border-gray-800 px-4 py-2">Home</td>
+                            </>
+                          )}
                         </tr>
                       )
                     })}
@@ -190,12 +205,16 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
             {/* Totals */}
             <div className="mb-6">
               <div className="flex justify-end space-x-8 text-base font-semibold">
-                <div>
-                  Total DR: <span className="ml-2">{totalDR.toFixed(1)}</span>
-                </div>
-                <div>
-                  Total SV: <span className="ml-2">{totalSV.toFixed(1)}</span>
-                </div>
+                {!isBCBATimesheet && (
+                  <>
+                    <div>
+                      Total DR: <span className="ml-2">{totalDR.toFixed(1)}</span>
+                    </div>
+                    <div>
+                      Total SV: <span className="ml-2">{totalSV.toFixed(1)}</span>
+                    </div>
+                  </>
+                )}
                 <div>
                   Total: <span className="ml-2">{total.toFixed(1)}</span>
                 </div>
@@ -246,11 +265,13 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
               </div>
             </div>
 
-            {/* Legend */}
-            <div className="text-sm text-gray-700 mt-6">
-              <div className="mb-1">DR = Direct Service</div>
-              <div>SV = Super Vision</div>
-            </div>
+            {/* Legend - Only show for regular timesheets */}
+            {!isBCBATimesheet && (
+              <div className="text-sm text-gray-700 mt-6">
+                <div className="mb-1">DR = Direct Service</div>
+                <div>SV = Super Vision</div>
+              </div>
+            )}
 
             {/* Action Buttons - Hidden when printing */}
             <div className="mt-8 flex justify-end space-x-3 no-print">

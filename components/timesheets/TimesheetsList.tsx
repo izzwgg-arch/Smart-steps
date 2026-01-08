@@ -113,7 +113,7 @@ export function TimesheetsList() {
 
   const fetchTimesheets = async () => {
     try {
-      let url = `/api/timesheets?page=${page}&limit=${rowsPerPage}&search=${searchTerm}`
+      let url = `/api/timesheets?page=${page}&limit=${rowsPerPage}&search=${searchTerm}&isBCBA=false`
       if (selectedUserId) {
         url += `&userId=${selectedUserId}`
       }

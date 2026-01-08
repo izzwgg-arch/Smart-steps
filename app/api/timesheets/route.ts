@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '25')
     const search = searchParams.get('search') || ''
+    const isBCBA = searchParams.get('isBCBA') === 'true' // Filter for BCBA timesheets
 
     const where: any = { deletedAt: null }
     const clientId = searchParams.get('clientId')
@@ -70,7 +71,8 @@ export async function GET(request: NextRequest) {
     }
     // If viewAll is true and no userId filter, no userId filter is applied (can see all)
 
-    const [timesheets, total] = await Promise.all([
+    // Fetch all timesheets first (we'll filter by entry notes after)
+    const [allTimesheets, allCount] = await Promise.all([
       prisma.timesheet.findMany({
         where,
         include: {
@@ -81,18 +83,36 @@ export async function GET(request: NextRequest) {
           entries: true,
         },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
       }),
       prisma.timesheet.count({ where }),
     ])
 
+    // Filter timesheets based on BCBA vs regular
+    // BCBA timesheets have entries with notes === null or empty (no DR/SV)
+    // Regular timesheets have entries with notes === 'DR' or 'SV'
+    const filteredTimesheets = isBCBA !== undefined ? allTimesheets.filter((timesheet) => {
+      const hasDRorSV = timesheet.entries.some((e) => e.notes === 'DR' || e.notes === 'SV')
+      const hasBCBAEntries = timesheet.entries.length > 0 && timesheet.entries.every((e) => !e.notes || e.notes === '')
+      
+      if (isBCBA) {
+        // For BCBA timesheets: must have entries but no DR/SV entries
+        return hasBCBAEntries && !hasDRorSV
+      } else {
+        // For regular timesheets: must have DR/SV entries
+        return hasDRorSV
+      }
+    }) : allTimesheets
+
+    // Apply pagination after filtering
+    const paginatedTimesheets = filteredTimesheets.slice((page - 1) * limit, page * limit)
+    const filteredTotal = filteredTimesheets.length
+
     return NextResponse.json({
-      timesheets,
-      total,
+      timesheets: paginatedTimesheets,
+      total: filteredTotal,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(filteredTotal / limit),
     })
   } catch (error) {
     console.error('Error fetching timesheets:', error)
