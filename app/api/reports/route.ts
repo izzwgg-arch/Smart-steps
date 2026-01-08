@@ -7,9 +7,14 @@ import { generateTimesheetSummaryCSV, generateInvoiceSummaryCSV, generateInsuran
 import { generateTimesheetSummaryExcel, generateInvoiceSummaryExcel, generateInsuranceBillingExcel, generateProviderPerformanceExcel } from '@/lib/excel/reportGenerator'
 
 export async function GET(request: NextRequest) {
+  const correlationId = `report-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  
   try {
+    console.log(`[REPORT GENERATION] ${correlationId} - Starting report generation`)
+    
     const session = await getServerSession(authOptions)
     if (!session) {
+      console.warn(`[REPORT GENERATION] ${correlationId} - Unauthorized access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -22,9 +27,20 @@ export async function GET(request: NextRequest) {
     const clientId = searchParams.get('clientId')
     const insuranceId = searchParams.get('insuranceId')
 
+    console.log(`[REPORT GENERATION] ${correlationId} - Params:`, {
+      reportType,
+      format,
+      startDate,
+      endDate,
+      providerId: providerId || 'all',
+      clientId: clientId || 'all',
+      insuranceId: insuranceId || 'all',
+    })
+
     if (!reportType || !format) {
+      console.error(`[REPORT GENERATION] ${correlationId} - Missing required params: reportType=${reportType}, format=${format}`)
       return NextResponse.json(
-        { error: 'Report type and format are required' },
+        { error: 'Report type and format are required', correlationId },
         { status: 400 }
       )
     }
@@ -359,6 +375,8 @@ export async function GET(request: NextRequest) {
         )
     }
 
+    console.log(`[REPORT GENERATION] ${correlationId} - Report generated successfully: ${filename}.${extension}`)
+    
     return new NextResponse(buffer as any, {
       headers: {
         'Content-Type': contentType,
@@ -366,9 +384,21 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error generating report:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
+    console.error(`[REPORT GENERATION] ${correlationId} - Error generating report:`, {
+      error: errorMessage,
+      stack: errorStack,
+      correlationId,
+    })
+    
     return NextResponse.json(
-      { error: 'Failed to generate report' },
+      { 
+        error: 'Failed to generate report',
+        message: errorMessage,
+        correlationId,
+      },
       { status: 500 }
     )
   }

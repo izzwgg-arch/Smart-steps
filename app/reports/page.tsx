@@ -20,7 +20,7 @@ export default async function ReportsPage() {
   }
 
   // Get filter options
-  const [providers, clients, insurances] = await Promise.all([
+  const [providers, clients, insurances, bcbas] = await Promise.all([
     prisma.provider.findMany({
       where: { active: true, deletedAt: null },
       select: { id: true, name: true },
@@ -32,6 +32,11 @@ export default async function ReportsPage() {
     prisma.insurance.findMany({
       where: { active: true, deletedAt: null },
       select: { id: true, name: true },
+    }),
+    prisma.bCBA.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
     }),
   ])
 
@@ -45,6 +50,7 @@ export default async function ReportsPage() {
             providers={providers}
             clients={clients}
             insurances={insurances}
+            bcbas={bcbas}
           />
         </div>
       </main>
