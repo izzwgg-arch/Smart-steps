@@ -43,7 +43,7 @@ export async function PUT(
     }
 
     const data = await request.json()
-    const { name, email, phone, insuranceId, active } = data
+    const { name, email, phone, insuranceId, active, signature } = data
 
     const client = await prisma.client.update({
       where: { id: params.id },
@@ -53,6 +53,7 @@ export async function PUT(
         phone: phone || null,
         insuranceId,
         active,
+        signature: signature || null,
       },
       include: { insurance: true },
     })

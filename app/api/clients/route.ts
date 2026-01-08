@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json()
-    const { name, email, phone, insuranceId, active } = data
+    const { name, email, phone, insuranceId, active, signature } = data
 
     if (!name || !insuranceId) {
       return NextResponse.json(
@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
         phone: phone || null,
         insuranceId,
         active: active !== undefined ? active : true,
+        signature: signature || null,
       },
       include: { insurance: true },
     })

@@ -16,6 +16,7 @@ interface Timesheet {
     clientId?: string | null
     medicaidId?: string | null
     externalId?: string | null
+    signature?: string | null
   }
   provider: {
     name: string
@@ -202,10 +203,21 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 <div className="mb-2">
                   <span className="font-semibold">Client Signature:</span>
                 </div>
-                <div className="border-b-2 border-black pb-1 mb-1">
-                  {format(new Date(), 'M/d/yyyy')}
-                </div>
-                <div className="h-12 border-b border-gray-400"></div>
+                {timesheet.client.signature ? (
+                  <div className="mb-2">
+                    <img
+                      src={timesheet.client.signature}
+                      alt="Client Signature"
+                      className="max-h-20 max-w-full object-contain border border-gray-300 print:max-h-16"
+                      style={{ maxHeight: '80px' }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-12 border-b border-gray-400 mb-1"></div>
+                    <div className="text-xs text-gray-400 italic">(No signature on file)</div>
+                  </>
+                )}
               </div>
               <div>
                 <div className="mb-2">
@@ -216,15 +228,14 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                     <img
                       src={timesheet.provider.signature}
                       alt="Provider Signature"
-                      className="max-h-16 border border-gray-300"
+                      className="max-h-20 max-w-full object-contain border border-gray-300 print:max-h-16"
+                      style={{ maxHeight: '80px' }}
                     />
                   </div>
                 ) : (
                   <>
-                    <div className="border-b-2 border-black pb-1 mb-1">
-                      {format(new Date(), 'M/d/yyyy')}
-                    </div>
-                    <div className="h-12 border-b border-gray-400"></div>
+                    <div className="h-12 border-b border-gray-400 mb-1"></div>
+                    <div className="text-xs text-gray-400 italic">(No signature on file)</div>
                   </>
                 )}
               </div>

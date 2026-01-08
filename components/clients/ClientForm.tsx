@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Save, X, Upload } from 'lucide-react'
@@ -20,6 +20,7 @@ interface ClientFormProps {
     phone: string | null
     insuranceId: string
     active: boolean
+    signature?: string | null
   }
   insurances: Insurance[]
 }
@@ -32,9 +33,28 @@ export function ClientForm({ client, insurances }: ClientFormProps) {
   const [phone, setPhone] = useState(client?.phone || '')
   const [insuranceId, setInsuranceId] = useState(client?.insuranceId || '')
   const [active, setActive] = useState(client?.active ?? true)
+  const [signature, setSignature] = useState<string | null>(client?.signature || null)
   
   const signatureRef = useRef<SignatureCanvas>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Load existing signature into canvas when editing
+  useEffect(() => {
+    if (client?.signature && signatureRef.current) {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = signatureRef.current?.getCanvas()
+        if (canvas) {
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          }
+        }
+      }
+      img.src = client.signature
+    }
+  }, [client?.signature])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,6 +87,7 @@ export function ClientForm({ client, insurances }: ClientFormProps) {
           phone: phone.trim() || null,
           insuranceId,
           active,
+          signature: signature || null,
         }),
       })
 
@@ -94,6 +115,7 @@ export function ClientForm({ client, insurances }: ClientFormProps) {
   const handleSaveSignature = () => {
     if (signatureRef.current) {
       const dataURL = signatureRef.current.toDataURL()
+      setSignature(dataURL)
       toast.success('Signature saved')
     }
   }
@@ -108,6 +130,23 @@ export function ClientForm({ client, insurances }: ClientFormProps) {
       
       const reader = new FileReader()
       reader.onloadend = () => {
+        const result = reader.result as string
+        setSignature(result)
+        // Also draw on canvas if possible
+        if (signatureRef.current && result) {
+          const img = new Image()
+          img.onload = () => {
+            const canvas = signatureRef.current?.getCanvas()
+            if (canvas) {
+              const ctx = canvas.getContext('2d')
+              if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height)
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+              }
+            }
+          }
+          img.src = result
+        }
         toast.success('Image uploaded successfully')
       }
       reader.readAsDataURL(file)
