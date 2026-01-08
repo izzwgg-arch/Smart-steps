@@ -30,11 +30,19 @@ import { checkInternalOverlaps } from '@/lib/timesheetOverlapUtils'
 interface Provider {
   id: string
   name: string
+  phone?: string | null
+  dlb?: string | null
+  signature?: string | null
 }
 
 interface Client {
   id: string
   name: string
+  phone?: string | null
+  address?: string | null
+  idNumber?: string | null
+  dlb?: string | null
+  signature?: string | null
 }
 
 interface BCBA {
@@ -63,7 +71,9 @@ interface Timesheet {
   providerId: string
   clientId: string
   bcbaId: string
-  insuranceId: string
+  insuranceId?: string | null
+  serviceType?: string | null
+  sessionData?: string | null
   startDate: string
   endDate: string
   status: string
@@ -75,7 +85,7 @@ interface BCBATimesheetFormProps {
   providers: Provider[]
   clients: Client[]
   bcbas: BCBA[]
-  insurances: Insurance[]
+  insurances?: Insurance[] // Optional, not used for BCBA timesheets
   timesheet?: Timesheet
 }
 
@@ -136,15 +146,18 @@ export function BCBATimesheetForm({
   const [providerId, setProviderId] = useState(timesheet?.providerId || '')
   const [clientId, setClientId] = useState(timesheet?.clientId || '')
   const [bcbaId, setBcbaId] = useState(timesheet?.bcbaId || '')
-  // Auto-select first insurance for BCBA timesheets (hidden from UI)
-  const [insuranceId, setInsuranceId] = useState(
-    timesheet?.insuranceId || (insurances.length > 0 ? insurances[0].id : '')
-  )
+  const [serviceType, setServiceType] = useState(timesheet?.serviceType || '')
+  const [sessionData, setSessionData] = useState(timesheet?.sessionData || '')
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([])
   const [totalHours, setTotalHours] = useState(0)
   const [timezone, setTimezone] = useState<string>(timesheet?.timezone || 'America/New_York')
   const [overlapConflicts, setOverlapConflicts] = useState<Array<{ index: number; message: string }>>([])
   const conflictRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
+  
+  // Get DLB from client or provider
+  const selectedClient = clients.find(c => c.id === clientId)
+  const selectedProvider = providers.find(p => p.id === providerId)
+  const dlb = selectedClient?.dlb || selectedProvider?.dlb || ''
 
   const [defaultTimes, setDefaultTimes] = useState<DefaultTimes>({
     sun: {
@@ -165,13 +178,6 @@ export function BCBATimesheetForm({
   })
 
   const hasInitializedRef = useRef(false)
-
-  // Auto-select first insurance if not set
-  useEffect(() => {
-    if (!insuranceId && insurances.length > 0) {
-      setInsuranceId(insurances[0].id)
-    }
-  }, [insuranceId, insurances])
 
   // Load timesheet data when in edit mode
   useEffect(() => {
@@ -608,8 +614,18 @@ export function BCBATimesheetForm({
       return
     }
 
-    if (!providerId || !clientId || !bcbaId || !insuranceId) {
+    if (!providerId || !clientId || !bcbaId) {
       toast.error('Please fill all required fields')
+      return
+    }
+
+    if (!serviceType) {
+      toast.error('Please select a Service Type')
+      return
+    }
+
+    if (!sessionData) {
+      toast.error('Please select Session Data / Analysis')
       return
     }
 
@@ -690,7 +706,9 @@ export function BCBATimesheetForm({
           providerId,
           clientId,
           bcbaId,
-          insuranceId,
+          isBCBA: true,
+          serviceType,
+          sessionData,
           startDate: startDate.toISOString(),
           endDate: endDate.toISOString(),
           timezone,
@@ -899,7 +917,50 @@ export function BCBATimesheetForm({
                 ))}
               </select>
             </div>
-            {/* Insurance field is hidden but auto-selected */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={serviceType}
+                onChange={(e) => setServiceType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">Select service type</option>
+                <option value="Assessment">Assessment</option>
+                <option value="Direct Care">Direct Care</option>
+                <option value="Supervision">Supervision</option>
+                <option value="Treatment Planning">Treatment Planning</option>
+                <option value="Parent Training">Parent Training</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Session Data / Analysis <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={sessionData}
+                onChange={(e) => setSessionData(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">Select session data</option>
+                <option value="Session Notes">Session Notes</option>
+                <option value="Client Data Analysis">Client Data Analysis</option>
+                <option value="Excel Export Action Plan">Excel Export Action Plan</option>
+              </select>
+            </div>
+            {dlb && (
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  DLB
+                </label>
+                <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-700">
+                  {dlb}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

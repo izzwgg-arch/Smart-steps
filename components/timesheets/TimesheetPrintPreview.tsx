@@ -8,19 +8,22 @@ interface Timesheet {
   id: string
   startDate: string
   endDate: string
+  isBCBA?: boolean
+  serviceType?: string | null
+  sessionData?: string | null
   client: {
     name: string
     phone?: string | null
     id?: string
     idNumber?: string | null
-    clientId?: string | null
-    medicaidId?: string | null
-    externalId?: string | null
+    address?: string | null
+    dlb?: string | null
     signature?: string | null
   }
   provider: {
     name: string
     phone?: string | null
+    dlb?: string | null
     signature?: string | null
   }
   bcba: {
@@ -41,8 +44,8 @@ interface TimesheetPrintPreviewProps {
 }
 
 export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPreviewProps) {
-  // Detect if this is a BCBA timesheet (no DR/SV entries)
-  const isBCBATimesheet = !timesheet.entries.some((e) => e.notes === 'DR' || e.notes === 'SV')
+  // Detect if this is a BCBA timesheet (use isBCBA flag or check entries)
+  const isBCBATimesheet = timesheet.isBCBA === true || !timesheet.entries.some((e) => e.notes === 'DR' || e.notes === 'SV')
   
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
@@ -92,36 +95,48 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
           </div>
 
           {/* Content */}
-          <div className="p-6 print-preview-content">
+          <div className={`p-6 print-preview-content ${isBCBATimesheet ? 'bcba-print-layout' : ''}`}>
             {/* Company Name Header */}
             <div className="mb-4 print-company-header">
-              <h1 className="text-3xl font-bold text-center">Smart steps ABA</h1>
+              <h1 className="text-3xl font-bold text-center">Smart Steps ABA</h1>
             </div>
             
-            {/* Header Text */}
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold uppercase tracking-wide">TIMESHEETS</h1>
-            </div>
+            {/* Header Text - Only for regular timesheets */}
+            {!isBCBATimesheet && (
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold uppercase tracking-wide">TIMESHEETS</h1>
+              </div>
+            )}
 
             {/* Client and Provider Info */}
-            <div className="grid grid-cols-2 gap-8 mb-6">
+            <div className={`grid grid-cols-2 gap-8 mb-6 ${isBCBATimesheet ? 'bcba-info-grid' : ''}`}>
               <div>
                 <div className="mb-2">
-                  <span className="font-semibold">Child:</span> {timesheet.client.name || ''}
+                  <span className="font-semibold">{isBCBATimesheet ? 'Client:' : 'Child:'}</span> {timesheet.client.name || ''}
                 </div>
+                {isBCBATimesheet && timesheet.client.address && (
+                  <div className="mb-2">
+                    <span className="font-semibold">Address:</span> {timesheet.client.address}
+                  </div>
+                )}
                 <div className="mb-2">
                   <span className="font-semibold">Phone:</span> {timesheet.client.phone || ''}
                 </div>
                 <div>
                   <span className="font-semibold">ID Number:</span>{' '}
                   {isBCBATimesheet 
-                    ? (timesheet.client.id || '')
+                    ? (timesheet.client.idNumber || timesheet.client.id || '')
                     : (timesheet.client.idNumber || 
                        timesheet.client.clientId || 
                        timesheet.client.medicaidId || 
                        timesheet.client.externalId || 
                        '')}
                 </div>
+                {isBCBATimesheet && (timesheet.client.dlb || timesheet.provider.dlb) && (
+                  <div className="mt-2">
+                    <span className="font-semibold">DLB:</span> {timesheet.client.dlb || timesheet.provider.dlb || ''}
+                  </div>
+                )}
               </div>
               <div>
                 <div className="mb-2">
@@ -133,6 +148,16 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 <div>
                   <span className="font-semibold">BCBA:</span> {timesheet.bcba.name}
                 </div>
+                {isBCBATimesheet && timesheet.serviceType && (
+                  <div className="mt-2">
+                    <span className="font-semibold">Service Type:</span> {timesheet.serviceType}
+                  </div>
+                )}
+                {isBCBATimesheet && timesheet.sessionData && (
+                  <div className="mt-2">
+                    <span className="font-semibold">Session Data / Analysis:</span> {timesheet.sessionData}
+                  </div>
+                )}
               </div>
             </div>
 

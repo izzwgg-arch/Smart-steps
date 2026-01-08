@@ -21,6 +21,11 @@ export async function GET(request: NextRequest) {
     const isBCBA = searchParams.get('isBCBA') === 'true' // Filter for BCBA timesheets
 
     const where: any = { deletedAt: null }
+    
+    // Strict separation: filter by isBCBA flag
+    if (isBCBA !== undefined) {
+      where.isBCBA = isBCBA === true
+    }
     const clientId = searchParams.get('clientId')
     const status = searchParams.get('status')
     const startDate = searchParams.get('startDate')
@@ -71,8 +76,8 @@ export async function GET(request: NextRequest) {
     }
     // If viewAll is true and no userId filter, no userId filter is applied (can see all)
 
-    // Fetch all timesheets first (we'll filter by entry notes after)
-    const [allTimesheets, allCount] = await Promise.all([
+    // Fetch timesheets with strict isBCBA filtering
+    const [timesheets, total] = await Promise.all([
       prisma.timesheet.findMany({
         where,
         include: {
@@ -83,36 +88,18 @@ export async function GET(request: NextRequest) {
           entries: true,
         },
         orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
       }),
       prisma.timesheet.count({ where }),
     ])
 
-    // Filter timesheets based on BCBA vs regular
-    // BCBA timesheets have entries with notes === null or empty (no DR/SV)
-    // Regular timesheets have entries with notes === 'DR' or 'SV'
-    const filteredTimesheets = isBCBA !== undefined ? allTimesheets.filter((timesheet) => {
-      const hasDRorSV = timesheet.entries.some((e) => e.notes === 'DR' || e.notes === 'SV')
-      const hasBCBAEntries = timesheet.entries.length > 0 && timesheet.entries.every((e) => !e.notes || e.notes === '')
-      
-      if (isBCBA) {
-        // For BCBA timesheets: must have entries but no DR/SV entries
-        return hasBCBAEntries && !hasDRorSV
-      } else {
-        // For regular timesheets: must have DR/SV entries
-        return hasDRorSV
-      }
-    }) : allTimesheets
-
-    // Apply pagination after filtering
-    const paginatedTimesheets = filteredTimesheets.slice((page - 1) * limit, page * limit)
-    const filteredTotal = filteredTimesheets.length
-
     return NextResponse.json({
-      timesheets: paginatedTimesheets,
-      total: filteredTotal,
+      timesheets,
+      total,
       page,
       limit,
-      totalPages: Math.ceil(filteredTotal / limit),
+      totalPages: Math.ceil(total / limit),
     })
   } catch (error) {
     console.error('Error fetching timesheets:', error)
@@ -136,16 +123,27 @@ export async function POST(request: NextRequest) {
       clientId,
       bcbaId,
       insuranceId,
+      isBCBA,
+      serviceType,
+      sessionData,
       startDate,
       endDate,
       timezone,
       entries,
     } = data
 
-    // Validation
-    if (!providerId || !clientId || !bcbaId || !insuranceId || !startDate || !endDate) {
+    // Validation - BCBA timesheets don't require insurance
+    if (!providerId || !clientId || !bcbaId || !startDate || !endDate) {
       return NextResponse.json(
-        { error: 'All fields are required' },
+        { error: 'Provider, Client, BCBA, Start Date, and End Date are required' },
+        { status: 400 }
+      )
+    }
+
+    // Regular timesheets require insurance, BCBA timesheets don't
+    if (!isBCBA && !insuranceId) {
+      return NextResponse.json(
+        { error: 'Insurance is required for regular timesheets' },
         { status: 400 }
       )
     }
@@ -154,12 +152,20 @@ export async function POST(request: NextRequest) {
     const [provider, client, insurance] = await Promise.all([
       prisma.provider.findUnique({ where: { id: providerId } }),
       prisma.client.findUnique({ where: { id: clientId } }),
-      prisma.insurance.findUnique({ where: { id: insuranceId } }),
+      insuranceId ? prisma.insurance.findUnique({ where: { id: insuranceId } }) : Promise.resolve(null),
     ])
 
-    if (!provider?.active || !client?.active || !insurance?.active) {
+    if (!provider?.active || !client?.active) {
       return NextResponse.json(
-        { error: 'Provider, Client, and Insurance must be active' },
+        { error: 'Provider and Client must be active' },
+        { status: 400 }
+      )
+    }
+
+    // Only check insurance if it's provided (regular timesheets)
+    if (insuranceId && !insurance?.active) {
+      return NextResponse.json(
+        { error: 'Insurance must be active' },
         { status: 400 }
       )
     }
@@ -244,7 +250,10 @@ export async function POST(request: NextRequest) {
         providerId,
         clientId,
         bcbaId,
-        insuranceId,
+        insuranceId: insuranceId || null, // Optional for BCBA timesheets
+        isBCBA: isBCBA === true,
+        serviceType: serviceType || null,
+        sessionData: sessionData || null,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         timezone: timezone || 'America/New_York',

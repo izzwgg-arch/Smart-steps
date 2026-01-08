@@ -185,6 +185,10 @@ export async function PUT(
         where: { id: params.id },
         data: {
           ...timesheetData,
+          insuranceId: timesheetData.insuranceId || null, // Allow null for BCBA timesheets
+          isBCBA: timesheetData.isBCBA !== undefined ? timesheetData.isBCBA : timesheet.isBCBA,
+          serviceType: timesheetData.serviceType || null,
+          sessionData: timesheetData.sessionData || null,
           lastEditedBy: session.user.id,
           lastEditedAt: new Date(),
           entries: {

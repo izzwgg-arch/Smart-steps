@@ -46,7 +46,7 @@ export default async function EditBCBATimesheetPage({
   }
 
   // Fetch all options for dropdowns
-  const [providers, clients, bcbas, insurances] = await Promise.all([
+  const [providers, clients, bcbas] = await Promise.all([
     prisma.provider.findMany({
       where: { active: true, deletedAt: null },
       orderBy: { name: 'asc' },
@@ -60,10 +60,6 @@ export default async function EditBCBATimesheetPage({
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
     }),
-    prisma.insurance.findMany({
-      where: { active: true, deletedAt: null },
-      orderBy: { name: 'asc' },
-    }),
   ])
 
   // Transform timesheet to match form interface
@@ -73,6 +69,8 @@ export default async function EditBCBATimesheetPage({
     clientId: timesheet.clientId,
     bcbaId: timesheet.bcbaId,
     insuranceId: timesheet.insuranceId,
+    serviceType: timesheet.serviceType,
+    sessionData: timesheet.sessionData,
     startDate: timesheet.startDate.toISOString(),
     endDate: timesheet.endDate.toISOString(),
     status: timesheet.status,
@@ -95,7 +93,7 @@ export default async function EditBCBATimesheetPage({
           providers={providers}
           clients={clients}
           bcbas={bcbas}
-          insurances={insurances}
+          insurances={[]}
           timesheet={timesheetData}
         />
       </main>

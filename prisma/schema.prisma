@@ -128,6 +128,7 @@ model Provider {
   email     String?
   phone     String?
   signature String? // Base64 or file path
+  dlb       String? // DLB field for BCBA timesheets
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -142,6 +143,9 @@ model Client {
   name        String
   email       String?
   phone       String?
+  address     String? // Client address for BCBA timesheets
+  idNumber    String? // Client ID number for BCBA timesheets
+  dlb         String? // DLB field for BCBA timesheets
   insuranceId String
   signature   String? // Base64 or file path
   active      Boolean   @default(true)
@@ -198,7 +202,10 @@ model Timesheet {
   providerId      String
   clientId        String
   bcbaId          String
-  insuranceId     String
+  insuranceId     String? // Optional for BCBA timesheets
+  isBCBA          Boolean         @default(false) // Flag to mark BCBA timesheets
+  serviceType     String? // Service Type for BCBA: Assessment, Direct Care, Supervision, Treatment Planning, Parent Training
+  sessionData     String? // Session Data/Analysis for BCBA: Session Notes, Client Data Analysis, Excel Export Action Plan
   status          TimesheetStatus @default(DRAFT)
   startDate       DateTime
   endDate         DateTime
@@ -217,7 +224,7 @@ model Timesheet {
   provider       Provider         @relation(fields: [providerId], references: [id])
   client         Client           @relation(fields: [clientId], references: [id])
   bcba           BCBA             @relation(fields: [bcbaId], references: [id])
-  insurance      Insurance        @relation("TimesheetInsurance", fields: [insuranceId], references: [id])
+  insurance      Insurance?       @relation("TimesheetInsurance", fields: [insuranceId], references: [id])
   entries        TimesheetEntry[]
   invoiceEntries InvoiceEntry[]
 
@@ -225,6 +232,7 @@ model Timesheet {
   @@index([providerId, deletedAt])
   @@index([clientId, deletedAt])
   @@index([deletedAt])
+  @@index([isBCBA, deletedAt]) // Index for BCBA filtering
 }
 
 model TimesheetEntry {

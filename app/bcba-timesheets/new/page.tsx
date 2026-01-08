@@ -12,7 +12,7 @@ export default async function NewBCBATimesheetPage() {
     redirect('/login')
   }
 
-  const [providers, clients, bcbas, insurances] = await Promise.all([
+  const [providers, clients, bcbas] = await Promise.all([
     prisma.provider.findMany({
       where: { active: true, deletedAt: null },
       orderBy: { name: 'asc' },
@@ -26,10 +26,6 @@ export default async function NewBCBATimesheetPage() {
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
     }),
-    prisma.insurance.findMany({
-      where: { active: true, deletedAt: null },
-      orderBy: { name: 'asc' },
-    }),
   ])
 
   return (
@@ -40,7 +36,7 @@ export default async function NewBCBATimesheetPage() {
           providers={providers}
           clients={clients}
           bcbas={bcbas}
-          insurances={insurances}
+          insurances={[]}
         />
       </main>
     </div>
