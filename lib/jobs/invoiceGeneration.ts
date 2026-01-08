@@ -46,8 +46,10 @@ export async function generateInvoicesForApprovedTimesheets(
 
     // Find all approved timesheets in the billing period that haven't been fully invoiced
     // Only include entries that are NOT already invoiced
+    // Exclude BCBA timesheets (they don't have insurance)
     const approvedTimesheets = await prisma.timesheet.findMany({
       where: {
+        isBCBA: false, // Only regular timesheets can be invoiced
         status: 'APPROVED',
         deletedAt: null,
         // Timesheet must overlap with billing period
