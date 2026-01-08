@@ -171,7 +171,7 @@ export function TimesheetForm({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const [overlapConflicts, setOverlapConflicts] = useState<Array<{ index: number; type: 'DR' | 'SV'; message: string }>>([])
+  const [overlapConflicts, setOverlapConflicts] = useState<Array<{ index: number; type: 'DR' | 'SV'; message: string; isExternal?: boolean }>>([])
   const conflictRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
   const [printPreviewTimesheet, setPrintPreviewTimesheet] = useState<any | null>(null)
   
