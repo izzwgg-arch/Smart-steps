@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validatePassword } from '@/lib/utils'
+import { hashToken } from '@/lib/security'
+import { logAudit } from '@/lib/audit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,10 +25,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Hash the provided token to compare with stored hash
+    const hashedToken = hashToken(token)
+
     // Find user with valid reset token
     const user = await prisma.user.findFirst({
       where: {
-        resetToken: token,
+        resetToken: hashedToken,
         resetTokenExpiry: {
           gt: new Date(), // Token must not be expired
         },
@@ -51,7 +56,16 @@ export async function POST(request: NextRequest) {
         password: hashedPassword,
         resetToken: null,
         resetTokenExpiry: null,
+        mustChangePassword: false, // Clear forced password change flag if set
+        failedLoginAttempts: 0, // Reset failed login attempts
+        lockedUntil: null, // Clear any lock
       },
+    })
+
+    // Log audit
+    await logAudit('UPDATE', 'User', user.id, 'system', {
+      action: 'password_reset_completed',
+      email: user.email,
     })
 
     return NextResponse.json({

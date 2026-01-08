@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validatePassword } from '@/lib/utils'
 import { logCreate } from '@/lib/audit'
+import { generateTemporaryPassword } from '@/lib/security'
+import { sendEmail, getNewUserInviteEmailHtml, getNewUserInviteEmailText } from '@/lib/email'
 
 export async function GET(request: NextRequest) {
   try {
@@ -99,20 +101,38 @@ export async function POST(request: NextRequest) {
       activationEnd,
     } = data
 
-    if (!username || !email || !password) {
+    if (!username || !email) {
       return NextResponse.json(
-        { error: 'Username, email, and password are required' },
+        { error: 'Username and email are required' },
         { status: 400 }
       )
     }
 
-    // Validate password
-    const passwordValidation = validatePassword(password)
-    if (!passwordValidation.valid) {
-      return NextResponse.json(
-        { error: passwordValidation.errors.join(', ') },
-        { status: 400 }
-      )
+    // Determine if we should use temp password or provided password
+    const useTempPassword = data.sendInviteEmail === true || !password
+    let finalPassword: string
+    let tempPassword: string | null = null
+
+    if (useTempPassword) {
+      // Generate temporary password
+      tempPassword = generateTemporaryPassword()
+      finalPassword = tempPassword
+    } else {
+      // Validate provided password
+      if (!password) {
+        return NextResponse.json(
+          { error: 'Password is required when not sending invite email' },
+          { status: 400 }
+        )
+      }
+      const passwordValidation = validatePassword(password)
+      if (!passwordValidation.valid) {
+        return NextResponse.json(
+          { error: passwordValidation.errors.join(', ') },
+          { status: 400 }
+        )
+      }
+      finalPassword = password
     }
 
     // Check if user already exists by username or email
@@ -139,7 +159,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10)
+    const hashedPassword = await bcrypt.hash(finalPassword, 10)
 
     // Create user
     const user = await prisma.user.create({
@@ -152,6 +172,7 @@ export async function POST(request: NextRequest) {
         active: active !== undefined ? active : true,
         activationStart: activationStart ? new Date(activationStart) : null,
         activationEnd: activationEnd ? new Date(activationEnd) : null,
+        mustChangePassword: useTempPassword, // Force password change if using temp password
       },
         select: {
           id: true,
@@ -178,9 +199,38 @@ export async function POST(request: NextRequest) {
       email: user.email,
       role: user.role,
       active: user.active,
+      mustChangePassword: useTempPassword,
     })
 
-    return NextResponse.json(user, { status: 201 })
+    // Send invite email if using temp password
+    if (useTempPassword && data.sendInviteEmail !== false) {
+      try {
+        const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const loginUrl = `${baseUrl}/login`
+        
+        await sendEmail({
+          to: user.email,
+          subject: 'Welcome to Smart Steps - Account Created',
+          html: getNewUserInviteEmailHtml(user.email, tempPassword, loginUrl, user.username),
+          text: getNewUserInviteEmailText(user.email, tempPassword, loginUrl),
+        })
+
+        // Log email sent
+        await logCreate('User', user.id, session.user.id, {
+          action: 'invite_email_sent',
+          email: user.email,
+        })
+      } catch (error) {
+        console.error('Failed to send invite email:', error)
+        // Don't fail user creation if email fails
+      }
+    }
+
+    // Don't return temp password in response
+    const userResponse = { ...user }
+    delete (userResponse as any).password
+
+    return NextResponse.json(userResponse, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
     return NextResponse.json(

@@ -26,8 +26,19 @@ export default function LoginPage() {
       if (result?.error) {
         toast.error(result.error)
       } else {
-        toast.success('Login successful!')
-        router.push('/dashboard')
+        // Check if user needs to change password
+        // Wait a moment for session to update
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const sessionRes = await fetch('/api/auth/session')
+        const session = await sessionRes.json()
+        
+        if (session?.user?.mustChangePassword) {
+          toast.success('Login successful! Please set a new password.')
+          router.push('/change-password')
+        } else {
+          toast.success('Login successful!')
+          router.push('/dashboard')
+        }
         router.refresh()
       }
     } catch (error) {
@@ -38,7 +49,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen flex items-center justify-center">
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-xl">
         <div>
           <h1 className="text-3xl font-bold text-center text-primary-700">
@@ -109,3 +120,4 @@ export default function LoginPage() {
     </div>
   )
 }
+

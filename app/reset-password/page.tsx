@@ -93,7 +93,7 @@ export default function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8" style={{ backgroundColor: '#ccff33' }}>
+      <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="flex justify-center">
             <div className="bg-primary-500 rounded px-3 py-2">
@@ -129,7 +129,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           <div className="bg-primary-500 rounded px-3 py-2">
@@ -234,3 +234,4 @@ export default function ResetPasswordPage() {
     </div>
   )
 }
+

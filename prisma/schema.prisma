@@ -59,6 +59,9 @@ model User {
   activationEnd    DateTime?
   resetToken       String?
   resetTokenExpiry DateTime?
+  mustChangePassword Boolean @default(false)
+  failedLoginAttempts Int    @default(0)
+  lockedUntil      DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?

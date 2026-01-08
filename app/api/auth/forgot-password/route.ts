@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from '@/lib/email'
-import crypto from 'crypto'
+import { hashToken, generateSecureToken, checkRateLimit } from '@/lib/security'
+import { logAudit } from '@/lib/audit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +12,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      )
+    }
+
+    // Rate limiting: 5 requests per 15 minutes per IP
+    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+    const rateLimitKey = `forgot-password:${clientIp}:${email.toLowerCase().trim()}`
+    
+    if (!checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: 'Too many password reset requests. Please try again later.' },
+        { status: 429 }
       )
     }
 
@@ -28,29 +40,37 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex')
+    // Generate reset token (plain text for email)
+    const resetToken = generateSecureToken(32)
+    // Hash token for storage
+    const hashedToken = hashToken(resetToken)
     const resetTokenExpiry = new Date()
     resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 1) // Token expires in 1 hour
 
-    // Save token to database
+    // Save hashed token to database
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        resetToken,
+        resetToken: hashedToken,
         resetTokenExpiry,
       },
     })
 
+    // Log audit
+    await logAudit('SUBMIT', 'User', user.id, 'system', {
+      action: 'password_reset_requested',
+      email: user.email,
+    })
+
     // Generate reset link
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     const resetLink = `${baseUrl}/reset-password?token=${resetToken}`
 
     // Send email
     try {
       await sendEmail({
         to: user.email,
-        subject: 'Password Reset Request - A Plus Center',
+        subject: 'Password Reset Request - Smart Steps',
         html: getPasswordResetEmailHtml(resetLink, user.email.split('@')[0]),
         text: getPasswordResetEmailText(resetLink),
       })

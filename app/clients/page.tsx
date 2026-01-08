@@ -19,7 +19,7 @@ export default async function ClientsPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <ClientsList />
@@ -27,3 +27,4 @@ export default async function ClientsPage() {
     </div>
   )
 }
+
