@@ -35,8 +35,12 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - change-password (to prevent redirect loops)
+     * - login (to allow login)
+     * - forgot-password (to allow password reset)
+     * - reset-password (to allow password reset)
      * - public folder
      */
-    '/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api/auth|_next/static|_next/image|favicon.ico|change-password|login|forgot-password|reset-password|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

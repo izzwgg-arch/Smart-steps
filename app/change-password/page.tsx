@@ -14,14 +14,20 @@ export default function ChangePasswordPage() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    // Redirect if not logged in or doesn't need to change password
-    if (status === 'unauthenticated') {
-      router.push('/login')
+    // Only redirect if status is determined (not loading)
+    if (status === 'loading') {
       return
     }
     
-    if (status === 'authenticated' && !(session?.user as any)?.mustChangePassword) {
-      router.push('/dashboard')
+    // Redirect if not logged in
+    if (status === 'unauthenticated') {
+      router.replace('/login')
+      return
+    }
+    
+    // Redirect if authenticated but doesn't need to change password
+    if (status === 'authenticated' && session?.user && !(session?.user as any)?.mustChangePassword) {
+      router.replace('/dashboard')
       return
     }
   }, [status, session, router])
