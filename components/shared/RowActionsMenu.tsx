@@ -26,18 +26,21 @@ export function RowActionsMenu({
           updatePosition()
         })
       })
+    } else {
+      setPosition(null)
     }
   }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
 
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node
       if (
         menuRef.current &&
-        !menuRef.current.contains(event.target as Node) &&
+        !menuRef.current.contains(target) &&
         buttonRef.current &&
-        !buttonRef.current.contains(event.target as Node)
+        !buttonRef.current.contains(target)
       ) {
         setIsOpen(false)
       }
@@ -53,13 +56,16 @@ export function RowActionsMenu({
       updatePosition()
     }
 
+    // Support both mouse and touch events for Android
     document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
     document.addEventListener('keydown', handleEscape)
     window.addEventListener('scroll', handleScroll, true)
     window.addEventListener('resize', updatePosition)
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
       window.removeEventListener('scroll', handleScroll, true)
       window.removeEventListener('resize', updatePosition)
@@ -164,7 +170,9 @@ export function RowActionsMenu({
     }
   }
 
-  const handleToggle = () => {
+  const handleToggle = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     setIsOpen(!isOpen)
   }
 
@@ -175,6 +183,7 @@ export function RowActionsMenu({
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
+        WebkitTapHighlightColor: 'transparent',
       }}
       role="menu"
       aria-orientation="vertical"
@@ -185,6 +194,10 @@ export function RowActionsMenu({
           setIsOpen(false)
         }
       }}
+      onTouchStart={(e) => {
+        // Prevent event bubbling on touch
+        e.stopPropagation()
+      }}
     >
       <div className="py-1">
         {children}
@@ -193,17 +206,26 @@ export function RowActionsMenu({
   )
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative inline-flex flex-shrink-0 ${className}`}>
       <button
         ref={buttonRef}
         onClick={handleToggle}
-        className="p-2 hover:bg-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+        onTouchStart={(e) => {
+          // Prevent double-tap zoom on Android
+          e.preventDefault()
+          handleToggle(e)
+        }}
+        className="p-2 hover:bg-gray-200 active:bg-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 min-w-[44px] min-h-[44px] w-[44px] h-[44px] flex items-center justify-center touch-manipulation cursor-pointer"
+        style={{
+          WebkitTapHighlightColor: 'transparent',
+          touchAction: 'manipulation',
+        }}
         aria-label="Actions"
         aria-expanded={isOpen}
         aria-haspopup="true"
         type="button"
       >
-        <MoreVertical className="w-5 h-5 text-gray-500" />
+        <MoreVertical className="w-5 h-5 text-gray-700" strokeWidth={2} />
       </button>
       {typeof window !== 'undefined' && menuContent && createPortal(menuContent, document.body)}
     </div>

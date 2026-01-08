@@ -377,7 +377,7 @@ export function TimesheetsList() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 STATUS
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[80px]">
                 ACTIONS
               </th>
             </tr>
@@ -412,7 +412,7 @@ export function TimesheetsList() {
                     {timesheet.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-[80px] flex-shrink-0">
                   <RowActionsMenu>
                     <button
                       onClick={async () => {
@@ -426,7 +426,7 @@ export function TimesheetsList() {
                           toast.error('Failed to load timesheet')
                         }
                       }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >
                       <Printer className="w-4 h-4 mr-2" />
                       Print
@@ -445,7 +445,7 @@ export function TimesheetsList() {
                           toast.error('Failed to export timesheet')
                         }
                       }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >
                       <FileText className="w-4 h-4 mr-2" />
                       Export CSV
@@ -464,7 +464,7 @@ export function TimesheetsList() {
                           toast.error('Failed to export timesheet')
                         }
                       }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >
                       <FileSpreadsheet className="w-4 h-4 mr-2" />
                       Export Excel

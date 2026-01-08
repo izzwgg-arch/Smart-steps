@@ -370,7 +370,7 @@ export function InvoicesList() {
                   <RowActionsMenu>
                     <Link
                       href={`/invoices/${invoice.id}`}
-                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       View
@@ -379,14 +379,14 @@ export function InvoicesList() {
                       <>
                         <Link
                           href={`/invoices/${invoice.id}/edit`}
-                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                         >
                           <Edit className="w-4 h-4 mr-2" />
                           Edit
                         </Link>
                         <button
                           onClick={() => handleDelete(invoice.id)}
-                          className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                          className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100 min-h-[44px]"
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete

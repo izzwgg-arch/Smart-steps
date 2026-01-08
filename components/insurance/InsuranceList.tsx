@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, MoreVertical, Edit, Trash2, DollarSign } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, DollarSign } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 
 interface Insurance {
   id: string
@@ -17,7 +18,6 @@ export function InsuranceList() {
   const [insurances, setInsurances] = useState<Insurance[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedInsurance, setSelectedInsurance] = useState<string | null>(null)
 
   useEffect(() => {
     fetchInsurances()
@@ -119,38 +119,22 @@ export function InsuranceList() {
                   >
                     {insurance.active ? 'ACTIVE' : 'INACTIVE'}
                   </span>
-                  <div className="relative">
-                    <button
-                      onClick={() =>
-                        setSelectedInsurance(
-                          selectedInsurance === insurance.id ? null : insurance.id
-                        )
-                      }
-                      className="p-1 hover:bg-gray-200 rounded"
+                  <RowActionsMenu>
+                    <Link
+                      href={`/insurance/${insurance.id}/edit`}
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >
-                      <MoreVertical className="w-5 h-5 text-gray-500" />
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(insurance.id)}
+                      className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100 min-h-[44px]"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
                     </button>
-                    {selectedInsurance === insurance.id && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                        <div className="py-1">
-                          <Link
-                            href={`/insurance/${insurance.id}/edit`}
-                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
-                          </Link>
-                          <button
-                            onClick={() => handleDelete(insurance.id)}
-                            className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  </RowActionsMenu>
                 </div>
               </div>
             </li>
