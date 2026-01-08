@@ -23,6 +23,13 @@ export async function GET(
           }
         },
         dashboardVisibility: true,
+        timesheetVisibility: {
+          include: {
+            user: {
+              select: { id: true, username: true, email: true }
+            }
+          }
+        },
         _count: {
           select: { users: true }
         }
@@ -54,7 +61,7 @@ export async function PUT(
     }
 
     const data = await request.json()
-    const { name, description, active, permissions, dashboardVisibility } = data
+    const { name, description, active, permissions, dashboardVisibility, timesheetVisibility } = data
 
     const existing = await prisma.role.findUnique({
       where: { id: params.id }
@@ -114,6 +121,24 @@ export async function PUT(
       })
     }
 
+    // Update timesheet visibility (allowlist) if provided
+    if (timesheetVisibility !== undefined) {
+      // Delete existing timesheet visibility settings
+      await prisma.roleTimesheetVisibility.deleteMany({
+        where: { roleId: params.id }
+      })
+
+      // Create new timesheet visibility settings (if user IDs provided)
+      if (Array.isArray(timesheetVisibility) && timesheetVisibility.length > 0) {
+        await prisma.roleTimesheetVisibility.createMany({
+          data: timesheetVisibility.map((userId: string) => ({
+            roleId: params.id,
+            userId,
+          }))
+        })
+      }
+    }
+
     await logUpdate('Role', role.id, session.user.id, {}, {
       name: name || existing.name,
       description: description !== undefined ? description : existing.description,
@@ -127,7 +152,14 @@ export async function PUT(
             permission: true
           }
         },
-        dashboardVisibility: true
+        dashboardVisibility: true,
+        timesheetVisibility: {
+          include: {
+            user: {
+              select: { id: true, username: true, email: true }
+            }
+          }
+        }
       }
     })
 

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
 import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
+import { getTimesheetVisibilityScope } from '@/lib/permissions'
 
 export async function GET(
   request: NextRequest,
@@ -33,8 +34,9 @@ export async function GET(
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
 
-    // Users can only view their own timesheets unless admin
-    if (session.user.role !== 'ADMIN' && timesheet.userId !== session.user.id) {
+    // Check timesheet visibility scope
+    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+    if (!visibilityScope.viewAll && !visibilityScope.allowedUserIds.includes(timesheet.userId)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -80,8 +82,9 @@ export async function PUT(
       )
     }
 
-    // Users can only edit their own timesheets unless admin
-    if (session.user.role !== 'ADMIN' && timesheet.userId !== session.user.id) {
+    // Check timesheet visibility scope for editing (must be able to view to edit)
+    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+    if (!visibilityScope.viewAll && !visibilityScope.allowedUserIds.includes(timesheet.userId)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -249,8 +252,9 @@ export async function DELETE(
       )
     }
 
-    // Users can only delete their own timesheets unless admin
-    if (session.user.role !== 'ADMIN' && timesheet.userId !== session.user.id) {
+    // Check timesheet visibility scope for deleting (must be able to view to delete)
+    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+    if (!visibilityScope.viewAll && !visibilityScope.allowedUserIds.includes(timesheet.userId)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

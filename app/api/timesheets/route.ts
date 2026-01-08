@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
 import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
 import { startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns'
+import { getTimesheetVisibilityScope } from '@/lib/permissions'
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
+    const userIdParam = searchParams.get('userId')
 
     if (search) {
       where.OR = [
@@ -47,10 +49,26 @@ export async function GET(request: NextRequest) {
       where.startDate = { lte: new Date(endDate) }
     }
 
-    // Users can only see their own timesheets unless admin
-    if (session.user.role !== 'ADMIN') {
-      where.userId = session.user.id
+    // Apply timesheet visibility scope based on user permissions
+    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+    
+    // If user has viewAll, allow filtering by userId if provided
+    if (visibilityScope.viewAll && userIdParam) {
+      where.userId = userIdParam
+    } else if (!visibilityScope.viewAll) {
+      // Filter by allowed user IDs
+      const allowedIds = visibilityScope.allowedUserIds
+      // If userId filter is provided and user has viewSelectedUsers, further filter
+      if (userIdParam && allowedIds.includes(userIdParam)) {
+        where.userId = userIdParam
+      } else {
+        where.userId = { in: allowedIds }
+      }
+    } else if (userIdParam) {
+      // viewAll is true and userId filter provided
+      where.userId = userIdParam
     }
+    // If viewAll is true and no userId filter, no userId filter is applied (can see all)
 
     const [timesheets, total] = await Promise.all([
       prisma.timesheet.findMany({

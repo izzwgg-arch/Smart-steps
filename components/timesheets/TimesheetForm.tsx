@@ -13,6 +13,7 @@ import {
   getDayShortName,
   isSunday,
   isFriday,
+  isSaturday,
 } from '@/lib/dateUtils'
 import {
   parseTimeToMinutes,
@@ -222,7 +223,23 @@ export function TimesheetForm({
     if (timesheet && startDate && endDate && !hasInitializedRef.current) {
       hasInitializedRef.current = true
       const days = getDaysInRange(startDate, endDate)
-      const entries: DayEntry[] = days.map((date) => {
+      // Exclude Saturdays - never render in bottom section (CRITICAL: Filter at data generation level)
+      const daysWithoutSaturday = days.filter((date) => {
+        const dayOfWeek = date.getDay()
+        // Regression test: Assert no Saturdays
+        if (dayOfWeek === 6) {
+          console.error('[TIMESHEET] CRITICAL: Saturday detected in edit mode date generation - this should never happen!', date)
+          return false
+        }
+        return true
+      })
+      // Final assertion: Verify no Saturdays in final entries
+      const entries: DayEntry[] = daysWithoutSaturday.map((date) => {
+        // Assert no Saturdays in rendered data
+        if (date.getDay() === 6) {
+          console.error('[TIMESHEET] CRITICAL: Saturday found in edit mode entry generation!', date)
+          throw new Error('Saturday detected in timesheet entry generation (edit mode)')
+        }
         const dateStr = format(date, 'yyyy-MM-dd')
         const dayEntries = timesheet.entries.filter((entry) => {
           const entryDate = format(new Date(entry.date), 'yyyy-MM-dd')
@@ -293,6 +310,12 @@ export function TimesheetForm({
           },
         }
       })
+      // Final verification: Assert no Saturdays in final state (edit mode)
+      const hasSaturday = entries.some(entry => entry.date.getDay() === 6)
+      if (hasSaturday) {
+        console.error('[TIMESHEET] CRITICAL: Saturday entries found in final state (edit mode)!', entries.filter(e => e.date.getDay() === 6))
+        throw new Error('Saturday entries detected in timesheet state (edit mode)')
+      }
       setDayEntries(entries)
       calculateTotalHours(entries)
     }
@@ -303,7 +326,23 @@ export function TimesheetForm({
   useEffect(() => {
     if (startDate && endDate && !timesheet) {
       const days = getDaysInRange(startDate, endDate)
-      const entries: DayEntry[] = days.map((date) => {
+      // Exclude Saturdays - never render in bottom section (CRITICAL: Filter at data generation level)
+      const daysWithoutSaturday = days.filter((date) => {
+        const dayOfWeek = date.getDay()
+        // Regression test: Assert no Saturdays
+        if (dayOfWeek === 6) {
+          console.error('[TIMESHEET] CRITICAL: Saturday detected in date generation - this should never happen!', date)
+          return false
+        }
+        return true
+      })
+      // Final assertion: Verify no Saturdays in final entries
+      const entries: DayEntry[] = daysWithoutSaturday.map((date) => {
+        // Assert no Saturdays in rendered data
+        if (date.getDay() === 6) {
+          console.error('[TIMESHEET] CRITICAL: Saturday found in entry generation!', date)
+          throw new Error('Saturday detected in timesheet entry generation')
+        }
         let defaults = defaultTimes.weekdays
         if (isSunday(date)) {
           defaults = defaultTimes.sun
@@ -356,6 +395,12 @@ export function TimesheetForm({
           },
         }
       })
+      // Final verification: Assert no Saturdays in final state
+      const hasSaturday = entries.some(entry => entry.date.getDay() === 6)
+      if (hasSaturday) {
+        console.error('[TIMESHEET] CRITICAL: Saturday entries found in final state!', entries.filter(e => e.date.getDay() === 6))
+        throw new Error('Saturday entries detected in timesheet state')
+      }
       setDayEntries(entries)
       calculateTotalHours(entries)
     }
@@ -608,7 +653,16 @@ export function TimesheetForm({
     setDayEntries((prevEntries) => {
       if (prevEntries.length === 0) return prevEntries
 
-      const updated = prevEntries.map((entry) => {
+      // Safety filter: Remove any Saturday entries that might have slipped through
+      const filteredEntries = prevEntries.filter((entry) => {
+        if (entry.date.getDay() === 6) {
+          console.error('[TIMESHEET] CRITICAL: Saturday entry found in applyDefaultsToDates - removing!', entry)
+          return false
+        }
+        return true
+      })
+
+      const updated = filteredEntries.map((entry) => {
         let defaults = defaultTimes.weekdays
         if (isSunday(entry.date)) {
           defaults = defaultTimes.sun
@@ -1462,6 +1516,19 @@ export function TimesheetForm({
         {/* Days Table */}
         {dayEntries.length > 0 && (
           <div className="bg-white shadow rounded-lg p-6">
+            {/* Regression test: Assert no Saturdays in rendered entries */}
+            {(() => {
+              const saturdayEntries = dayEntries.filter(entry => entry.date.getDay() === 6)
+              if (saturdayEntries.length > 0) {
+                console.error('[TIMESHEET] CRITICAL: Saturday entries detected in render!', saturdayEntries)
+                return (
+                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    <strong>ERROR:</strong> Saturday entries found in timesheet data. This should never happen.
+                  </div>
+                )
+              }
+              return null
+            })()}
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">
                 Days for {startDate && format(startDate, 'MMM d')} - {endDate && format(endDate, 'MMM d')}
@@ -1471,7 +1538,7 @@ export function TimesheetForm({
                   <button
                     type="button"
                     onClick={applyDefaultsToDates}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                    className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 active:bg-primary-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Apply Default Times to Dates
                   </button>

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import * as React from 'react'
 
 interface RoleFormProps {
   role?: {
@@ -25,6 +26,14 @@ interface RoleFormProps {
       canDelete: boolean
       canApprove: boolean
       canExport: boolean
+    }>
+    timesheetVisibility?: Array<{
+      userId: string
+      user?: {
+        id: string
+        username: string
+        email: string
+      }
     }>
   }
 }
@@ -62,10 +71,58 @@ export function RoleForm({ role }: RoleFormProps) {
   const [groupedPermissions, setGroupedPermissions] = useState<PermissionGroup[]>([])
   const [permissionStates, setPermissionStates] = useState<Record<string, PermissionState>>({})
   const [dashboardVisibility, setDashboardVisibility] = useState<Record<string, boolean>>({})
+  const [timesheetViewAll, setTimesheetViewAll] = useState(false)
+  const [timesheetViewSelectedUsers, setTimesheetViewSelectedUsers] = useState(false)
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
+  const [users, setUsers] = useState<Array<{ id: string; username: string; email: string }>>([])
+  const [userSearch, setUserSearch] = useState('')
+  const [showUserSelector, setShowUserSelector] = useState(false)
+  const userSelectorRef = useRef<HTMLDivElement>(null)
+  
+  // Close user selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userSelectorRef.current && !userSelectorRef.current.contains(event.target as Node)) {
+        setShowUserSelector(false)
+      }
+    }
+    
+    if (showUserSelector) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showUserSelector])
 
   useEffect(() => {
     fetchPermissions()
+    fetchUsers()
   }, [])
+
+  useEffect(() => {
+    // Initialize timesheet visibility from role
+    if (role?.timesheetVisibility) {
+      const userIds = role.timesheetVisibility.map(tv => tv.userId)
+      setSelectedUserIds(userIds)
+      
+      // Check if role has viewAll or viewSelectedUsers permissions
+      if (role.permissions) {
+        const viewAllPerm = role.permissions.find(rp => rp.permission.name === 'timesheets.viewAll')
+        const viewSelectedPerm = role.permissions.find(rp => rp.permission.name === 'timesheets.viewSelectedUsers')
+        
+        if (viewAllPerm?.canView) {
+          setTimesheetViewAll(true)
+          setTimesheetViewSelectedUsers(false)
+        } else if (viewSelectedPerm?.canView) {
+          setTimesheetViewAll(false)
+          setTimesheetViewSelectedUsers(true)
+          setShowUserSelector(true)
+        }
+      }
+    }
+  }, [role])
 
   useEffect(() => {
     if (role?.id) {
@@ -87,6 +144,22 @@ export function RoleForm({ role }: RoleFormProps) {
       }
     } catch (error) {
       console.error('Failed to fetch dashboard visibility:', error)
+    }
+  }
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch('/api/users?limit=1000&active=true')
+      if (res.ok) {
+        const data = await res.json()
+        setUsers((data.users || []).map((u: any) => ({
+          id: u.id,
+          username: u.username || u.email,
+          email: u.email,
+        })))
+      }
+    } catch (error) {
+      console.error('Failed to fetch users:', error)
     }
   }
 
@@ -221,6 +294,71 @@ export function RoleForm({ role }: RoleFormProps) {
         p.canView || p.canCreate || p.canUpdate || p.canDelete || p.canApprove || p.canExport
       )
 
+      // Find permission IDs for timesheet visibility permissions
+      const viewAllPerm = permissions.find(p => p.name === 'timesheets.viewAll')
+      const viewSelectedPerm = permissions.find(p => p.name === 'timesheets.viewSelectedUsers')
+      
+      // Add timesheet visibility permissions to permissionsArray if enabled
+      if (timesheetViewAll && viewAllPerm) {
+        const existingIndex = permissionsArray.findIndex(p => p.permissionId === viewAllPerm.id)
+        if (existingIndex >= 0) {
+          permissionsArray[existingIndex].canView = true
+        } else {
+          permissionsArray.push({
+            permissionId: viewAllPerm.id,
+            canView: true,
+            canCreate: false,
+            canUpdate: false,
+            canDelete: false,
+            canApprove: false,
+            canExport: false,
+          })
+        }
+        // Remove viewSelectedUsers if viewAll is enabled
+        if (viewSelectedPerm) {
+          const selectedIndex = permissionsArray.findIndex(p => p.permissionId === viewSelectedPerm.id)
+          if (selectedIndex >= 0) {
+            permissionsArray[selectedIndex].canView = false
+          }
+        }
+      } else if (timesheetViewSelectedUsers && viewSelectedPerm) {
+        const existingIndex = permissionsArray.findIndex(p => p.permissionId === viewSelectedPerm.id)
+        if (existingIndex >= 0) {
+          permissionsArray[existingIndex].canView = true
+        } else {
+          permissionsArray.push({
+            permissionId: viewSelectedPerm.id,
+            canView: true,
+            canCreate: false,
+            canUpdate: false,
+            canDelete: false,
+            canApprove: false,
+            canExport: false,
+          })
+        }
+        // Remove viewAll if viewSelectedUsers is enabled
+        if (viewAllPerm) {
+          const allIndex = permissionsArray.findIndex(p => p.permissionId === viewAllPerm.id)
+          if (allIndex >= 0) {
+            permissionsArray[allIndex].canView = false
+          }
+        }
+      } else {
+        // Remove both if neither is enabled
+        if (viewAllPerm) {
+          const allIndex = permissionsArray.findIndex(p => p.permissionId === viewAllPerm.id)
+          if (allIndex >= 0) {
+            permissionsArray[allIndex].canView = false
+          }
+        }
+        if (viewSelectedPerm) {
+          const selectedIndex = permissionsArray.findIndex(p => p.permissionId === viewSelectedPerm.id)
+          if (selectedIndex >= 0) {
+            permissionsArray[selectedIndex].canView = false
+          }
+        }
+      }
+
       const body = {
         name: name.trim(),
         description: description.trim() || null,
@@ -230,6 +368,7 @@ export function RoleForm({ role }: RoleFormProps) {
           section,
           visible,
         })),
+        timesheetVisibility: timesheetViewSelectedUsers ? selectedUserIds : [],
       }
 
       const res = await fetch(url, {
@@ -465,8 +604,168 @@ export function RoleForm({ role }: RoleFormProps) {
                       </button>
                     </div>
 
+                    {/* Special handling for timesheets category - add visibility permissions */}
+                    {group.category === 'timesheets' && (
+                      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h4 className="text-sm font-semibold text-gray-900 mb-3">Timesheet Visibility</h4>
+                        <div className="space-y-3">
+                          <label className="flex items-start cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={timesheetViewAll}
+                              onChange={(e) => {
+                                setTimesheetViewAll(e.target.checked)
+                                if (e.target.checked) {
+                                  setTimesheetViewSelectedUsers(false)
+                                  setShowUserSelector(false)
+                                }
+                              }}
+                              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                            />
+                            <div className="ml-3">
+                              <div className="font-medium text-sm text-gray-900">View all timesheets</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Allows viewing timesheets from ALL users (global access)
+                              </div>
+                            </div>
+                          </label>
+                          
+                          <label className="flex items-start cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={timesheetViewSelectedUsers}
+                              onChange={(e) => {
+                                setTimesheetViewSelectedUsers(e.target.checked)
+                                if (e.target.checked) {
+                                  setTimesheetViewAll(false)
+                                  setShowUserSelector(true)
+                                } else {
+                                  setShowUserSelector(false)
+                                  setSelectedUserIds([])
+                                }
+                              }}
+                              disabled={timesheetViewAll}
+                              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5 disabled:opacity-50"
+                            />
+                            <div className="ml-3 flex-1">
+                              <div className="font-medium text-sm text-gray-900">View selected users' timesheets</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                When enabled, select specific users whose timesheets are visible
+                              </div>
+                              
+                              {timesheetViewSelectedUsers && (
+                                <div className="mt-3">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-medium text-gray-700">
+                                      Selected Users ({selectedUserIds.length})
+                                    </span>
+                                    {selectedUserIds.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedUserIds([])
+                                        }}
+                                        className="text-xs text-red-600 hover:text-red-800"
+                                      >
+                                        Clear All
+                                      </button>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="relative" ref={userSelectorRef}>
+                                    <input
+                                      type="text"
+                                      placeholder="Search users..."
+                                      value={userSearch}
+                                      onChange={(e) => setUserSearch(e.target.value)}
+                                      onFocus={() => setShowUserSelector(true)}
+                                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                                    />
+                                    
+                                    {showUserSelector && (
+                                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                                        {users
+                                          .filter(u => 
+                                            !userSearch || 
+                                            u.username?.toLowerCase().includes(userSearch.toLowerCase()) ||
+                                            u.email?.toLowerCase().includes(userSearch.toLowerCase())
+                                          )
+                                          .map((user) => (
+                                            <label
+                                              key={user.id}
+                                              className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={selectedUserIds.includes(user.id)}
+                                                onChange={(e) => {
+                                                  if (e.target.checked) {
+                                                    setSelectedUserIds([...selectedUserIds, user.id])
+                                                  } else {
+                                                    setSelectedUserIds(selectedUserIds.filter(id => id !== user.id))
+                                                  }
+                                                }}
+                                                className="h-3 w-3 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                                              />
+                                              <div className="ml-2 flex-1">
+                                                <div className="text-sm text-gray-900">{user.username || user.email}</div>
+                                                {user.username && user.email && (
+                                                  <div className="text-xs text-gray-500">{user.email}</div>
+                                                )}
+                                              </div>
+                                            </label>
+                                          ))}
+                                        {users.filter(u => 
+                                          !userSearch || 
+                                          u.username?.toLowerCase().includes(userSearch.toLowerCase()) ||
+                                          u.email?.toLowerCase().includes(userSearch.toLowerCase())
+                                        ).length === 0 && (
+                                          <div className="px-3 py-2 text-sm text-gray-500">No users found</div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {selectedUserIds.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {selectedUserIds.map((userId) => {
+                                        const user = users.find(u => u.id === userId)
+                                        if (!user) return null
+                                        return (
+                                          <span
+                                            key={userId}
+                                            className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-blue-100 text-blue-800"
+                                          >
+                                            {user.username || user.email}
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedUserIds(selectedUserIds.filter(id => id !== userId))
+                                              }}
+                                              className="ml-1 text-blue-600 hover:text-blue-800"
+                                            >
+                                              ×
+                                            </button>
+                                          </span>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {group.permissions.map((perm) => {
+                        // Skip viewAll and viewSelectedUsers as they're handled above
+                        if (perm.name === 'timesheets.viewAll' || perm.name === 'timesheets.viewSelectedUsers') {
+                          return null
+                        }
+                        
                         const state = permissionStates[perm.id]
                         if (!state) return null
 

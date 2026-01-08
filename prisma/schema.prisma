@@ -45,6 +45,7 @@ enum AuditAction {
   GENERATE
   PAYMENT
   ADJUSTMENT
+  LOGIN
 }
 
 model User {
@@ -62,6 +63,7 @@ model User {
   mustChangePassword Boolean @default(false)
   failedLoginAttempts Int    @default(0)
   lockedUntil      DateTime?
+  lastSeenActivityAt DateTime? // For admin activity badge tracking
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
@@ -70,7 +72,9 @@ model User {
   invoicesCreated Invoice[]      @relation("InvoiceCreator")
   auditLogs       AuditLog[]
   notifications   Notification[]
+  activities      Activity[]     @relation("ActivityActor")
   customRole      Role?          @relation(fields: [customRoleId], references: [id])
+  timesheetVisibility RoleTimesheetVisibility[]
 }
 
 model Role {
@@ -84,6 +88,7 @@ model Role {
 
   permissions         RolePermission[]
   dashboardVisibility RoleDashboardVisibility[]
+  timesheetVisibility RoleTimesheetVisibility[]
   users               User[]
 }
 
@@ -326,6 +331,28 @@ model AuditLog {
   createdAt DateTime    @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([userId])
+}
+
+model Activity {
+  id           String   @id @default(cuid())
+  actionType   String   // e.g., "LOGIN"
+  actorUserId  String
+  actorEmail   String
+  actorRole    UserRole
+  ipAddress    String?
+  userAgent    String?
+  metadata     String?  // JSON
+  createdAt    DateTime @default(now())
+
+  actor User @relation("ActivityActor", fields: [actorUserId], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actionType])
+  @@index([actorUserId])
 }
 
 model Notification {
@@ -361,4 +388,17 @@ model RoleDashboardVisibility {
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, section])
+}
+
+model RoleTimesheetVisibility {
+  id        String   @id @default(cuid())
+  roleId    String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, userId])
 }

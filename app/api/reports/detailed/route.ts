@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { canAccessRoute } from '@/lib/permissions'
+import { canAccessRoute, getTimesheetVisibilityScope } from '@/lib/permissions'
 import {
   buildTimesheetWhereClause,
   buildEntryWhereClause,
@@ -85,6 +85,12 @@ export async function GET(request: NextRequest) {
       startDate: undefined,
       endDate: undefined,
     })
+    
+    // Apply timesheet visibility scope
+    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+    if (!visibilityScope.viewAll) {
+      timesheetWhereNoDate.userId = { in: visibilityScope.allowedUserIds }
+    }
     
     // Entry date filter is applied separately
     const entryDateFilter: any = {}

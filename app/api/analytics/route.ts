@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
 import { startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, format } from 'date-fns'
+import { getTimesheetVisibilityScope } from '@/lib/permissions'
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,6 +40,12 @@ export async function GET(request: NextRequest) {
     if (clientId) timesheetWhere.clientId = clientId
     if (bcbaId) timesheetWhere.bcbaId = bcbaId
     if (insuranceId) timesheetWhere.insuranceId = insuranceId
+
+    // Apply timesheet visibility scope (for consistency, even though admins typically have viewAll)
+    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+    if (!visibilityScope.viewAll) {
+      timesheetWhere.userId = { in: visibilityScope.allowedUserIds }
+    }
 
     // Build where clause for invoices
     const invoiceWhere: any = {

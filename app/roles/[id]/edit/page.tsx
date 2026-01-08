@@ -28,6 +28,13 @@ export default async function EditRolePage({
         include: {
           permission: true
         }
+      },
+      timesheetVisibility: {
+        include: {
+          user: {
+            select: { id: true, username: true, email: true }
+          }
+        }
       }
     }
   })

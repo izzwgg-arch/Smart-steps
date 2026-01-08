@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { generateTimesheetSummaryPDF, generateInvoiceSummaryPDF, generateInsuranceBillingPDF, generateProviderPerformancePDF } from '@/lib/pdf/reportGenerator'
 import { generateTimesheetSummaryCSV, generateInvoiceSummaryCSV, generateInsuranceBillingCSV, generateProviderPerformanceCSV } from '@/lib/csv/reportGenerator'
 import { generateTimesheetSummaryExcel, generateInvoiceSummaryExcel, generateInsuranceBillingExcel, generateProviderPerformanceExcel } from '@/lib/excel/reportGenerator'
+import { getTimesheetVisibilityScope } from '@/lib/permissions'
 
 export async function GET(request: NextRequest) {
   const correlationId = `report-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -62,6 +63,12 @@ export async function GET(request: NextRequest) {
         if (providerId) where.providerId = providerId
         if (clientId) where.clientId = clientId
         if (insuranceId) where.insuranceId = insuranceId
+
+        // Apply timesheet visibility scope
+        const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+        if (!visibilityScope.viewAll) {
+          where.userId = { in: visibilityScope.allowedUserIds }
+        }
 
         const timesheets = await prisma.timesheet.findMany({
           where,
@@ -228,6 +235,12 @@ export async function GET(request: NextRequest) {
         }
 
         if (providerId) where.providerId = providerId
+
+        // Apply timesheet visibility scope
+        const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+        if (!visibilityScope.viewAll) {
+          where.userId = { in: visibilityScope.allowedUserIds }
+        }
 
         const timesheets = await prisma.timesheet.findMany({
           where,

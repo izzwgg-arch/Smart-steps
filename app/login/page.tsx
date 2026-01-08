@@ -26,6 +26,14 @@ export default function LoginPage() {
       if (result?.error) {
         toast.error(result.error)
       } else {
+        // Log login activity (non-blocking)
+        fetch('/api/auth/log-activity', {
+          method: 'POST',
+        }).catch(err => {
+          console.error('Failed to log login activity:', err)
+          // Don't block login if activity logging fails
+        })
+
         // Check if user needs to change password
         // Wait a moment for session to update
         await new Promise(resolve => setTimeout(resolve, 500))

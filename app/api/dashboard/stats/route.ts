@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getTimesheetVisibilityScope } from '@/lib/permissions'
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,12 +12,36 @@ export async function GET(request: NextRequest) {
     }
 
     const userId = session.user.id
-    const isAdmin = session.user.role === 'ADMIN'
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
+
+    // Get unread activity count (only for admins)
+    let unreadActivityCount = 0
+    if (isAdmin) {
+      const admin = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { lastSeenActivityAt: true },
+      })
+      const lastSeenAt = admin?.lastSeenActivityAt
+      const whereClause = lastSeenAt
+        ? { createdAt: { gt: lastSeenAt } }
+        : {}
+      unreadActivityCount = await prisma.activity.count({
+        where: whereClause,
+      })
+    }
 
     // Get pending timesheets (SUBMITTED status)
-    const pendingTimesheetsWhere: any = isAdmin
-      ? { status: 'SUBMITTED' as const, deletedAt: null }
-      : { status: 'SUBMITTED' as const, userId, deletedAt: null }
+    // Apply timesheet visibility scope
+    const visibilityScope = await getTimesheetVisibilityScope(userId)
+    
+    const pendingTimesheetsWhere: any = {
+      status: 'SUBMITTED' as const,
+      deletedAt: null,
+    }
+    
+    if (!visibilityScope.viewAll) {
+      pendingTimesheetsWhere.userId = { in: visibilityScope.allowedUserIds }
+    }
 
     const pendingTimesheets = await prisma.timesheet.findMany({
       where: pendingTimesheetsWhere,
@@ -29,15 +54,66 @@ export async function GET(request: NextRequest) {
       take: 10,
     })
 
-    // Get recent activity (audit logs)
-    const recentActivity = await prisma.auditLog.findMany({
-      where: isAdmin ? {} : { userId },
-      include: {
-        user: { select: { email: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    })
+    // Get recent activity (audit logs + login activities)
+    // For admins: include both audit logs and login activities
+    // For non-admins: only their own audit logs
+    const [auditLogs, loginActivities] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: isAdmin ? {} : { userId },
+        include: {
+          user: { select: { email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: isAdmin ? 10 : 10,
+      }),
+      // Only fetch login activities for admins
+      isAdmin
+        ? prisma.activity.findMany({
+            where: { actionType: 'LOGIN' },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          })
+        : Promise.resolve([]),
+    ])
+
+    // Combine and sort activities
+    const allActivities = [
+      ...auditLogs.map((log) => ({
+        id: log.id,
+        type: 'audit' as const,
+        action: log.action,
+        entity: log.entity,
+        entityId: log.entityId,
+        userEmail: log.user.email,
+        createdAt: log.createdAt,
+        oldValues: log.oldValues ? JSON.parse(log.oldValues) : null,
+        newValues: log.newValues ? JSON.parse(log.newValues) : null,
+      })),
+      ...loginActivities.map((activity) => ({
+        id: activity.id,
+        type: 'login' as const,
+        action: 'LOGIN' as const,
+        entity: 'User',
+        entityId: activity.actorUserId,
+        userEmail: activity.actorEmail,
+        createdAt: activity.createdAt,
+        oldValues: null,
+        newValues: null,
+      })),
+    ]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 10)
+
+    const recentActivity = allActivities.map((activity) => ({
+      id: activity.id,
+      action: activity.action,
+      entity: activity.entity,
+      entityId: activity.entityId,
+      userEmail: activity.userEmail,
+      createdAt: activity.createdAt instanceof Date ? activity.createdAt.toISOString() : activity.createdAt,
+      oldValues: activity.oldValues,
+      newValues: activity.newValues,
+    }))
 
     // Get unread notifications count
     const unreadNotificationsCount = await prisma.notification.count({
@@ -125,16 +201,7 @@ export async function GET(request: NextRequest) {
         },
       },
       pendingTimesheets,
-      recentActivity: recentActivity.map((log) => ({
-        id: log.id,
-        action: log.action,
-        entity: log.entity,
-        entityId: log.entityId,
-        userEmail: log.user.email,
-        createdAt: log.createdAt,
-        oldValues: log.oldValues ? JSON.parse(log.oldValues) : null,
-        newValues: log.newValues ? JSON.parse(log.newValues) : null,
-      })),
+      recentActivity,
       recentInvoices: recentInvoices.map((inv) => ({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
@@ -144,6 +211,7 @@ export async function GET(request: NextRequest) {
         createdAt: inv.createdAt,
       })),
       unreadNotificationsCount,
+      unreadActivityCount: isAdmin ? unreadActivityCount : 0,
     })
   } catch (error) {
     console.error('Error fetching dashboard stats:', error)

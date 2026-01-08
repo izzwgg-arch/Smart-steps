@@ -33,6 +33,8 @@ const permissions = [
   
   // Timesheets
   { name: 'timesheets.view', description: 'View timesheets', category: 'timesheets' },
+  { name: 'timesheets.viewAll', description: 'View all timesheets', category: 'timesheets' },
+  { name: 'timesheets.viewSelectedUsers', description: 'View selected users\' timesheets', category: 'timesheets' },
   { name: 'timesheets.create', description: 'Create timesheets', category: 'timesheets' },
   { name: 'timesheets.update', description: 'Update timesheets', category: 'timesheets' },
   { name: 'timesheets.delete', description: 'Delete timesheets', category: 'timesheets' },

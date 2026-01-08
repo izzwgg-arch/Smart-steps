@@ -34,24 +34,53 @@ export function TimesheetsList() {
   const [searchTerm, setSearchTerm] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(25)
   const [printTimesheet, setPrintTimesheet] = useState<Timesheet | null>(null)
   const [userRole, setUserRole] = useState<string>('USER')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
+  const [canViewAllTimesheets, setCanViewAllTimesheets] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState<string>('')
+  const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; username: string; email: string }>>([])
 
   useEffect(() => {
     fetchTimesheets()
-    // Get user role from session
+    // Get user role and permissions from session
     fetch('/api/auth/session').then(res => res.json()).then(data => {
       if (data?.user?.role) {
         setUserRole(data.user.role)
       }
     })
-  }, [page])
+    // Check if user can view all timesheets
+    fetch('/api/user/permissions').then(res => res.json()).then(data => {
+      if (data?.permissions) {
+        const hasViewAll = data.permissions['timesheets.viewAll']?.canView === true
+        const hasViewSelected = data.permissions['timesheets.viewSelectedUsers']?.canView === true
+        setCanViewAllTimesheets(hasViewAll || hasViewSelected)
+        
+        // If user can view others, fetch available users
+        if (hasViewAll || hasViewSelected) {
+          fetch('/api/users?limit=1000&active=true').then(res => res.json()).then(userData => {
+            if (userData?.users) {
+              setAvailableUsers(userData.users.map((u: any) => ({
+                id: u.id,
+                username: u.username || u.email,
+                email: u.email,
+              })))
+            }
+          })
+        }
+      }
+    })
+  }, [page, rowsPerPage])
 
   const fetchTimesheets = async () => {
     try {
-      const res = await fetch(`/api/timesheets?page=${page}&limit=25&search=${searchTerm}`)
+      let url = `/api/timesheets?page=${page}&limit=${rowsPerPage}&search=${searchTerm}`
+      if (selectedUserId) {
+        url += `&userId=${selectedUserId}`
+      }
+      const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
         setTimesheets(data.timesheets)
@@ -74,7 +103,15 @@ export function TimesheetsList() {
     }, 500)
 
     return () => clearTimeout(delayDebounce)
-  }, [searchTerm])
+  }, [searchTerm, selectedUserId])
+
+  useEffect(() => {
+    if (page === 1) {
+      fetchTimesheets()
+    } else {
+      setPage(1)
+    }
+  }, [selectedUserId])
 
   const handleSubmit = async (id: string) => {
     try {
@@ -246,7 +283,7 @@ export function TimesheetsList() {
         </div>
       </div>
 
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
@@ -257,11 +294,23 @@ export function TimesheetsList() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <select className="px-3 py-2 border border-gray-300 rounded-md">
-          <option>25 per page</option>
-          <option>50 per page</option>
-          <option>100 per page</option>
-        </select>
+        {canViewAllTimesheets && (
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">User:</label>
+            <select
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="">All Users</option>
+              {availableUsers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.username || user.email}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -437,27 +486,44 @@ export function TimesheetsList() {
         )}
       </div>
 
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between">
-          <button
-            onClick={() => setPage(Math.max(1, page - 1))}
-            disabled={page === 1}
-            className="px-4 py-2 border border-gray-300 rounded-md disabled:opacity-50"
+      <div className="mt-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-700">Rows per page:</span>
+          <select
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value))
+              setPage(1) // Reset to first page when changing rows per page
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
           >
-            Previous
-          </button>
-          <span className="text-sm text-gray-700">
-            Page {page} of {totalPages}
-          </span>
-          <button
-            onClick={() => setPage(Math.min(totalPages, page + 1))}
-            disabled={page === totalPages}
-            className="px-4 py-2 border border-gray-300 rounded-md disabled:opacity-50"
-          >
-            Next
-          </button>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
         </div>
-      )}
+        {totalPages > 1 && (
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              disabled={page === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
 
       {printTimesheet && (
         <TimesheetPrintPreview

@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json()
-    const { name, description, active, permissions, dashboardVisibility } = data
+    const { name, description, active, permissions, dashboardVisibility, timesheetVisibility } = data
 
     if (!name) {
       return NextResponse.json(
@@ -84,6 +84,10 @@ export async function POST(request: NextRequest) {
       visible: dv.visible || false,
     }))
 
+    const timesheetVisibilityData = Array.isArray(timesheetVisibility) && timesheetVisibility.length > 0
+      ? timesheetVisibility.map((userId: string) => ({ userId }))
+      : []
+
     const role = await prisma.role.create({
       data: {
         name,
@@ -98,6 +102,11 @@ export async function POST(request: NextRequest) {
           dashboardVisibility: {
             create: dashboardVisibilityData
           }
+        }),
+        ...(timesheetVisibilityData.length > 0 && {
+          timesheetVisibility: {
+            create: timesheetVisibilityData
+          }
         })
       },
       include: {
@@ -106,7 +115,14 @@ export async function POST(request: NextRequest) {
             permission: true
           }
         },
-        dashboardVisibility: true
+        dashboardVisibility: true,
+        timesheetVisibility: {
+          include: {
+            user: {
+              select: { id: true, username: true, email: true }
+            }
+          }
+        }
       }
     })
 

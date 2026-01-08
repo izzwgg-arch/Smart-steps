@@ -11,6 +11,11 @@ export interface UserPermissions {
   }
 }
 
+export interface TimesheetVisibilityScope {
+  viewAll: boolean
+  allowedUserIds: string[]
+}
+
 /**
  * Get all permissions for a user based on their role
  */
@@ -242,4 +247,62 @@ export async function canAccessRoute(userId: string, route: string): Promise<boo
   }
 
   return canSeeDashboardSection(userId, section)
+}
+
+/**
+ * Get timesheet visibility scope for a user
+ * Returns which timesheets the user can view based on their permissions
+ */
+export async function getTimesheetVisibilityScope(userId: string): Promise<TimesheetVisibilityScope> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      customRole: {
+        include: {
+          permissions: {
+            include: {
+              permission: true
+            }
+          },
+          timesheetVisibility: {
+            include: {
+              user: {
+                select: { id: true }
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+
+  if (!user) {
+    // User not found, can only see own (empty list)
+    return { viewAll: false, allowedUserIds: [] }
+  }
+
+  // SUPER_ADMIN and ADMIN can see all
+  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') {
+    return { viewAll: true, allowedUserIds: [] }
+  }
+
+  // Get user permissions
+  const permissions = await getUserPermissions(userId)
+
+  // Check if user has timesheets.viewAll permission
+  if (permissions['timesheets.viewAll']?.canView === true) {
+    return { viewAll: true, allowedUserIds: [] }
+  }
+
+  // Check if user has timesheets.viewSelectedUsers permission
+  if (permissions['timesheets.viewSelectedUsers']?.canView === true && user.customRole) {
+    // Get allowed user IDs from role's timesheetVisibility
+    const allowedUserIds = user.customRole.timesheetVisibility.map(tv => tv.userId)
+    // Always include own user ID
+    const finalAllowedIds = [userId, ...allowedUserIds].filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+    return { viewAll: false, allowedUserIds: finalAllowedIds }
+  }
+
+  // Default: can only see own timesheets
+  return { viewAll: false, allowedUserIds: [userId] }
 }

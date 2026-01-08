@@ -23,6 +23,10 @@ export function isFriday(date: Date): boolean {
   return getDay(date) === 5
 }
 
+export function isSaturday(date: Date): boolean {
+  return getDay(date) === 6
+}
+
 export function isWeekday(date: Date): boolean {
   const day = getDay(date)
   return day > 0 && day < 5 // Monday to Friday

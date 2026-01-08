@@ -54,6 +54,7 @@ interface DashboardStats {
     createdAt: string
   }>
   unreadNotificationsCount: number
+  unreadActivityCount?: number
 }
 
 interface DashboardStatsProps {
@@ -73,6 +74,18 @@ export function DashboardStats({
   useEffect(() => {
     fetchStats()
   }, [])
+
+  // Mark activities as seen when component mounts (for admins)
+  useEffect(() => {
+    if (data?.unreadActivityCount && data.unreadActivityCount > 0) {
+      // Mark activities as seen when dashboard loads
+      fetch('/api/admin/activity/mark-seen', {
+        method: 'POST',
+      }).catch(err => {
+        console.error('Failed to mark activities as seen:', err)
+      })
+    }
+  }, [data?.unreadActivityCount])
 
   const fetchStats = async () => {
     try {
@@ -110,6 +123,8 @@ export function DashboardStats({
         return 'text-orange-600'
       case 'SUBMIT':
         return 'text-yellow-600'
+      case 'LOGIN':
+        return 'text-cyan-600'
       default:
         return 'text-gray-600'
     }
@@ -236,10 +251,27 @@ export function DashboardStats({
         {showRecentActivity && (
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+              {data?.unreadActivityCount && data.unreadActivityCount > 0 && (
+                <span className="inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
+                  {data.unreadActivityCount}
+                </span>
+              )}
+            </div>
             <Link
               href="/audit-logs"
               className="text-sm text-primary-600 hover:text-primary-700"
+              onClick={() => {
+                // Mark activities as seen when clicking "View all"
+                if (data?.unreadActivityCount && data.unreadActivityCount > 0) {
+                  fetch('/api/admin/activity/mark-seen', {
+                    method: 'POST',
+                  }).catch(err => {
+                    console.error('Failed to mark activities as seen:', err)
+                  })
+                }
+              }}
             >
               View all →
             </Link>
@@ -259,9 +291,9 @@ export function DashboardStats({
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">
                         <span className={getActionColor(activity.action)}>
-                          {activity.action}
+                          {activity.action === 'LOGIN' ? 'LOGIN' : activity.action}
                         </span>{' '}
-                        {activity.entity}
+                        {activity.action === 'LOGIN' ? 'User' : activity.entity}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         by {activity.userEmail}
