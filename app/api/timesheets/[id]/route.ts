@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
 import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
-import { getTimesheetVisibilityScope } from '@/lib/permissions'
+import { getTimesheetVisibilityScope, getUserPermissions } from '@/lib/permissions'
 
 export async function GET(
   request: NextRequest,
@@ -236,6 +236,14 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Check if user has delete permission
+    const permissions = await getUserPermissions(session.user.id)
+    const canDelete = permissions['timesheets.delete']?.canDelete === true
+    
+    if (!canDelete) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const timesheet = await prisma.timesheet.findUnique({
       where: { id: params.id },
     })
@@ -244,10 +252,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
 
-    // Only DRAFT timesheets can be deleted
-    if (timesheet.status !== 'DRAFT') {
+    // Check if timesheet is APPROVED - only admins can delete approved timesheets
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
+    if (timesheet.status === 'APPROVED' && !isAdmin) {
       return NextResponse.json(
-        { error: 'Only draft timesheets can be deleted' },
+        { error: 'Approved timesheets cannot be deleted' },
         { status: 400 }
       )
     }
@@ -258,12 +267,22 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    await prisma.timesheet.update({
-      where: { id: params.id },
-      data: { deletedAt: new Date() },
+    // Delete timesheet entries first (cascade should handle this, but being explicit)
+    // Then soft delete the timesheet
+    await prisma.$transaction(async (tx) => {
+      // Delete entries (cascade will handle this automatically, but being explicit for safety)
+      await tx.timesheetEntry.deleteMany({
+        where: { timesheetId: params.id },
+      })
+
+      // Soft delete the timesheet
+      await tx.timesheet.update({
+        where: { id: params.id },
+        data: { deletedAt: new Date() },
+      })
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error deleting timesheet:', error)
     return NextResponse.json(

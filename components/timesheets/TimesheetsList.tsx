@@ -9,6 +9,7 @@ import { formatDate } from '@/lib/utils'
 import { TimesheetPrintPreview } from './TimesheetPrintPreview'
 import { exportToCSV, exportToExcel, formatTimesheetsForExport, formatTimesheetForDetailedExport } from '@/lib/exportUtils'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
+import { ConfirmDeleteModal } from '@/components/shared/ConfirmDeleteModal'
 
 interface Timesheet {
   id: string
@@ -43,6 +44,10 @@ export function TimesheetsList() {
   const [hasViewSelectedUsers, setHasViewSelectedUsers] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string>('')
   const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; username: string; email: string }>>([])
+  const [canDeleteTimesheets, setCanDeleteTimesheets] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deletingTimesheetId, setDeletingTimesheetId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     fetchTimesheets()
@@ -57,8 +62,10 @@ export function TimesheetsList() {
       if (data?.permissions) {
         const hasViewAll = data.permissions['timesheets.viewAll']?.canView === true
         const hasViewSelected = data.permissions['timesheets.viewSelectedUsers']?.canView === true
+        const hasDelete = data.permissions['timesheets.delete']?.canDelete === true
         setCanViewAllTimesheets(hasViewAll || hasViewSelected)
         setHasViewSelectedUsers(hasViewSelected)
+        setCanDeleteTimesheets(hasDelete)
         
         // If user can view others, fetch available users
         if (hasViewAll || hasViewSelected) {
@@ -193,13 +200,21 @@ export function TimesheetsList() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this timesheet?')) return
+  const handleDeleteClick = (id: string) => {
+    setDeletingTimesheetId(id)
+    setDeleteModalOpen(true)
+  }
 
+  const handleDeleteConfirm = async () => {
+    if (!deletingTimesheetId) return
+
+    setIsDeleting(true)
     try {
-      const res = await fetch(`/api/timesheets/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/timesheets/${deletingTimesheetId}`, { method: 'DELETE' })
       if (res.ok) {
         toast.success('Timesheet deleted')
+        setDeleteModalOpen(false)
+        setDeletingTimesheetId(null)
         fetchTimesheets()
       } else {
         const data = await res.json()
@@ -207,7 +222,14 @@ export function TimesheetsList() {
       }
     } catch (error) {
       toast.error('Failed to delete timesheet')
+    } finally {
+      setIsDeleting(false)
     }
+  }
+
+  const handleDeleteCancel = () => {
+    setDeleteModalOpen(false)
+    setDeletingTimesheetId(null)
   }
 
   const getStatusColor = (status: string) => {
@@ -505,10 +527,10 @@ export function TimesheetsList() {
                         </button>
                       </>
                     )}
-                    {timesheet.status === 'DRAFT' && (
+                    {canDeleteTimesheets && (
                       <button
-                        onClick={() => handleDelete(timesheet.id)}
-                        className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                        onClick={() => handleDeleteClick(timesheet.id)}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100 min-h-[44px]"
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Delete
@@ -570,6 +592,15 @@ export function TimesheetsList() {
           onClose={() => setPrintTimesheet(null)}
         />
       )}
+
+      <ConfirmDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete timesheet?"
+        message="This will permanently delete this timesheet. This action cannot be undone."
+        isLoading={isDeleting}
+      />
     </div>
   )
 }
