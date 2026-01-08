@@ -45,6 +45,7 @@ export function TimesheetsList() {
   const [selectedUserId, setSelectedUserId] = useState<string>('')
   const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; username: string; email: string }>>([])
   const [canDeleteTimesheets, setCanDeleteTimesheets] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deletingTimesheetId, setDeletingTimesheetId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -55,6 +56,7 @@ export function TimesheetsList() {
     fetch('/api/auth/session').then(res => res.json()).then(data => {
       if (data?.user?.role) {
         setUserRole(data.user.role)
+        setIsAdmin(data.user.role === 'ADMIN' || data.user.role === 'SUPER_ADMIN')
       }
     })
     // Check if user can view all timesheets
@@ -527,7 +529,7 @@ export function TimesheetsList() {
                         </button>
                       </>
                     )}
-                    {canDeleteTimesheets && (
+                    {(canDeleteTimesheets || isAdmin) && (
                       <button
                         onClick={() => handleDeleteClick(timesheet.id)}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100 min-h-[44px]"

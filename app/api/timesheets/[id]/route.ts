@@ -236,9 +236,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user has delete permission
+    // Check if user has delete permission or is admin
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
     const permissions = await getUserPermissions(session.user.id)
-    const canDelete = permissions['timesheets.delete']?.canDelete === true
+    const canDelete = permissions['timesheets.delete']?.canDelete === true || isAdmin
     
     if (!canDelete) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -253,7 +254,6 @@ export async function DELETE(
     }
 
     // Check if timesheet is APPROVED - only admins can delete approved timesheets
-    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
     if (timesheet.status === 'APPROVED' && !isAdmin) {
       return NextResponse.json(
         { error: 'Approved timesheets cannot be deleted' },
