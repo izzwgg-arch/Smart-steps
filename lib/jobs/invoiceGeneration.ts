@@ -192,7 +192,7 @@ type TimesheetWithRelations = Awaited<ReturnType<typeof prisma.timesheet.findMan
  */
 async function generateInvoiceForClient(
   clientId: string,
-  timesheets: TimesheetWithRelations[],
+  timesheets: TimesheetWithInsurance[],
   billingPeriod: { startDate: Date; endDate: Date; periodLabel: string }
 ) {
   if (timesheets.length === 0) {
