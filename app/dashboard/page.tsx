@@ -86,6 +86,14 @@ export default async function DashboardPage() {
       permissionKey: 'dashboard.timesheets',
     },
     {
+      title: 'BCBA Timesheets',
+      description: 'Manage BCBA time tracking and hours',
+      href: '/bcba-timesheets',
+      icon: Calendar,
+      color: 'bg-teal-500',
+      permissionKey: 'dashboard.timesheets',
+    },
+    {
       title: 'Invoices',
       description: 'View and manage invoices',
       href: '/invoices',
