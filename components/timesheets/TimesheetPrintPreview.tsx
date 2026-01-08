@@ -127,9 +127,9 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                   {isBCBATimesheet 
                     ? (timesheet.client.idNumber || timesheet.client.id || '')
                     : (timesheet.client.idNumber || 
-                       timesheet.client.clientId || 
-                       timesheet.client.medicaidId || 
-                       timesheet.client.externalId || 
+                       (timesheet.client as any).clientId || 
+                       (timesheet.client as any).medicaidId || 
+                       (timesheet.client as any).externalId || 
                        '')}
                 </div>
                 {isBCBATimesheet && (timesheet.client.dlb || timesheet.provider.dlb) && (
