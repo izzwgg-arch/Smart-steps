@@ -88,6 +88,11 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
 
           {/* Content */}
           <div className="p-6 print-preview-content">
+            {/* Company Name Header */}
+            <div className="mb-4 print-company-header">
+              <h1 className="text-3xl font-bold text-center">Smart steps ABA</h1>
+            </div>
+            
             {/* Header Text */}
             <div className="mb-6">
               <h1 className="text-2xl font-bold uppercase tracking-wide">TIMESHEETS</h1>

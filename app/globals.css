@@ -108,4 +108,20 @@ select,
   .no-print * {
     display: none !important;
   }
+  
+  /* Company Header - Prominent at top of print */
+  .print-company-header {
+    display: block !important;
+    margin-bottom: 1rem;
+    page-break-after: avoid;
+  }
+  
+  .print-company-header h1 {
+    font-size: 28px !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
 }
