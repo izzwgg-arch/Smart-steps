@@ -533,6 +533,7 @@ export function RoleForm({ role }: RoleFormProps) {
               { key: 'sections.pendingApprovals', label: 'Pending Approvals', icon: '⏳' },
               { key: 'sections.recentActivity', label: 'Recent Activity', icon: '📊' },
               { key: 'sections.recentInvoices', label: 'Recent Invoices', icon: '📄' },
+              { key: 'sections.outstanding', label: 'Outstanding', icon: '💰' },
             ].map((section) => (
               <div
                 key={section.key}

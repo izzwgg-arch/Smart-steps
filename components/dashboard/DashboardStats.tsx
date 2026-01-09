@@ -61,12 +61,14 @@ interface DashboardStatsProps {
   showPendingApprovals?: boolean
   showRecentActivity?: boolean
   showRecentInvoices?: boolean
+  showOutstanding?: boolean
 }
 
 export function DashboardStats({ 
   showPendingApprovals = true,
   showRecentActivity = true,
   showRecentInvoices = true,
+  showOutstanding = true,
 }: DashboardStatsProps = {}) {
   const [data, setData] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -182,20 +184,22 @@ export function DashboardStats({
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Outstanding</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(data.stats.financial.totalOutstanding)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {formatCurrency(data.stats.financial.totalPaid)} paid
-              </p>
+        {showOutstanding && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-500">Outstanding</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatCurrency(data.stats.financial.totalOutstanding)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatCurrency(data.stats.financial.totalPaid)} paid
+                </p>
+              </div>
+              <DollarSign className="w-8 h-8 text-green-500" />
             </div>
-            <DollarSign className="w-8 h-8 text-green-500" />
           </div>
-        </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

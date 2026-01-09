@@ -273,6 +273,7 @@ export default async function DashboardPage() {
               showPendingApprovals={isSectionVisible('sections.pendingApprovals')}
               showRecentActivity={isSectionVisible('sections.recentActivity')}
               showRecentInvoices={isSectionVisible('sections.recentInvoices')}
+              showOutstanding={isSectionVisible('sections.outstanding')}
             />
           </div>
 
