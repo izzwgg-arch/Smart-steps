@@ -56,6 +56,14 @@ select,
   color: #1f2937 !important;
 }
 
+/* BCBA Session Data / Analysis - Green color (override white container rule) */
+/* Must be more specific than .bg-white * to override */
+.bg-white .session-data-value,
+.print-preview-content .session-data-value,
+.session-data-value {
+  color: rgb(13, 148, 136) !important;
+}
+
 /* Headers in white containers should be dark */
 .bg-white h1,
 .bg-white h2,
