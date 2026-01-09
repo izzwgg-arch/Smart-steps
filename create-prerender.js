@@ -2,29 +2,30 @@ const fs = require('fs');
 const path = require('path');
 
 const manifestPath = path.join(__dirname, '.next', 'prerender-manifest.json');
+const manifestDir = path.dirname(manifestPath);
 
-// Create the manifest if it doesn't exist
-if (!fs.existsSync(manifestPath)) {
-  const manifest = {
-    version: 3,
-    routes: {},
-    dynamicRoutes: {},
-    notFoundRoutes: [],
-    preview: {
-      previewModeId: '',
-      previewModeSigningKey: '',
-      previewModeEncryptionKey: ''
-    }
-  };
+// Ensure .next directory exists
+if (!fs.existsSync(manifestDir)) {
+  fs.mkdirSync(manifestDir, { recursive: true });
+}
 
-  // Ensure .next directory exists
-  const nextDir = path.join(__dirname, '.next');
-  if (!fs.existsSync(nextDir)) {
-    fs.mkdirSync(nextDir, { recursive: true });
+// Create the prerender manifest
+const manifest = {
+  version: 4,
+  routes: {},
+  dynamicRoutes: {},
+  notFoundRoutes: [],
+  preview: {
+    previewModeId: '',
+    previewModeSigningKey: '',
+    previewModeEncryptionKey: ''
   }
+};
 
+try {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log('✅ Created prerender-manifest.json');
-} else {
-  console.log('✅ prerender-manifest.json already exists');
+} catch (error) {
+  console.error('❌ Error creating prerender-manifest.json:', error.message);
+  process.exit(1);
 }
