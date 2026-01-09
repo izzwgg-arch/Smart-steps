@@ -11,8 +11,9 @@ import { getUserPermissions } from '@/lib/permissions'
  * Permission: emailQueue.view
  */
 export async function GET(request: NextRequest) {
+  let session: any = null
   try {
-    const session = await getServerSession(authOptions)
+    session = await getServerSession(authOptions)
     if (!session) {
       return NextResponse.json(
         {
