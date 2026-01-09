@@ -158,14 +158,16 @@ export function BCBATimesheetsList() {
   const handleApprove = async (id: string) => {
     try {
       const res = await fetch(`/api/timesheets/${id}/approve`, { method: 'POST' })
+      const data = await res.json()
       if (res.ok) {
-        toast.success('Timesheet approved')
+        toast.success('Timesheet approved and queued for email')
         fetchTimesheets()
       } else {
-        const data = await res.json()
-        toast.error(data.error || 'Failed to approve timesheet')
+        console.error('Approval error:', data)
+        toast.error(data.error || data.details || 'Failed to approve timesheet')
       }
     } catch (error) {
+      console.error('Approval request failed:', error)
       toast.error('Failed to approve timesheet')
     }
   }
