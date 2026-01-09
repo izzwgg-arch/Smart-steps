@@ -123,10 +123,11 @@ export async function POST(
     }
 
     // Transactional approval + queue
+    const timesheetId = resolvedParams.id // Store in const for TypeScript
     const result = await prisma.$transaction(async (tx) => {
       // 1. Update timesheet to APPROVED and set queuedAt
       const updatedTimesheet = await tx.timesheet.update({
-        where: { id: resolvedParams.id },
+        where: { id: timesheetId },
         data: {
           status: 'APPROVED',
           approvedAt: new Date(),
@@ -139,7 +140,7 @@ export async function POST(
         await tx.emailQueueItem.create({
           data: {
             entityType: isBCBA ? 'BCBA' : 'REGULAR',
-            entityId: resolvedParams.id,
+            entityId: timesheetId,
             queuedByUserId: session.user.id,
             status: 'QUEUED',
           },
@@ -160,7 +161,7 @@ export async function POST(
           data: {
             action: auditAction as any,
             entityType: isBCBA ? 'BCBATimesheet' : 'Timesheet',
-            entityId: resolvedParams.id,
+            entityId: timesheetId,
             userId: session.user.id,
             metadata: JSON.stringify({
               clientName: timesheet.client.name,
@@ -183,7 +184,7 @@ export async function POST(
     try {
       await logQueue(
         isBCBA ? 'BCBATimesheet' : 'Timesheet',
-        resolvedParams.id,
+        timesheetId,
         session.user.id,
         {
           clientName: timesheet.client.name,

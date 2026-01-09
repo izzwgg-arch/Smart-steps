@@ -114,8 +114,9 @@ export async function POST(
     }
 
     // Update timesheet to REJECTED
+    const timesheetId = resolvedParams.id // Store in const for TypeScript
     const updated = await prisma.timesheet.update({
-      where: { id: resolvedParams.id },
+      where: { id: timesheetId },
       data: {
         status: 'REJECTED',
         rejectedAt: new Date(),
@@ -130,7 +131,7 @@ export async function POST(
         data: {
           action: auditAction as any,
           entityType: isBCBA ? 'BCBATimesheet' : 'Timesheet',
-          entityId: resolvedParams.id,
+          entityId: timesheetId,
           userId: session.user.id,
           metadata: JSON.stringify({
             clientName: timesheet.client.name,
@@ -143,7 +144,7 @@ export async function POST(
 
       await logReject(
         isBCBA ? 'BCBATimesheet' : 'Timesheet',
-        resolvedParams.id,
+        timesheetId,
         session.user.id,
         reason?.trim()
       )
