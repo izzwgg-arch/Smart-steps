@@ -3,7 +3,7 @@ import { format } from 'date-fns'
 
 interface TimesheetForPDF {
   id: string
-  client: { name: string; address?: string | null; idNumber?: string | null; dlb?: string | null }
+  client: { id?: string; name: string; address?: string | null; idNumber?: string | null; dlb?: string | null; signature?: string | null }
   provider: { name: string; phone?: string | null; signature?: string | null; dlb?: string | null }
   bcba: { name: string }
   startDate: Date | string
