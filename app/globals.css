@@ -134,4 +134,11 @@ select,
   .bcba-info-grid {
     font-size: 0.9rem !important;
   }
+
+  /* BCBA Session Data / Analysis - Green color in print */
+  .session-data-value {
+    color: rgb(13, 148, 136) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
