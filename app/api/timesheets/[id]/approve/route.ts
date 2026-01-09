@@ -21,9 +21,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
+  let resolvedParams: { id: string } | null = null
+  let session: any = null
   try {
-    const resolvedParams = params instanceof Promise ? await params : params
-    const session = await getServerSession(authOptions)
+    resolvedParams = params instanceof Promise ? await params : params
+    session = await getServerSession(authOptions)
     
     if (!session) {
       return NextResponse.json(
@@ -187,10 +189,10 @@ export async function POST(
     })
   } catch (error: any) {
     console.error('[APPROVE TIMESHEET] Error:', {
-      route: `/api/timesheets/${resolvedParams.id}/approve`,
+      route: `/api/timesheets/${resolvedParams?.id || 'unknown'}/approve`,
       userId: session?.user?.id,
       userRole: session?.user?.role,
-      timesheetId: resolvedParams.id,
+      timesheetId: resolvedParams?.id,
       errorCode: error?.code,
       errorMessage: error?.message,
       errorStack: error?.stack,
