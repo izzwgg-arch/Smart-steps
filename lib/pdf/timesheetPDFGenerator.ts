@@ -80,9 +80,9 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF): Promise<
       }
       if (timesheet.sessionData) {
         doc.font('Helvetica-Bold').text('Session Data / Analysis:', { continued: true })
-        // RGB(13, 148, 136) converted to 0-1 range for PDFKit
-        doc.font('Helvetica').fillColor(13/255, 148/255, 136/255).text(` ${timesheet.sessionData}`)
-        doc.fillColor(0, 0, 0) // Reset to black for subsequent text
+        // RGB(13, 148, 136) = #0d9488
+        doc.font('Helvetica').fillColor('#0d9488').text(` ${timesheet.sessionData}`)
+        doc.fillColor('black') // Reset to black for subsequent text
       }
       doc.moveDown()
     }
