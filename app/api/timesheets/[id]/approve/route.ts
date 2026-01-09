@@ -50,25 +50,39 @@ export async function POST(
       )
     }
 
-    // Update timesheet to APPROVED and queue for email
-    const updated = await prisma.timesheet.update({
-      where: { id: params.id },
-      data: {
-        status: 'APPROVED',
-        approvedAt: new Date(),
-        queuedForEmailAt: new Date(),
-        emailStatus: 'QUEUED',
-      },
-    })
+    // Update timesheet to QUEUED_FOR_EMAIL and queue for email in a transaction
+    const updated = await prisma.$transaction(async (tx) => {
+      // Update timesheet status to QUEUED_FOR_EMAIL (will be EMAILED after batch send)
+      const updatedTimesheet = await tx.timesheet.update({
+        where: { id: params.id },
+        data: {
+          status: 'QUEUED_FOR_EMAIL',
+          approvedAt: new Date(),
+          queuedForEmailAt: new Date(),
+          emailStatus: 'QUEUED',
+        },
+      })
 
-    // Create email queue item
-    await prisma.emailQueueItem.create({
-      data: {
-        type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
-        entityId: params.id,
-        queuedByUserId: session.user.id,
-        status: 'QUEUED',
-      },
+      // Create email queue item (check if it doesn't already exist)
+      const existingQueueItem = await tx.emailQueueItem.findFirst({
+        where: {
+          entityId: params.id,
+          status: 'QUEUED',
+        },
+      })
+
+      if (!existingQueueItem) {
+        await tx.emailQueueItem.create({
+          data: {
+            type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
+            entityId: params.id,
+            queuedByUserId: session.user.id,
+            status: 'QUEUED',
+          },
+        })
+      }
+
+      return updatedTimesheet
     })
 
     // Log audit with appropriate action
@@ -91,6 +105,9 @@ export async function POST(
           queuedForEmail: true,
         }),
       },
+    }).catch((err) => {
+      console.error('Failed to create audit log entry:', err)
+      // Non-blocking - continue even if audit log fails
     })
 
     return NextResponse.json(updated)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from '@/lib/email'
+import { sendMailSafe, getPasswordResetEmailHtml, getPasswordResetEmailText } from '@/lib/email'
 import { hashToken, generateSecureToken, checkRateLimit } from '@/lib/security'
 import { createAuditLog } from '@/lib/audit'
 
@@ -74,12 +74,21 @@ export async function POST(request: NextRequest) {
 
     // Send email
     try {
-      await sendEmail({
+      const emailResult = await sendMailSafe({
         to: user.email,
         subject: 'Password Reset Request - Smart Steps',
         html: getPasswordResetEmailHtml(resetLink, user.email.split('@')[0]),
         text: getPasswordResetEmailText(resetLink),
+      }, {
+        action: 'PASSWORD_RESET_REQUEST',
+        entityType: 'User',
+        entityId: user.id,
+        userId: 'system',
       })
+
+      if (!emailResult.success) {
+        console.error('Failed to send password reset email:', emailResult.error)
+      }
     } catch (error) {
       console.error('Failed to send password reset email:', error)
       // Don't fail the request if email fails - token is still saved

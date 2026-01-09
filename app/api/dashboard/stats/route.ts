@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
 
     // Get unread activity count (only for admins)
+    // Count audit logs created since last seen (using AuditLog instead of Activity)
     let unreadActivityCount = 0
     if (isAdmin) {
       const admin = await prisma.user.findUnique({
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
       const whereClause = lastSeenAt
         ? { createdAt: { gt: lastSeenAt } }
         : {}
-      unreadActivityCount = await prisma.activity.count({
+      unreadActivityCount = await prisma.auditLog.count({
         where: whereClause,
       })
     }
@@ -54,33 +55,25 @@ export async function GET(request: NextRequest) {
       take: 10,
     })
 
-    // Get recent activity (audit logs + login activities)
-    // For admins: include both audit logs and login activities
+    // Get recent activity (audit logs including login events)
+    // For admins: include all audit logs including LOGIN actions
     // For non-admins: only their own audit logs
-    const [auditLogs, loginActivities] = await Promise.all([
-      prisma.auditLog.findMany({
-        where: isAdmin ? {} : { userId },
-        include: {
-          user: { select: { email: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: isAdmin ? 10 : 10,
-      }),
-      // Only fetch login activities for admins
-      isAdmin
-        ? prisma.activity.findMany({
-            where: { actionType: 'LOGIN' },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-          })
-        : Promise.resolve([]),
-    ])
+    const auditLogs = await prisma.auditLog.findMany({
+      where: isAdmin ? {} : { userId },
+      include: {
+        user: { select: { email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20, // Get more to filter and sort
+    })
 
-    // Combine and sort activities
-    const allActivities = [
-      ...auditLogs.map((log) => ({
+    // Transform audit logs to activity format
+    // Include LOGIN actions as login activities for admins
+    const allActivities = auditLogs.map((log) => {
+      const isLoginAction = log.action === 'LOGIN'
+      return {
         id: log.id,
-        type: 'audit' as const,
+        type: isLoginAction ? ('login' as const) : ('audit' as const),
         action: log.action,
         entity: log.entityType, // Use entityType from schema
         entityId: log.entityId,
@@ -88,19 +81,9 @@ export async function GET(request: NextRequest) {
         createdAt: log.createdAt,
         oldValues: log.oldValues ? JSON.parse(log.oldValues) : null,
         newValues: log.newValues ? JSON.parse(log.newValues) : null,
-      })),
-      ...loginActivities.map((activity) => ({
-        id: activity.id,
-        type: 'login' as const,
-        action: 'LOGIN' as const,
-        entity: 'User',
-        entityId: activity.actorUserId,
-        userEmail: activity.actorEmail,
-        createdAt: activity.createdAt,
-        oldValues: null,
-        newValues: null,
-      })),
-    ]
+        metadata: log.metadata ? JSON.parse(log.metadata) : null,
+      }
+    })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 10)
 
@@ -148,7 +131,11 @@ export async function GET(request: NextRequest) {
         where: { ...statsWhere, status: 'SUBMITTED', deletedAt: null },
       }),
       prisma.timesheet.count({
-        where: { ...statsWhere, status: 'APPROVED', deletedAt: null },
+        where: { 
+          ...statsWhere, 
+          status: { in: ['APPROVED', 'QUEUED_FOR_EMAIL', 'EMAILED'] }, 
+          deletedAt: null 
+        },
       }),
       // Invoice counts
       prisma.invoice.count({

@@ -59,11 +59,14 @@ export default function EmailQueuePage() {
       const res = await fetch('/api/email-queue')
       if (res.ok) {
         const data = await res.json()
-        setQueuedItems(data.items || [])
+        // API returns 'items' not 'queueItems'
+        setQueuedItems(data.items || data.queueItems || [])
       } else {
-        toast.error('Failed to load email queue')
+        const errorData = await res.json().catch(() => ({}))
+        toast.error(errorData.error || 'Failed to load email queue')
       }
     } catch (error) {
+      console.error('Error fetching email queue:', error)
       toast.error('Failed to load email queue')
     } finally {
       setLoading(false)
