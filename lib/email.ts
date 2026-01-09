@@ -87,7 +87,7 @@ export async function sendMailSafe(
           entityType: auditMetadata.entityType || 'Email',
           entityId: auditMetadata.entityId || 'unknown',
           userId: auditMetadata.userId,
-          metadata: JSON.stringify({ reason: 'SMTP_NOT_CONFIGURED', to: Array.isArray(options.to) ? options.to.join(',') : options.to }),
+          metadata: { reason: 'SMTP_NOT_CONFIGURED', to: Array.isArray(options.to) ? options.to.join(',') : options.to },
         })
       } catch (e) {
         // Non-blocking
@@ -143,11 +143,11 @@ export async function sendMailSafe(
           entityType: auditMetadata.entityType || 'Email',
           entityId: auditMetadata.entityId || info.messageId || 'unknown',
           userId: auditMetadata.userId,
-          metadata: JSON.stringify({
+          metadata: {
             messageId: info.messageId,
             recipients: recipients.length,
             subject: options.subject,
-          }),
+          },
         })
       } catch (e) {
         console.error('[EMAIL] Failed to log audit event:', e)
@@ -171,10 +171,10 @@ export async function sendMailSafe(
           entityType: auditMetadata.entityType || 'Email',
           entityId: auditMetadata.entityId || 'unknown',
           userId: auditMetadata.userId,
-          metadata: JSON.stringify({
+          metadata: {
             error: errorMsg.replace(/password|pass|token|secret/gi, '***'),
             recipients: recipients.length,
-          }),
+          },
         })
       } catch (e) {
         // Non-blocking
