@@ -10,10 +10,14 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    console.log('[APPROVE] Starting approval for timesheet:', params.id)
     const session = await getServerSession(authOptions)
     if (!session) {
+      console.error('[APPROVE] No session found')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    console.log('[APPROVE] Session user:', { id: session.user.id, role: session.user.role })
 
     const timesheet = await prisma.timesheet.findUnique({
       where: { id: params.id },
@@ -26,8 +30,11 @@ export async function POST(
     })
 
     if (!timesheet || timesheet.deletedAt) {
+      console.error('[APPROVE] Timesheet not found or deleted:', params.id)
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
+
+    console.log('[APPROVE] Timesheet found:', { id: timesheet.id, status: timesheet.status, isBCBA: timesheet.isBCBA })
 
     // Check permissions based on timesheet type
     const userPermissions = await getUserPermissions(session.user.id)
@@ -38,20 +45,28 @@ export async function POST(
     const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
     const hasPermission = isAdmin || (permission?.canApprove === true)
 
+    console.log('[APPROVE] Permission check:', { permissionKey, hasPermission, isAdmin, permission })
+
     if (!hasPermission) {
+      console.error('[APPROVE] Insufficient permissions')
       return NextResponse.json({ error: 'Unauthorized - Insufficient permissions' }, { status: 403 })
     }
 
     // Allow approval from DRAFT or SUBMITTED status
     if (timesheet.status !== 'DRAFT' && timesheet.status !== 'SUBMITTED') {
+      console.error('[APPROVE] Invalid status for approval:', timesheet.status)
       return NextResponse.json(
         { error: 'Only draft or submitted timesheets can be approved' },
         { status: 400 }
       )
     }
 
+    console.log('[APPROVE] Starting transaction to update timesheet and create queue item')
+
     // Update timesheet to QUEUED_FOR_EMAIL and queue for email in a transaction
+    console.log('[APPROVE] Starting transaction')
     const updated = await prisma.$transaction(async (tx) => {
+      console.log('[APPROVE] Transaction: Updating timesheet status to QUEUED_FOR_EMAIL')
       // Update timesheet status to QUEUED_FOR_EMAIL (will be EMAILED after batch send)
       const updatedTimesheet = await tx.timesheet.update({
         where: { id: params.id },
@@ -62,8 +77,10 @@ export async function POST(
           emailStatus: 'QUEUED',
         },
       })
+      console.log('[APPROVE] Transaction: Timesheet updated successfully')
 
       // Create email queue item (check if it doesn't already exist)
+      console.log('[APPROVE] Transaction: Checking for existing queue item')
       const existingQueueItem = await tx.emailQueueItem.findFirst({
         where: {
           entityId: params.id,
@@ -72,6 +89,7 @@ export async function POST(
       })
 
       if (!existingQueueItem) {
+        console.log('[APPROVE] Transaction: Creating new email queue item')
         await tx.emailQueueItem.create({
           data: {
             type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
@@ -80,10 +98,14 @@ export async function POST(
             status: 'QUEUED',
           },
         })
+        console.log('[APPROVE] Transaction: Email queue item created')
+      } else {
+        console.log('[APPROVE] Transaction: Queue item already exists, skipping')
       }
 
       return updatedTimesheet
     })
+    console.log('[APPROVE] Transaction completed successfully')
 
     // Log audit with appropriate action (non-blocking)
     try {
