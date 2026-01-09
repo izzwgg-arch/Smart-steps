@@ -85,30 +85,32 @@ export async function POST(
       return updatedTimesheet
     })
 
-    // Log audit with appropriate action
-    const auditAction = isBCBA ? 'BCBA_TIMESHEET_APPROVED' : 'TIMESHEET_APPROVED'
-    await logApprove(isBCBA ? 'BCBATimesheet' : 'Timesheet', params.id, session.user.id)
+    // Log audit with appropriate action (non-blocking)
+    try {
+      const auditAction = isBCBA ? 'BCBA_TIMESHEET_APPROVED' : 'TIMESHEET_APPROVED'
+      await logApprove(isBCBA ? 'BCBATimesheet' : 'Timesheet', params.id, session.user.id)
 
-    // Also create specific audit log entry
-    await prisma.auditLog.create({
-      data: {
-        action: auditAction as any,
-        entityType: isBCBA ? 'BCBATimesheet' : 'Timesheet',
-        entityId: params.id,
-        userId: session.user.id,
-        metadata: JSON.stringify({
-          clientName: timesheet.client.name,
-          providerName: timesheet.provider.name,
-          bcbaName: timesheet.bcba.name,
-          startDate: timesheet.startDate.toISOString(),
-          endDate: timesheet.endDate.toISOString(),
-          queuedForEmail: true,
-        }),
-      },
-    }).catch((err) => {
-      console.error('Failed to create audit log entry:', err)
+      // Also create specific audit log entry
+      await prisma.auditLog.create({
+        data: {
+          action: auditAction as any,
+          entityType: isBCBA ? 'BCBATimesheet' : 'Timesheet',
+          entityId: params.id,
+          userId: session.user.id,
+          metadata: JSON.stringify({
+            clientName: timesheet.client.name,
+            providerName: timesheet.provider.name,
+            bcbaName: timesheet.bcba.name,
+            startDate: timesheet.startDate.toISOString(),
+            endDate: timesheet.endDate.toISOString(),
+            queuedForEmail: true,
+          }),
+        },
+      })
+    } catch (auditError) {
+      console.error('Failed to create audit log entry (non-blocking):', auditError)
       // Non-blocking - continue even if audit log fails
-    })
+    }
 
     return NextResponse.json(updated)
   } catch (error: any) {
