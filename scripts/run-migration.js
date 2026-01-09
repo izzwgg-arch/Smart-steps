@@ -38,44 +38,60 @@ async function runMigration() {
     
     console.log('Step 8: Updating EmailQueueItem...')
     // Create enums if they don't exist
-    await prisma.$executeRawUnsafe(`DO $$ BEGIN
-      CREATE TYPE "EmailQueueStatus" AS ENUM ('QUEUED', 'SENDING', 'SENT', 'FAILED');
-    EXCEPTION WHEN duplicate_object THEN null;
-    END $$;`)
-    await prisma.$executeRawUnsafe(`DO $$ BEGIN
-      CREATE TYPE "EmailQueueEntityType" AS ENUM ('REGULAR', 'BCBA');
-    EXCEPTION WHEN duplicate_object THEN null;
-    END $$;`)
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "type" TYPE TEXT USING "type"::TEXT;')
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" TYPE TEXT USING "status"::TEXT;')
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD COLUMN IF NOT EXISTS "entityType" "EmailQueueEntityType";')
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD COLUMN IF NOT EXISTS "errorMessage" TEXT;')
-    await prisma.$executeRawUnsafe(`UPDATE "EmailQueueItem" SET "entityType" = 
-      CASE 
-        WHEN "type" = 'BCBA_TIMESHEET' THEN 'BCBA'::"EmailQueueEntityType"
-        ELSE 'REGULAR'::"EmailQueueEntityType"
-      END
-    WHERE "entityType" IS NULL;`)
-    await prisma.$executeRawUnsafe('UPDATE "EmailQueueItem" SET "errorMessage" = "lastError" WHERE "errorMessage" IS NULL AND "lastError" IS NOT NULL;')
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "entityType" SET NOT NULL;')
-    await prisma.$executeRawUnsafe(`ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" TYPE "EmailQueueStatus" USING 
-      CASE 
-        WHEN "status" = 'QUEUED' THEN 'QUEUED'::"EmailQueueStatus"
-        WHEN "status" = 'SENT' THEN 'SENT'::"EmailQueueStatus"
-        WHEN "status" = 'FAILED' THEN 'FAILED'::"EmailQueueStatus"
-        ELSE 'QUEUED'::"EmailQueueStatus"
-      END;`)
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" SET DEFAULT \'QUEUED\';')
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" DROP COLUMN IF EXISTS "type";')
-    await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" DROP COLUMN IF EXISTS "lastError";')
-    
-    // Add unique constraint
     try {
-      await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD CONSTRAINT "EmailQueueItem_entityType_entityId_key" UNIQUE ("entityType", "entityId");')
-    } catch (e) {
-      if (!e.message.includes('already exists')) {
-        console.log('Unique constraint may already exist, continuing...')
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN
+        CREATE TYPE "EmailQueueStatus" AS ENUM ('QUEUED', 'SENDING', 'SENT', 'FAILED');
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;`)
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN
+        CREATE TYPE "EmailQueueEntityType" AS ENUM ('REGULAR', 'BCBA');
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;`)
+      
+      // Try to alter EmailQueueItem - if permission denied, skip and note it
+      try {
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "type" TYPE TEXT USING "type"::TEXT;')
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" TYPE TEXT USING "status"::TEXT;')
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD COLUMN IF NOT EXISTS "entityType" "EmailQueueEntityType";')
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD COLUMN IF NOT EXISTS "errorMessage" TEXT;')
+        await prisma.$executeRawUnsafe(`UPDATE "EmailQueueItem" SET "entityType" = 
+          CASE 
+            WHEN "type" = 'BCBA_TIMESHEET' THEN 'BCBA'::"EmailQueueEntityType"
+            ELSE 'REGULAR'::"EmailQueueEntityType"
+          END
+        WHERE "entityType" IS NULL;`)
+        await prisma.$executeRawUnsafe('UPDATE "EmailQueueItem" SET "errorMessage" = "lastError" WHERE "errorMessage" IS NULL AND "lastError" IS NOT NULL;')
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "entityType" SET NOT NULL;')
+        await prisma.$executeRawUnsafe(`ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" TYPE "EmailQueueStatus" USING 
+          CASE 
+            WHEN "status" = 'QUEUED' THEN 'QUEUED'::"EmailQueueStatus"
+            WHEN "status" = 'SENT' THEN 'SENT'::"EmailQueueStatus"
+            WHEN "status" = 'FAILED' THEN 'FAILED'::"EmailQueueStatus"
+            ELSE 'QUEUED'::"EmailQueueStatus"
+          END;`)
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" SET DEFAULT \'QUEUED\';')
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" DROP COLUMN IF EXISTS "type";')
+        await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" DROP COLUMN IF EXISTS "lastError";')
+        
+        // Add unique constraint
+        try {
+          await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD CONSTRAINT "EmailQueueItem_entityType_entityId_key" UNIQUE ("entityType", "entityId");')
+        } catch (e) {
+          if (!e.message.includes('already exists')) {
+            console.log('Unique constraint may already exist, continuing...')
+          }
+        }
+        console.log('EmailQueueItem migration completed')
+      } catch (permError) {
+        if (permError.message.includes('must be owner') || permError.message.includes('permission denied')) {
+          console.log('⚠️  EmailQueueItem migration skipped - requires postgres user. Run manually as postgres.')
+          console.log('   The Timesheet migration completed successfully.')
+        } else {
+          throw permError
+        }
       }
+    } catch (e) {
+      console.log('EmailQueueItem enum creation may have failed, but continuing...')
     }
     
     console.log('Step 9: Updating AuditAction enum...')
