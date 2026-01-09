@@ -155,7 +155,8 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 )}
                 {isBCBATimesheet && timesheet.sessionData && (
                   <div className="mt-2">
-                    <span className="font-semibold">Session Data / Analysis:</span> {timesheet.sessionData}
+                    <span className="font-semibold">Session Data / Analysis:</span>{' '}
+                    <span style={{ color: 'rgb(13, 148, 136)' }}>{timesheet.sessionData}</span>
                   </div>
                 )}
               </div>
