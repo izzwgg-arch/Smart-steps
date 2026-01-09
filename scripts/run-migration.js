@@ -37,8 +37,15 @@ async function runMigration() {
     await prisma.$executeRawUnsafe('ALTER TABLE "Timesheet" ADD COLUMN IF NOT EXISTS "queuedAt" TIMESTAMP(3);')
     
     console.log('Step 8: Updating EmailQueueItem...')
-    await prisma.$executeRawUnsafe('CREATE TYPE "EmailQueueStatus" AS ENUM (\'QUEUED\', \'SENDING\', \'SENT\', \'FAILED\');')
-    await prisma.$executeRawUnsafe('CREATE TYPE "EmailQueueEntityType" AS ENUM (\'REGULAR\', \'BCBA\');')
+    // Create enums if they don't exist
+    await prisma.$executeRawUnsafe(`DO $$ BEGIN
+      CREATE TYPE "EmailQueueStatus" AS ENUM ('QUEUED', 'SENDING', 'SENT', 'FAILED');
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;`)
+    await prisma.$executeRawUnsafe(`DO $$ BEGIN
+      CREATE TYPE "EmailQueueEntityType" AS ENUM ('REGULAR', 'BCBA');
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;`)
     await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "type" TYPE TEXT USING "type"::TEXT;')
     await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ALTER COLUMN "status" TYPE TEXT USING "status"::TEXT;')
     await prisma.$executeRawUnsafe('ALTER TABLE "EmailQueueItem" ADD COLUMN IF NOT EXISTS "entityType" "EmailQueueEntityType";')
