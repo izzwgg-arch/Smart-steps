@@ -7,10 +7,12 @@ import { getUserPermissions } from '@/lib/permissions'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    console.log('[APPROVE] Starting approval for timesheet:', params.id)
+    // Handle both sync and async params (Next.js 14 compatibility)
+    const resolvedParams = params instanceof Promise ? await params : params
+    console.log('[APPROVE] Starting approval for timesheet:', resolvedParams.id)
     const session = await getServerSession(authOptions)
     if (!session) {
       console.error('[APPROVE] No session found')
@@ -20,7 +22,7 @@ export async function POST(
     console.log('[APPROVE] Session user:', { id: session.user.id, role: session.user.role })
 
     const timesheet = await prisma.timesheet.findUnique({
-      where: { id: params.id },
+      where: { id: resolvedParams.id },
       include: {
         client: true,
         provider: true,
@@ -69,7 +71,7 @@ export async function POST(
       console.log('[APPROVE] Transaction: Updating timesheet status to QUEUED_FOR_EMAIL')
       // Update timesheet status to QUEUED_FOR_EMAIL (will be EMAILED after batch send)
       const updatedTimesheet = await tx.timesheet.update({
-        where: { id: params.id },
+        where: { id: resolvedParams.id },
         data: {
           status: 'QUEUED_FOR_EMAIL',
           approvedAt: new Date(),
@@ -94,7 +96,7 @@ export async function POST(
           await tx.emailQueueItem.create({
             data: {
               type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
-              entityId: params.id,
+              entityId: resolvedParams.id,
               queuedByUserId: session.user.id,
               status: 'QUEUED',
             },
@@ -120,14 +122,14 @@ export async function POST(
     // Log audit with appropriate action (non-blocking)
     try {
       const auditAction = isBCBA ? 'BCBA_TIMESHEET_APPROVED' : 'TIMESHEET_APPROVED'
-      await logApprove(isBCBA ? 'BCBATimesheet' : 'Timesheet', params.id, session.user.id)
+      await logApprove(isBCBA ? 'BCBATimesheet' : 'Timesheet', resolvedParams.id, session.user.id)
 
       // Also create specific audit log entry
       await prisma.auditLog.create({
         data: {
           action: auditAction as any,
           entityType: isBCBA ? 'BCBATimesheet' : 'Timesheet',
-          entityId: params.id,
+          entityId: resolvedParams.id,
           userId: session.user.id,
           metadata: JSON.stringify({
             clientName: timesheet.client.name,
