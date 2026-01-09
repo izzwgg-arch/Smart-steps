@@ -90,15 +90,25 @@ export async function POST(
 
       if (!existingQueueItem) {
         console.log('[APPROVE] Transaction: Creating new email queue item')
-        await tx.emailQueueItem.create({
-          data: {
-            type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
-            entityId: params.id,
-            queuedByUserId: session.user.id,
-            status: 'QUEUED',
-          },
-        })
-        console.log('[APPROVE] Transaction: Email queue item created')
+        try {
+          await tx.emailQueueItem.create({
+            data: {
+              type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
+              entityId: params.id,
+              queuedByUserId: session.user.id,
+              status: 'QUEUED',
+            },
+          })
+          console.log('[APPROVE] Transaction: Email queue item created successfully')
+        } catch (queueError: any) {
+          console.error('[APPROVE] Transaction: Failed to create email queue item:', queueError)
+          console.error('[APPROVE] Transaction: Error details:', {
+            message: queueError?.message,
+            code: queueError?.code,
+            meta: queueError?.meta,
+          })
+          throw queueError // Re-throw to rollback transaction
+        }
       } else {
         console.log('[APPROVE] Transaction: Queue item already exists, skipping')
       }

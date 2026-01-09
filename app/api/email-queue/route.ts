@@ -29,19 +29,32 @@ export async function GET(request: NextRequest) {
       where.status = status
     }
 
-    const queueItems = await prisma.emailQueueItem.findMany({
-      where,
-      orderBy: { queuedAt: 'desc' },
-      include: {
-        queuedBy: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
+    console.log('[EMAIL-QUEUE] Fetching queue items with status:', status || 'all')
+    let queueItems
+    try {
+      queueItems = await prisma.emailQueueItem.findMany({
+        where,
+        orderBy: { queuedAt: 'desc' },
+        include: {
+          queuedBy: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
           },
         },
-      },
-    })
+      })
+      console.log('[EMAIL-QUEUE] Found', queueItems.length, 'queue items')
+    } catch (error: any) {
+      console.error('[EMAIL-QUEUE] Error fetching queue items:', error)
+      console.error('[EMAIL-QUEUE] Error details:', {
+        message: error?.message,
+        code: error?.code,
+        meta: error?.meta,
+      })
+      throw error
+    }
 
     // Fetch timesheet details for each item
     const itemsWithTimesheets = await Promise.all(
