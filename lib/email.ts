@@ -28,7 +28,7 @@ function getTransporter(): nodemailer.Transporter {
       throw new Error(config.error || 'SMTP not configured')
     }
 
-    transporter = nodemailer.createTransport({
+    const smtpConfig = {
       host: process.env.SMTP_HOST!,
       port: parseInt(process.env.SMTP_PORT!),
       secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
@@ -36,7 +36,17 @@ function getTransporter(): nodemailer.Transporter {
         user: process.env.SMTP_USER!,
         pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD!,
       },
+    }
+    
+    console.log('[EMAIL] Creating transporter with config:', {
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: smtpConfig.secure,
+      user: smtpConfig.auth.user,
+      pass: smtpConfig.auth.pass ? '***SET***' : 'MISSING',
     })
+    
+    transporter = nodemailer.createTransport(smtpConfig)
   }
   return transporter
 }
