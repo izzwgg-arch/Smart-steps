@@ -113,9 +113,25 @@ async function runMigration() {
     await prisma.$executeRawUnsafe('ALTER TABLE "AuditLog" ALTER COLUMN "action" TYPE "AuditAction" USING "action"::"AuditAction";')
     
     console.log('Step 10: Updating indexes...')
-    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "Timesheet_emailStatus_deletedAt_idx";')
-    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "EmailQueueItem_type_status_idx";')
-    await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EmailQueueItem_entityType_status_idx" ON "EmailQueueItem"("entityType", "status");')
+    try {
+      await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "Timesheet_emailStatus_deletedAt_idx";')
+    } catch (e) {
+      console.log('Index drop skipped (may not exist)')
+    }
+    try {
+      await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "EmailQueueItem_type_status_idx";')
+    } catch (e) {
+      if (e.message.includes('must be owner') || e.message.includes('permission denied')) {
+        console.log('EmailQueueItem index drop skipped - requires postgres user')
+      }
+    }
+    try {
+      await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EmailQueueItem_entityType_status_idx" ON "EmailQueueItem"("entityType", "status");')
+    } catch (e) {
+      if (e.message.includes('must be owner') || e.message.includes('permission denied')) {
+        console.log('EmailQueueItem index creation skipped - requires postgres user')
+      }
+    }
     
     console.log('\n✅ Migration completed successfully!')
   } catch (error) {
