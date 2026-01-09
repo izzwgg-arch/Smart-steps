@@ -56,11 +56,11 @@ select,
   color: #1f2937 !important;
 }
 
-/* BCBA Session Data / Analysis - Green color (override white container rule) */
+/* BCBA Service Type - Green color (override white container rule) */
 /* Must be more specific than .bg-white * to override */
-.bg-white .session-data-value,
-.print-preview-content .session-data-value,
-.session-data-value {
+.bg-white .service-type-value,
+.print-preview-content .service-type-value,
+.service-type-value {
   color: rgb(13, 148, 136) !important;
 }
 
@@ -143,8 +143,8 @@ select,
     font-size: 0.9rem !important;
   }
 
-  /* BCBA Session Data / Analysis - Green color in print */
-  .session-data-value {
+  /* BCBA Service Type - Green color in print */
+  .service-type-value {
     color: rgb(13, 148, 136) !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;

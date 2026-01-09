@@ -76,13 +76,13 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF): Promise<
     if (isBCBA) {
       if (timesheet.serviceType) {
         doc.font('Helvetica-Bold').text('Service Type:', { continued: true })
-        doc.font('Helvetica').text(` ${timesheet.serviceType}`)
+        // RGB(13, 148, 136) = #0d9488
+        doc.font('Helvetica').fillColor('#0d9488').text(` ${timesheet.serviceType}`)
+        doc.fillColor('black') // Reset to black for subsequent text
       }
       if (timesheet.sessionData) {
         doc.font('Helvetica-Bold').text('Session Data / Analysis:', { continued: true })
-        // RGB(13, 148, 136) = #0d9488
-        doc.font('Helvetica').fillColor('#0d9488').text(` ${timesheet.sessionData}`)
-        doc.fillColor('black') // Reset to black for subsequent text
+        doc.font('Helvetica').text(` ${timesheet.sessionData}`)
       }
       doc.moveDown()
     }
