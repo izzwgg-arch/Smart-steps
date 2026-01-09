@@ -25,6 +25,17 @@ export async function POST(
   let session: any = null
   try {
     resolvedParams = params instanceof Promise ? await params : params
+    if (!resolvedParams) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid timesheet ID',
+        },
+        { status: 400 }
+      )
+    }
+    
     session = await getServerSession(authOptions)
     
     if (!session) {
