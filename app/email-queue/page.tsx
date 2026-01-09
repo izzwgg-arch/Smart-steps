@@ -83,17 +83,35 @@ export default function EmailQueuePage() {
   const fetchQueueItems = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/email-queue')
-      if (res.ok) {
-        const data = await res.json()
+      const url = '/api/email-queue'
+      console.log('[EMAIL QUEUE] Request:', { url, method: 'GET' })
+      
+      const res = await fetch(url)
+      const data = await res.json()
+      
+      console.log('[EMAIL QUEUE] Response:', {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        data,
+      })
+      
+      if (res.ok && data.ok !== false) {
         setQueueItems(data.items || [])
       } else {
-        const errorData = await res.json().catch(() => ({}))
-        toast.error(errorData.error || 'Failed to load email queue')
+        const errorMsg = data.message || data.error || `Failed to load email queue (${res.status})`
+        console.error('[EMAIL QUEUE] Error:', { status: res.status, code: data.code, message: data.message, details: data.details })
+        toast.error(errorMsg)
+        setQueueItems([]) // Set empty array on error to prevent UI issues
       }
-    } catch (error) {
-      console.error('Error fetching email queue:', error)
-      toast.error('Failed to load email queue')
+    } catch (error: any) {
+      console.error('[EMAIL QUEUE] Request failed:', {
+        url: '/api/email-queue',
+        error: error.message,
+        stack: error.stack,
+      })
+      toast.error(`Network error: ${error.message || 'Failed to load email queue'}`)
+      setQueueItems([]) // Set empty array on error
     } finally {
       setLoading(false)
     }

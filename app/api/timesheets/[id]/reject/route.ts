@@ -26,7 +26,14 @@ export async function POST(
     const session = await getServerSession(authOptions)
     
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Unauthorized - Please log in',
+        },
+        { status: 401 }
+      )
     }
 
     const data = await request.json()
@@ -44,7 +51,14 @@ export async function POST(
     })
 
     if (!timesheet || timesheet.deletedAt) {
-      return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'NOT_FOUND',
+          message: 'Timesheet not found',
+        },
+        { status: 404 }
+      )
     }
 
     // Check permissions based on timesheet type
@@ -57,8 +71,19 @@ export async function POST(
     const hasPermission = isAdmin || (permission?.canApprove === true) // Reject uses canApprove
 
     if (!hasPermission) {
+      console.error('[REJECT TIMESHEET] Permission denied:', {
+        userId: session.user.id,
+        userRole: session.user.role,
+        permissionKey,
+        hasPermission: permission?.canApprove,
+        isAdmin,
+      })
       return NextResponse.json(
-        { error: 'Unauthorized - Insufficient permissions' },
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Permission denied - Insufficient permissions to reject timesheets',
+        },
         { status: 403 }
       )
     }
@@ -66,7 +91,11 @@ export async function POST(
     // Only DRAFT timesheets can be rejected
     if (timesheet.status !== 'DRAFT') {
       return NextResponse.json(
-        { error: 'Only draft timesheets can be rejected' },
+        {
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: `Only draft timesheets can be rejected. Current status: ${timesheet.status}`,
+        },
         { status: 400 }
       )
     }
@@ -109,12 +138,25 @@ export async function POST(
       console.error('Failed to create audit log (non-blocking):', auditError)
     }
 
-    return NextResponse.json(updated)
+    return NextResponse.json({
+      ok: true,
+      data: updated,
+    })
   } catch (error: any) {
-    console.error('Error rejecting timesheet:', error)
+    console.error('[REJECT TIMESHEET] Error:', {
+      route: `/api/timesheets/${resolvedParams.id}/reject`,
+      userId: session?.user?.id,
+      userRole: session?.user?.role,
+      timesheetId: resolvedParams.id,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+    })
     return NextResponse.json(
       {
-        error: 'Failed to reject timesheet',
+        ok: false,
+        code: 'DB_ERROR',
+        message: 'Failed to reject timesheet',
         details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       },
       { status: 500 }

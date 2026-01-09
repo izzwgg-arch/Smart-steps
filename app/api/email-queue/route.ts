@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Unauthorized - Please log in',
+        },
+        { status: 401 }
+      )
     }
 
     // Check permissions
@@ -25,8 +32,17 @@ export async function GET(request: NextRequest) {
       session.user.role === 'ADMIN'
 
     if (!canViewQueue) {
+      console.error('[EMAIL QUEUE] Permission denied:', {
+        userId: session.user.id,
+        userRole: session.user.role,
+        hasPermission: userPermissions['emailQueue.view']?.canView,
+      })
       return NextResponse.json(
-        { error: 'Forbidden - Not authorized to view email queue' },
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Permission denied - Not authorized to view email queue',
+        },
         { status: 403 }
       )
     }
@@ -133,12 +149,38 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    return NextResponse.json({ items: itemsWithTimesheets })
+    return NextResponse.json({
+      ok: true,
+      items: itemsWithTimesheets,
+    })
   } catch (error: any) {
-    console.error('Error fetching email queue:', error)
+    console.error('[EMAIL QUEUE] Error:', {
+      route: '/api/email-queue',
+      userId: session?.user?.id,
+      userRole: session?.user?.role,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+    })
+    
+    // Handle Prisma column errors
+    if (error?.code === 'P2022' || error?.code === 'P2025') {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'DB_ERROR',
+          message: 'Database schema mismatch. Please contact administrator.',
+          details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        },
+        { status: 500 }
+      )
+    }
+    
     return NextResponse.json(
       {
-        error: 'Failed to fetch email queue',
+        ok: false,
+        code: 'DB_ERROR',
+        message: 'Failed to fetch email queue',
         details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       },
       { status: 500 }

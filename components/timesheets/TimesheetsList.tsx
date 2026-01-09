@@ -160,18 +160,34 @@ export function TimesheetsList() {
 
   const handleApprove = async (id: string) => {
     try {
-      const res = await fetch(`/api/timesheets/${id}/approve`, { method: 'POST' })
+      const url = `/api/timesheets/${id}/approve`
+      console.log('[APPROVE] Request:', { url, method: 'POST' })
+      
+      const res = await fetch(url, { method: 'POST' })
       const data = await res.json()
-      if (res.ok) {
+      
+      console.log('[APPROVE] Response:', {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        data,
+      })
+      
+      if (res.ok && data.ok !== false) {
         toast.success('Timesheet approved and queued for email')
         fetchTimesheets()
       } else {
-        console.error('Approval error:', data)
-        toast.error(data.error || data.details || 'Failed to approve timesheet')
+        const errorMsg = data.message || data.error || `Failed to approve timesheet (${res.status})`
+        console.error('[APPROVE] Error:', { status: res.status, code: data.code, message: data.message, details: data.details })
+        toast.error(errorMsg)
       }
-    } catch (error) {
-      console.error('Approval request failed:', error)
-      toast.error('Failed to approve timesheet')
+    } catch (error: any) {
+      console.error('[APPROVE] Request failed:', {
+        url: `/api/timesheets/${id}/approve`,
+        error: error.message,
+        stack: error.stack,
+      })
+      toast.error(`Network error: ${error.message || 'Failed to approve timesheet'}`)
     }
   }
 
@@ -180,20 +196,38 @@ export function TimesheetsList() {
     if (!reason || !reason.trim()) return
 
     try {
-      const res = await fetch(`/api/timesheets/${id}/reject`, {
+      const url = `/api/timesheets/${id}/reject`
+      console.log('[REJECT] Request:', { url, method: 'POST', reason })
+      
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason }),
       })
-      if (res.ok) {
+      const data = await res.json()
+      
+      console.log('[REJECT] Response:', {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        data,
+      })
+      
+      if (res.ok && data.ok !== false) {
         toast.success('Timesheet rejected')
         fetchTimesheets()
       } else {
-        const data = await res.json()
-        toast.error(data.error || 'Failed to reject timesheet')
+        const errorMsg = data.message || data.error || `Failed to reject timesheet (${res.status})`
+        console.error('[REJECT] Error:', { status: res.status, code: data.code, message: data.message, details: data.details })
+        toast.error(errorMsg)
       }
-    } catch (error) {
-      toast.error('Failed to reject timesheet')
+    } catch (error: any) {
+      console.error('[REJECT] Request failed:', {
+        url: `/api/timesheets/${id}/reject`,
+        error: error.message,
+        stack: error.stack,
+      })
+      toast.error(`Network error: ${error.message || 'Failed to reject timesheet'}`)
     }
   }
 

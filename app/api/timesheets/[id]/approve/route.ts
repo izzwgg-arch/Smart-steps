@@ -26,7 +26,14 @@ export async function POST(
     const session = await getServerSession(authOptions)
     
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Unauthorized - Please log in',
+        },
+        { status: 401 }
+      )
     }
 
     // Fetch timesheet with relations
@@ -41,7 +48,14 @@ export async function POST(
     })
 
     if (!timesheet || timesheet.deletedAt) {
-      return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'NOT_FOUND',
+          message: 'Timesheet not found',
+        },
+        { status: 404 }
+      )
     }
 
     // Check permissions based on timesheet type
@@ -54,8 +68,19 @@ export async function POST(
     const hasPermission = isAdmin || (permission?.canApprove === true)
 
     if (!hasPermission) {
+      console.error('[APPROVE TIMESHEET] Permission denied:', {
+        userId: session.user.id,
+        userRole: session.user.role,
+        permissionKey,
+        hasPermission: permission?.canApprove,
+        isAdmin,
+      })
       return NextResponse.json(
-        { error: 'Unauthorized - Insufficient permissions' },
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Permission denied - Insufficient permissions to approve timesheets',
+        },
         { status: 403 }
       )
     }
@@ -63,7 +88,11 @@ export async function POST(
     // Only DRAFT timesheets can be approved
     if (timesheet.status !== 'DRAFT') {
       return NextResponse.json(
-        { error: 'Only draft timesheets can be approved' },
+        {
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: `Only draft timesheets can be approved. Current status: ${timesheet.status}`,
+        },
         { status: 400 }
       )
     }
@@ -71,7 +100,11 @@ export async function POST(
     // Prevent approving already-emailed timesheets
     if (timesheet.emailedAt) {
       return NextResponse.json(
-        { error: 'This timesheet has already been emailed and cannot be approved again' },
+        {
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: 'This timesheet has already been emailed and cannot be approved again',
+        },
         { status: 400 }
       )
     }
@@ -148,21 +181,51 @@ export async function POST(
       console.error('Failed to log queue action (non-blocking):', error)
     }
 
-    return NextResponse.json(result)
+    return NextResponse.json({
+      ok: true,
+      data: result,
+    })
   } catch (error: any) {
-    console.error('Error approving timesheet:', error)
+    console.error('[APPROVE TIMESHEET] Error:', {
+      route: `/api/timesheets/${resolvedParams.id}/approve`,
+      userId: session?.user?.id,
+      userRole: session?.user?.role,
+      timesheetId: resolvedParams.id,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+    })
     
     // Handle unique constraint violation gracefully
     if (error?.code === 'P2002') {
       return NextResponse.json(
-        { error: 'This timesheet is already queued for email' },
+        {
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: 'This timesheet is already queued for email',
+        },
         { status: 409 }
+      )
+    }
+
+    // Handle Prisma column errors
+    if (error?.code === 'P2022' || error?.code === 'P2025') {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'DB_ERROR',
+          message: 'Database schema mismatch. Please contact administrator.',
+          details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        },
+        { status: 500 }
       )
     }
 
     return NextResponse.json(
       {
-        error: 'Failed to approve timesheet',
+        ok: false,
+        code: 'DB_ERROR',
+        message: 'Failed to approve timesheet',
         details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       },
       { status: 500 }
