@@ -121,8 +121,19 @@ export async function sendMailSafe(
   }
 
   try {
+    // Debug: Log SMTP config (without sensitive data)
+    console.log('[EMAIL] SMTP Config Check:', {
+      host: process.env.SMTP_HOST ? 'SET' : 'MISSING',
+      port: process.env.SMTP_PORT ? 'SET' : 'MISSING',
+      user: process.env.SMTP_USER ? 'SET' : 'MISSING',
+      pass: (process.env.SMTP_PASS || process.env.SMTP_PASSWORD) ? 'SET' : 'MISSING',
+      from: process.env.EMAIL_FROM || 'NOT SET',
+    })
+
     const transporter = getTransporter()
     const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@smartstepsabapc.org'
+    
+    console.log('[EMAIL] Attempting to send email to:', recipients.join(', '))
     
     const info = await transporter.sendMail({
       from,
