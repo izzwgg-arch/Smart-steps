@@ -16,20 +16,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { currentPassword, newPassword } = await request.json()
+    const { password } = await request.json()
 
-    if (!currentPassword || !newPassword) {
+    if (!password) {
       return NextResponse.json(
-        { error: 'Current password and new password are required' },
+        { error: 'Password is required' },
         { status: 400 }
       )
     }
 
-    // Validate new password
-    const passwordError = validatePassword(newPassword)
-    if (passwordError) {
+    // Validate password
+    const passwordValidation = validatePassword(password)
+    if (!passwordValidation.valid) {
       return NextResponse.json(
-        { error: passwordError },
+        { error: passwordValidation.errors.join(', ') },
         { status: 400 }
       )
     }
@@ -46,32 +46,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify current password
-    const isValid = await bcrypt.compare(currentPassword, user.password)
-    if (!isValid) {
+    // Verify user must change password
+    if (!user.mustChangePassword) {
       return NextResponse.json(
-        { error: 'Current password is incorrect' },
-        { status: 400 }
-      )
-    }
-
-    // Check if new password is same as current
-    const isSamePassword = await bcrypt.compare(newPassword, user.password)
-    if (isSamePassword) {
-      return NextResponse.json(
-        { error: 'New password must be different from current password' },
+        { error: 'Password change is not required for this account' },
         { status: 400 }
       )
     }
 
     // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10)
+    const hashedPassword = await bcrypt.hash(password, 10)
 
-    // Update password and clear mustChangePassword flag
+    // Update password, clear temp password fields, and clear mustChangePassword flag
     await prisma.user.update({
       where: { id: user.id },
       data: {
         password: hashedPassword,
+        tempPasswordHash: null,
+        tempPasswordExpiresAt: null,
         mustChangePassword: false,
         failedLoginAttempts: 0,
         lockedUntil: null,
@@ -80,23 +72,24 @@ export async function POST(request: NextRequest) {
 
     // Log audit
     await createAuditLog({
-      action: 'UPDATE',
+      action: 'USER_PASSWORD_SET' as any,
       entityType: 'User',
       entityId: user.id,
       userId: user.id,
       newValues: {
-        action: 'password_changed',
+        action: 'password_set',
         email: user.email,
+        timestamp: new Date().toISOString(),
       },
     })
 
     return NextResponse.json({
-      message: 'Password changed successfully',
+      message: 'Password set successfully',
     })
   } catch (error) {
-    console.error('Failed to change password:', error)
+    console.error('Failed to set password:', error)
     return NextResponse.json(
-      { error: 'Failed to change password' },
+      { error: 'Failed to set password' },
       { status: 500 }
     )
   }

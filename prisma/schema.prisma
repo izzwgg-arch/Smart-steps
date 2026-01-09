@@ -23,6 +23,8 @@ enum TimesheetStatus {
   APPROVED
   REJECTED
   LOCKED
+  QUEUED_FOR_EMAIL
+  EMAILED
 }
 
 enum InvoiceStatus {
@@ -46,6 +48,13 @@ enum AuditAction {
   PAYMENT
   ADJUSTMENT
   LOGIN
+  EMAIL_SENT
+  EMAIL_FAILED
+  TIMESHEET_APPROVED
+  TIMESHEET_REJECTED
+  BCBA_TIMESHEET_APPROVED
+  BCBA_TIMESHEET_REJECTED
+  USER_PASSWORD_SET
 }
 
 model User {
@@ -60,9 +69,12 @@ model User {
   activationEnd    DateTime?
   resetToken       String?
   resetTokenExpiry DateTime?
+  tempPasswordHash String? // Temporary password hash for new users
+  tempPasswordExpiresAt DateTime? // Expiration for temp password
   mustChangePassword Boolean @default(false)
   failedLoginAttempts Int    @default(0)
   lockedUntil      DateTime?
+  lastLoginAt      DateTime? // Last successful login timestamp
   lastSeenActivityAt DateTime? // For admin activity badge tracking
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -73,6 +85,7 @@ model User {
   auditLogs       AuditLog[]
   notifications   Notification[]
   activities      Activity[]     @relation("ActivityActor")
+  emailQueueItems EmailQueueItem[] @relation("EmailQueueCreator")
   customRole      Role?          @relation(fields: [customRoleId], references: [id])
   timesheetVisibility RoleTimesheetVisibility[]
 }
@@ -214,6 +227,11 @@ model Timesheet {
   submittedAt     DateTime?
   approvedAt      DateTime?
   lockedAt        DateTime?
+  queuedForEmailAt DateTime? // When timesheet was queued for email
+  emailedAt       DateTime? // When email was actually sent
+  emailedBatchId  String? // Batch ID for grouped email sends
+  emailStatus     String? // 'QUEUED', 'SENT', 'FAILED'
+  emailError      String? // Sanitized error message if email failed
   lastEditedBy    String? // User ID who last edited
   lastEditedAt    DateTime? // Timestamp of last edit
   createdAt       DateTime        @default(now())
@@ -233,6 +251,8 @@ model Timesheet {
   @@index([clientId, deletedAt])
   @@index([deletedAt])
   @@index([isBCBA, deletedAt]) // Index for BCBA filtering
+  @@index([status, deletedAt]) // Index for status filtering
+  @@index([emailStatus, deletedAt]) // Index for email queue filtering
 }
 
 model TimesheetEntry {
@@ -331,18 +351,20 @@ model InvoiceAdjustment {
 model AuditLog {
   id        String      @id @default(cuid())
   action    AuditAction
-  entity    String // Model name
+  entityType String     // Model name (e.g., 'Timesheet', 'User')
   entityId  String
   userId    String
-  oldValues String? // JSON
-  newValues String? // JSON
+  oldValues String?     // JSON
+  newValues String?     // JSON
+  metadata  String?     // JSON for additional context
   createdAt DateTime    @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
-  @@index([createdAt])
+  @@index([createdAt(sort: Desc)])
   @@index([action])
   @@index([userId])
+  @@index([entityType, entityId])
 }
 
 model Activity {
@@ -409,4 +431,24 @@ model RoleTimesheetVisibility {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, userId])
+}
+
+model EmailQueueItem {
+  id            String    @id @default(cuid())
+  type          String    // 'REGULAR_TIMESHEET' | 'BCBA_TIMESHEET'
+  entityId      String    // Timesheet ID
+  queuedByUserId String
+  queuedAt      DateTime  @default(now())
+  sentAt        DateTime?
+  batchId       String?   // Batch ID for grouped sends
+  status        String    @default("QUEUED") // 'QUEUED' | 'SENT' | 'FAILED'
+  lastError     String?   // Sanitized error message
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  queuedBy User @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([type, status])
+  @@index([batchId])
 }

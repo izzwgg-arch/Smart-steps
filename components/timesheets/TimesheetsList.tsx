@@ -45,6 +45,8 @@ export function TimesheetsList() {
   const [selectedUserId, setSelectedUserId] = useState<string>('')
   const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; username: string; email: string }>>([])
   const [canDeleteTimesheets, setCanDeleteTimesheets] = useState(false)
+  const [canApproveTimesheets, setCanApproveTimesheets] = useState(false)
+  const [canRejectTimesheets, setCanRejectTimesheets] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deletingTimesheetId, setDeletingTimesheetId] = useState<string | null>(null)
@@ -65,9 +67,13 @@ export function TimesheetsList() {
         const hasViewAll = data.permissions['timesheets.viewAll']?.canView === true
         const hasViewSelected = data.permissions['timesheets.viewSelectedUsers']?.canView === true
         const hasDelete = data.permissions['timesheets.delete']?.canDelete === true
+        const hasApprove = data.permissions['timesheets.approve']?.canApprove === true
+        const hasReject = data.permissions['timesheets.reject']?.canApprove === true // Reject uses canApprove
         setCanViewAllTimesheets(hasViewAll || hasViewSelected)
         setHasViewSelectedUsers(hasViewSelected)
         setCanDeleteTimesheets(hasDelete)
+        setCanApproveTimesheets(hasApprove)
+        setCanRejectTimesheets(hasReject)
         
         // If user can view others, fetch available users
         if (hasViewAll || hasViewSelected) {
@@ -150,20 +156,7 @@ export function TimesheetsList() {
     }
   }, [selectedUserId])
 
-  const handleSubmit = async (id: string) => {
-    try {
-      const res = await fetch(`/api/timesheets/${id}/submit`, { method: 'POST' })
-      if (res.ok) {
-        toast.success('Timesheet submitted')
-        fetchTimesheets()
-      } else {
-        const data = await res.json()
-        toast.error(data.error || 'Failed to submit timesheet')
-      }
-    } catch (error) {
-      toast.error('Failed to submit timesheet')
-    }
-  }
+  // Submit button removed - replaced with Approve/Reject workflow
 
   const handleApprove = async (id: string) => {
     try {
@@ -245,6 +238,10 @@ export function TimesheetsList() {
       case 'REJECTED':
         return 'bg-red-100 text-red-800'
       case 'LOCKED':
+        return 'bg-purple-100 text-purple-800'
+      case 'QUEUED_FOR_EMAIL':
+        return 'bg-cyan-100 text-cyan-800'
+      case 'EMAILED':
         return 'bg-purple-100 text-purple-800'
       default:
         return 'bg-gray-100 text-gray-800'
@@ -502,16 +499,7 @@ export function TimesheetsList() {
                         Edit
                       </Link>
                     )}
-                    {timesheet.status === 'DRAFT' && (
-                      <button
-                        onClick={() => handleSubmit(timesheet.id)}
-                        className="flex items-center w-full px-4 py-2 text-sm text-blue-700 hover:bg-gray-100"
-                      >
-                        <Send className="w-4 h-4 mr-2" />
-                        Submit
-                      </button>
-                    )}
-                    {userRole === 'ADMIN' && timesheet.status === 'SUBMITTED' && (
+                    {(timesheet.status === 'DRAFT' || timesheet.status === 'SUBMITTED') && (canApproveTimesheets || isAdmin) && (
                       <>
                         <button
                           onClick={() => handleApprove(timesheet.id)}
@@ -520,13 +508,15 @@ export function TimesheetsList() {
                           <Check className="w-4 h-4 mr-2" />
                           Approve
                         </button>
-                        <button
-                          onClick={() => handleReject(timesheet.id)}
-                          className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
-                        >
-                          <X className="w-4 h-4 mr-2" />
-                          Reject
-                        </button>
+                        {(canRejectTimesheets || isAdmin) && (
+                          <button
+                            onClick={() => handleReject(timesheet.id)}
+                            className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                          >
+                            <X className="w-4 h-4 mr-2" />
+                            Reject
+                          </button>
+                        )}
                       </>
                     )}
                     {(canDeleteTimesheets || isAdmin) && (

@@ -42,7 +42,27 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Account access is outside scheduled window')
         }
 
-        const isValid = await bcrypt.compare(credentials.password, user.password)
+        // Check temp password expiration
+        if (user.tempPasswordExpiresAt && user.tempPasswordExpiresAt < new Date()) {
+          throw new Error('Temporary password has expired. Please use "Forgot Password" to reset.')
+        }
+
+        // Check password: try temp password first, then regular password
+        let isValid = false
+        let usingTempPassword = false
+
+        // Try temp password first if it exists
+        if (user.tempPasswordHash) {
+          isValid = await bcrypt.compare(credentials.password, user.tempPasswordHash)
+          if (isValid) {
+            usingTempPassword = true
+          }
+        }
+
+        // If temp password didn't match or doesn't exist, try regular password
+        if (!isValid) {
+          isValid = await bcrypt.compare(credentials.password, user.password)
+        }
 
         if (!isValid) {
           // Increment failed login attempts
@@ -58,8 +78,8 @@ export const authOptions: NextAuthOptions = {
           if (failedAttempts >= maxAttempts) {
             updateData.lockedUntil = new Date(Date.now() + lockDuration)
             await createAuditLog({
-              action: 'SUBMIT',
-              entity: 'User',
+              action: 'LOCK',
+              entityType: 'User',
               entityId: user.id,
               userId: 'system',
               newValues: {
@@ -75,50 +95,47 @@ export const authOptions: NextAuthOptions = {
             data: updateData,
           })
 
-          // Log failed login attempt
-          await createAuditLog({
-            action: 'SUBMIT',
-            entity: 'User',
-            entityId: user.id,
-            userId: 'system',
-            newValues: {
-              action: 'failed_login_attempt',
-              email: user.email,
-              attempts: failedAttempts,
-            },
-          })
+          // Log failed login attempt (optional - can be noisy)
+          // Skipped to reduce log noise
 
           throw new Error('Invalid credentials')
         }
 
-        // Reset failed login attempts on successful login
-        if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: {
-              failedLoginAttempts: 0,
-              lockedUntil: null,
-            },
-          })
+        // Update user on successful login
+        const updateData: any = {
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          lastLoginAt: new Date(), // Update last login timestamp
         }
+
+        // If using temp password, ensure mustChangePassword is set
+        if (usingTempPassword) {
+          updateData.mustChangePassword = true
+        }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: updateData,
+        })
 
         // Log successful login
         await createAuditLog({
-          action: 'SUBMIT',
-          entity: 'User',
+          action: 'LOGIN',
+          entityType: 'User',
           entityId: user.id,
           userId: user.id,
-          newValues: {
-            action: 'login_success',
+          metadata: JSON.stringify({
             email: user.email,
-          },
+            usingTempPassword,
+            timestamp: new Date().toISOString(),
+          }),
         })
 
         return {
           id: user.id,
           email: user.email,
           role: user.role as any, // NextAuth type compatibility
-          mustChangePassword: user.mustChangePassword || false,
+          mustChangePassword: usingTempPassword || user.mustChangePassword || false,
         } as any
       }
     })

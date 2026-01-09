@@ -8,11 +8,12 @@ import { AuditAction } from '@prisma/client'
 
 export interface AuditLogData {
   action: AuditAction
-  entity: string // Model name (e.g., 'User', 'Timesheet', 'Invoice')
+  entityType: string // Model name (e.g., 'User', 'Timesheet', 'Invoice')
   entityId: string
   userId: string
   oldValues?: Record<string, any>
   newValues?: Record<string, any>
+  metadata?: Record<string, any> // Additional context as JSON
 }
 
 /**
@@ -23,11 +24,12 @@ export async function createAuditLog(data: AuditLogData): Promise<void> {
     await prisma.auditLog.create({
       data: {
         action: data.action,
-        entity: data.entity,
+        entityType: data.entityType,
         entityId: data.entityId,
         userId: data.userId,
         oldValues: data.oldValues ? JSON.stringify(data.oldValues) : null,
         newValues: data.newValues ? JSON.stringify(data.newValues) : null,
+        metadata: data.metadata ? JSON.stringify(data.metadata) : null,
       },
     })
   } catch (error) {
@@ -40,14 +42,14 @@ export async function createAuditLog(data: AuditLogData): Promise<void> {
  * Log a CREATE action
  */
 export async function logCreate(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   newValues: Record<string, any>
 ): Promise<void> {
   await createAuditLog({
     action: 'CREATE',
-    entity,
+    entityType,
     entityId,
     userId,
     newValues,
@@ -58,7 +60,7 @@ export async function logCreate(
  * Log an UPDATE action
  */
 export async function logUpdate(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   oldValues: Record<string, any>,
@@ -66,7 +68,7 @@ export async function logUpdate(
 ): Promise<void> {
   await createAuditLog({
     action: 'UPDATE',
-    entity,
+    entityType,
     entityId,
     userId,
     oldValues,
@@ -78,14 +80,14 @@ export async function logUpdate(
  * Log a DELETE action
  */
 export async function logDelete(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   oldValues: Record<string, any>
 ): Promise<void> {
   await createAuditLog({
     action: 'DELETE',
-    entity,
+    entityType,
     entityId,
     userId,
     oldValues,
@@ -96,14 +98,14 @@ export async function logDelete(
  * Log an APPROVE action
  */
 export async function logApprove(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   details?: Record<string, any>
 ): Promise<void> {
   await createAuditLog({
     action: 'APPROVE',
-    entity,
+    entityType,
     entityId,
     userId,
     newValues: details,
@@ -114,14 +116,14 @@ export async function logApprove(
  * Log a REJECT action
  */
 export async function logReject(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   reason?: string
 ): Promise<void> {
   await createAuditLog({
     action: 'REJECT',
-    entity,
+    entityType,
     entityId,
     userId,
     newValues: reason ? { reason } : undefined,
@@ -132,13 +134,13 @@ export async function logReject(
  * Log a SUBMIT action
  */
 export async function logSubmit(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string
 ): Promise<void> {
   await createAuditLog({
     action: 'SUBMIT',
-    entity,
+    entityType,
     entityId,
     userId,
   })
@@ -148,13 +150,13 @@ export async function logSubmit(
  * Log a LOCK action
  */
 export async function logLock(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string
 ): Promise<void> {
   await createAuditLog({
     action: 'LOCK',
-    entity,
+    entityType,
     entityId,
     userId,
   })
@@ -164,14 +166,14 @@ export async function logLock(
  * Log a GENERATE action (e.g., invoice generation)
  */
 export async function logGenerate(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   details?: Record<string, any>
 ): Promise<void> {
   await createAuditLog({
     action: 'GENERATE',
-    entity,
+    entityType,
     entityId,
     userId,
     newValues: details,
@@ -182,14 +184,14 @@ export async function logGenerate(
  * Log a PAYMENT action
  */
 export async function logPayment(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   paymentDetails: Record<string, any>
 ): Promise<void> {
   await createAuditLog({
     action: 'PAYMENT',
-    entity,
+    entityType,
     entityId,
     userId,
     newValues: paymentDetails,
@@ -200,14 +202,14 @@ export async function logPayment(
  * Log an ADJUSTMENT action
  */
 export async function logAdjustment(
-  entity: string,
+  entityType: string,
   entityId: string,
   userId: string,
   adjustmentDetails: Record<string, any>
 ): Promise<void> {
   await createAuditLog({
     action: 'ADJUSTMENT',
-    entity,
+    entityType,
     entityId,
     userId,
     newValues: adjustmentDetails,

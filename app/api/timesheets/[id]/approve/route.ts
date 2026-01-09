@@ -3,8 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logApprove } from '@/lib/audit'
-import { sendEmail, getTimesheetApprovedEmailHtml } from '@/lib/email'
-import { formatDate } from '@/lib/utils'
+import { getUserPermissions } from '@/lib/permissions'
 
 export async function POST(
   request: NextRequest,
@@ -12,7 +11,7 @@ export async function POST(
 ) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== 'ADMIN') {
+    if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -21,6 +20,7 @@ export async function POST(
       include: {
         client: true,
         provider: true,
+        bcba: true,
         user: true,
       },
     })
@@ -29,40 +29,69 @@ export async function POST(
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
 
-    if (timesheet.status !== 'SUBMITTED') {
+    // Check permissions based on timesheet type
+    const userPermissions = await getUserPermissions(session.user.id)
+    const isBCBA = timesheet.isBCBA
+    const permissionKey = isBCBA ? 'bcbaTimesheets.approve' : 'timesheets.approve'
+    const permission = userPermissions[permissionKey]
+    
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
+    const hasPermission = isAdmin || (permission?.canApprove === true)
+
+    if (!hasPermission) {
+      return NextResponse.json({ error: 'Unauthorized - Insufficient permissions' }, { status: 403 })
+    }
+
+    // Allow approval from DRAFT or SUBMITTED status
+    if (timesheet.status !== 'DRAFT' && timesheet.status !== 'SUBMITTED') {
       return NextResponse.json(
-        { error: 'Only submitted timesheets can be approved' },
+        { error: 'Only draft or submitted timesheets can be approved' },
         { status: 400 }
       )
     }
 
+    // Update timesheet to APPROVED and queue for email
     const updated = await prisma.timesheet.update({
       where: { id: params.id },
       data: {
         status: 'APPROVED',
         approvedAt: new Date(),
+        queuedForEmailAt: new Date(),
+        emailStatus: 'QUEUED',
       },
     })
 
-    // Log audit
-    await logApprove('Timesheet', params.id, session.user.id)
+    // Create email queue item
+    await prisma.emailQueueItem.create({
+      data: {
+        type: isBCBA ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
+        entityId: params.id,
+        queuedByUserId: session.user.id,
+        status: 'QUEUED',
+      },
+    })
 
-    // Send email to timesheet owner
-    try {
-      await sendEmail({
-        to: timesheet.user.email,
-        subject: `Timesheet Approved - ${timesheet.client.name}`,
-        html: getTimesheetApprovedEmailHtml(
-          timesheet.client.name,
-          timesheet.provider.name,
-          formatDate(timesheet.startDate),
-          formatDate(timesheet.endDate)
-        ),
-      })
-    } catch (error) {
-      console.error('Failed to send timesheet approval email:', error)
-      // Don't fail the request if email fails
-    }
+    // Log audit with appropriate action
+    const auditAction = isBCBA ? 'BCBA_TIMESHEET_APPROVED' : 'TIMESHEET_APPROVED'
+    await logApprove(isBCBA ? 'BCBATimesheet' : 'Timesheet', params.id, session.user.id)
+
+    // Also create specific audit log entry
+    await prisma.auditLog.create({
+      data: {
+        action: auditAction as any,
+        entityType: isBCBA ? 'BCBATimesheet' : 'Timesheet',
+        entityId: params.id,
+        userId: session.user.id,
+        metadata: JSON.stringify({
+          clientName: timesheet.client.name,
+          providerName: timesheet.provider.name,
+          bcbaName: timesheet.bcba.name,
+          startDate: timesheet.startDate.toISOString(),
+          endDate: timesheet.endDate.toISOString(),
+          queuedForEmail: true,
+        }),
+      },
+    })
 
     return NextResponse.json(updated)
   } catch (error) {

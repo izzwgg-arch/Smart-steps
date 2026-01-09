@@ -42,7 +42,7 @@ export default function LoginPage() {
         
         if (session?.user?.mustChangePassword) {
           toast.success('Login successful! Please set a new password.')
-          router.push('/change-password')
+          router.push('/set-new-password')
         } else {
           toast.success('Login successful!')
           router.push('/dashboard')

@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
         id: log.id,
         type: 'audit' as const,
         action: log.action,
-        entity: log.entity,
+        entity: log.entityType, // Use entityType from schema
         entityId: log.entityId,
         userEmail: log.user.email,
         createdAt: log.createdAt,

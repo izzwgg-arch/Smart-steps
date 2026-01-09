@@ -1,46 +1,199 @@
 import nodemailer from 'nodemailer'
+import { createAuditLog } from './audit'
+
+// Validate SMTP configuration
+function validateSMTPConfig(): { valid: boolean; error?: string } {
+  const host = process.env.SMTP_HOST
+  const port = process.env.SMTP_PORT
+  const user = process.env.SMTP_USER
+  const pass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD
+
+  if (!host || !port || !user || !pass) {
+    return {
+      valid: false,
+      error: 'SMTP configuration incomplete. Required: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS',
+    }
+  }
+
+  return { valid: true }
+}
 
 // Create reusable transporter
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD,
-  },
-})
+let transporter: nodemailer.Transporter | null = null
+
+function getTransporter(): nodemailer.Transporter {
+  if (!transporter) {
+    const config = validateSMTPConfig()
+    if (!config.valid) {
+      throw new Error(config.error || 'SMTP not configured')
+    }
+
+    transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST!,
+      port: parseInt(process.env.SMTP_PORT!),
+      secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+      auth: {
+        user: process.env.SMTP_USER!,
+        pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD!,
+      },
+    })
+  }
+  return transporter
+}
 
 export interface EmailOptions {
-  to: string
+  to: string | string[] // Single email or comma-separated string or array
   subject: string
   html: string
   text?: string
+  attachments?: Array<{
+    filename: string
+    content: Buffer | string
+    contentType?: string
+  }>
 }
 
-export async function sendEmail(options: EmailOptions): Promise<void> {
-  // If SMTP is not configured, log the email instead of sending
-  if (!process.env.SMTP_USER || (!process.env.SMTP_PASS && !process.env.SMTP_PASSWORD)) {
-    console.log('Email not configured. Would send email:', {
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-    })
-    return
+export interface EmailResult {
+  success: boolean
+  messageId?: string
+  error?: string
+  recipients: string[]
+}
+
+/**
+ * Safe email sending wrapper with validation and audit logging
+ * Returns structured result instead of throwing
+ */
+export async function sendMailSafe(
+  options: EmailOptions,
+  auditMetadata?: {
+    action: string
+    entityType?: string
+    entityId?: string
+    userId?: string
+  }
+): Promise<EmailResult> {
+  // Validate SMTP config
+  const config = validateSMTPConfig()
+  if (!config.valid) {
+    const errorMsg = config.error || 'SMTP not configured'
+    console.warn(`[EMAIL] ${errorMsg}. Would send email to:`, options.to)
+    
+    // Log audit event
+    if (auditMetadata?.userId) {
+      try {
+        await createAuditLog({
+          action: 'EMAIL_FAILED' as any,
+          entityType: auditMetadata.entityType || 'Email',
+          entityId: auditMetadata.entityId || 'unknown',
+          userId: auditMetadata.userId,
+          metadata: JSON.stringify({ reason: 'SMTP_NOT_CONFIGURED', to: Array.isArray(options.to) ? options.to.join(',') : options.to }),
+        })
+      } catch (e) {
+        // Non-blocking
+      }
+    }
+
+    return {
+      success: false,
+      error: errorMsg,
+      recipients: Array.isArray(options.to) ? options.to : [options.to],
+    }
+  }
+
+  // Normalize recipients
+  let recipients: string[]
+  if (Array.isArray(options.to)) {
+    recipients = options.to
+  } else if (typeof options.to === 'string') {
+    // Handle comma-separated string
+    recipients = options.to.split(',').map((email) => email.trim()).filter(Boolean)
+  } else {
+    recipients = []
+  }
+
+  if (recipients.length === 0) {
+    return {
+      success: false,
+      error: 'No recipients specified',
+      recipients: [],
+    }
   }
 
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: options.to,
+    const transporter = getTransporter()
+    const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@smartstepsabapc.org'
+    
+    const info = await transporter.sendMail({
+      from,
+      to: recipients.join(', '),
       subject: options.subject,
       text: options.text,
       html: options.html,
+      attachments: options.attachments,
     })
-    console.log(`Email sent successfully to ${options.to}`)
-  } catch (error) {
-    console.error('Failed to send email:', error)
-    throw new Error('Failed to send email')
+
+    console.log(`[EMAIL] Sent successfully. MessageId: ${info.messageId}, To: ${recipients.join(', ')}`)
+
+    // Log audit event (non-blocking)
+    if (auditMetadata?.userId) {
+      try {
+        await createAuditLog({
+          action: 'EMAIL_SENT' as any,
+          entityType: auditMetadata.entityType || 'Email',
+          entityId: auditMetadata.entityId || info.messageId || 'unknown',
+          userId: auditMetadata.userId,
+          metadata: JSON.stringify({
+            messageId: info.messageId,
+            recipients: recipients.length,
+            subject: options.subject,
+          }),
+        })
+      } catch (e) {
+        console.error('[EMAIL] Failed to log audit event:', e)
+      }
+    }
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      recipients,
+    }
+  } catch (error: any) {
+    const errorMsg = error?.message || 'Unknown error'
+    console.error(`[EMAIL] Failed to send. Error: ${errorMsg}, To: ${recipients.join(', ')}`)
+
+    // Log audit event (non-blocking)
+    if (auditMetadata?.userId) {
+      try {
+        await createAuditLog({
+          action: 'EMAIL_FAILED' as any,
+          entityType: auditMetadata.entityType || 'Email',
+          entityId: auditMetadata.entityId || 'unknown',
+          userId: auditMetadata.userId,
+          metadata: JSON.stringify({
+            error: errorMsg.replace(/password|pass|token|secret/gi, '***'),
+            recipients: recipients.length,
+          }),
+        })
+      } catch (e) {
+        // Non-blocking
+      }
+    }
+
+    return {
+      success: false,
+      error: errorMsg.replace(/password|pass|token|secret/gi, '***'), // Sanitize error
+      recipients,
+    }
+  }
+}
+
+// Legacy wrapper for backward compatibility
+export async function sendEmail(options: EmailOptions): Promise<void> {
+  const result = await sendMailSafe(options)
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to send email')
   }
 }
 
@@ -381,5 +534,138 @@ Login URL: ${loginUrl}
 Security Note: Please keep your temporary password secure and change it immediately after logging in.
 
 If you did not expect this email, please contact your administrator.
+  `.trim()
+}
+
+// Batch Approval Email Template
+
+export interface QueuedTimesheetItem {
+  id: string
+  type: 'REGULAR_TIMESHEET' | 'BCBA_TIMESHEET'
+  clientName: string
+  providerName: string
+  bcbaName: string
+  startDate: string
+  endDate: string
+  totalHours: number
+  timesheetUrl: string
+  serviceType?: string
+  sessionData?: string
+}
+
+export function getBatchApprovalEmailHtml(
+  regularCount: number,
+  bcbaCount: number,
+  totalHours: number,
+  items: QueuedTimesheetItem[],
+  batchDate: string
+): string {
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || 'http://66.94.105.43:3000'
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Approved Timesheets Batch</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
+      <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;">
+        <h1 style="color: #2563eb; margin-top: 0; text-align: center;">Smart Steps ABA</h1>
+      </div>
+      
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <h2 style="color: #1f2937; margin-top: 0;">Approved Timesheets Batch - ${batchDate}</h2>
+        
+        <div style="background-color: #f0fdf4; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #10b981;">
+          <h3 style="margin-top: 0; color: #059669;">Summary</h3>
+          <p style="margin: 5px 0;"><strong>Regular Timesheets:</strong> ${regularCount}</p>
+          <p style="margin: 5px 0;"><strong>BCBA Timesheets:</strong> ${bcbaCount}</p>
+          <p style="margin: 5px 0;"><strong>Total Timesheets:</strong> ${regularCount + bcbaCount}</p>
+          <p style="margin: 5px 0;"><strong>Total Hours:</strong> ${totalHours.toFixed(2)}</p>
+        </div>
+
+        <h3 style="color: #1f2937; margin-top: 30px;">Timesheet Details</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <thead>
+            <tr style="background-color: #f9fafb;">
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Type</th>
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Client</th>
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Provider</th>
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">BCBA</th>
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Period</th>
+              <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item, idx) => `
+              <tr style="${idx % 2 === 0 ? 'background-color: #ffffff;' : 'background-color: #f9fafb;'}">
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${item.type === 'BCBA_TIMESHEET' ? 'BCBA' : 'Regular'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${item.clientName}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${item.providerName}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${item.bcbaName}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}</td>
+                <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e5e7eb;">${item.totalHours.toFixed(2)}</td>
+              </tr>
+              ${item.type === 'BCBA_TIMESHEET' && item.serviceType ? `
+              <tr style="${idx % 2 === 0 ? 'background-color: #ffffff;' : 'background-color: #f9fafb;'}">
+                <td colspan="6" style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+                  Service Type: ${item.serviceType}${item.sessionData ? ` | Session Data: ${item.sessionData}` : ''}
+                </td>
+              </tr>
+              ` : ''}
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${baseUrl}/timesheets" style="background-color: #2563eb; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">View All Timesheets</a>
+        </div>
+      </div>
+      
+      <div style="text-align: center; margin-top: 20px; color: #6b7280; font-size: 12px;">
+        <p>&copy; ${new Date().getFullYear()} Smart Steps ABA. All rights reserved.</p>
+      </div>
+    </body>
+    </html>
+  `
+}
+
+export function getBatchApprovalEmailText(
+  regularCount: number,
+  bcbaCount: number,
+  totalHours: number,
+  items: QueuedTimesheetItem[],
+  batchDate: string
+): string {
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.APP_URL || 'http://66.94.105.43:3000'
+
+  return `
+Smart Steps ABA - Approved Timesheets Batch
+${batchDate}
+
+Summary:
+- Regular Timesheets: ${regularCount}
+- BCBA Timesheets: ${bcbaCount}
+- Total Timesheets: ${regularCount + bcbaCount}
+- Total Hours: ${totalHours.toFixed(2)}
+
+Timesheet Details:
+${items.map((item, idx) => `
+${idx + 1}. ${item.type === 'BCBA_TIMESHEET' ? 'BCBA' : 'Regular'} Timesheet
+   Client: ${item.clientName}
+   Provider: ${item.providerName}
+   BCBA: ${item.bcbaName}
+   Period: ${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}
+   Hours: ${item.totalHours.toFixed(2)}
+   ${item.type === 'BCBA_TIMESHEET' && item.serviceType ? `Service Type: ${item.serviceType}` : ''}
+   ${item.type === 'BCBA_TIMESHEET' && item.sessionData ? `Session Data: ${item.sessionData}` : ''}
+   View: ${baseUrl}/timesheets/${item.id}
+`).join('\n')}
+
+View All Timesheets: ${baseUrl}/timesheets
+
+© ${new Date().getFullYear()} Smart Steps ABA. All rights reserved.
   `.trim()
 }

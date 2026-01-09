@@ -16,6 +16,7 @@ import {
   Shield,
   Receipt,
   ClipboardList,
+  Mail,
 } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -113,6 +114,14 @@ export default async function DashboardPage() {
   ]
 
   const adminCards = [
+    {
+      title: 'Email Queue',
+      description: 'Manage queued timesheets ready to email',
+      href: '/email-queue',
+      icon: Mail,
+      color: 'bg-emerald-500',
+      permissionKey: 'dashboard.emailQueue',
+    },
     {
       title: 'Users',
       description: 'Manage users, roles, and permissions',
