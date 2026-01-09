@@ -32,7 +32,7 @@ export async function POST(
     })
 
     if (!timesheet || timesheet.deletedAt) {
-      console.error('[APPROVE] Timesheet not found or deleted:', params.id)
+      console.error('[APPROVE] Timesheet not found or deleted:', resolvedParams.id)
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
 
