@@ -111,10 +111,20 @@ export async function POST(
     })
 
     return NextResponse.json(updated)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error approving timesheet:', error)
+    const errorMessage = error?.message || String(error)
+    console.error('Error details:', {
+      message: errorMessage,
+      code: error?.code,
+      meta: error?.meta,
+      stack: error?.stack?.substring(0, 500),
+    })
     return NextResponse.json(
-      { error: 'Failed to approve timesheet' },
+      { 
+        error: 'Failed to approve timesheet',
+        details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+      },
       { status: 500 }
     )
   }
