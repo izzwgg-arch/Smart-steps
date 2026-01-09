@@ -17,10 +17,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate password
-    const passwordError = validatePassword(password)
-    if (passwordError) {
+    const passwordValidation = validatePassword(password)
+    if (!passwordValidation.valid) {
       return NextResponse.json(
-        { error: passwordError },
+        { error: passwordValidation.errors.join(', ') },
         { status: 400 }
       )
     }
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Log audit
     await createAuditLog({
       action: 'UPDATE',
-      entity: 'User',
+      entityType: 'User',
       entityId: user.id,
       userId: 'system',
       newValues: {

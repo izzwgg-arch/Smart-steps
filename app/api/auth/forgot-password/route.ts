@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     // Log audit
     await createAuditLog({
       action: 'SUBMIT',
-      entity: 'User',
+      entityType: 'User',
       entityId: user.id,
       userId: 'system',
       newValues: {
