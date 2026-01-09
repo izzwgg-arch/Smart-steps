@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     const {
       username,
       email,
-      password,
+      password, // Ignored for new users - always generate temp password
       role,
       active,
       activationStart,
@@ -191,13 +191,14 @@ export async function POST(request: NextRequest) {
     })
 
     // Send invite email with temp password
+    let emailSent = false
     try {
       const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://66.94.105.43:3000'
       const loginUrl = `${baseUrl}/login`
       
-      await sendMailSafe({
+      const emailResult = await sendMailSafe({
         to: user.email,
-        subject: 'Your Smart Steps ABA temporary password',
+        subject: 'You\'ve been invited to Smart Steps ABA',
         html: getNewUserInviteEmailHtml(user.email, tempPassword, loginUrl, user.username),
         text: getNewUserInviteEmailText(user.email, tempPassword, loginUrl),
       }, {
@@ -207,21 +208,42 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
       })
 
-      // Log email sent (do NOT log temp password)
-      await logCreate('User', user.id, session.user.id, {
-        action: 'invite_email_sent',
+      if (emailResult.success) {
+        emailSent = true
+        // Log email sent (do NOT log temp password)
+        await logCreate('User', user.id, session.user.id, {
+          action: 'invite_email_sent',
+          email: user.email,
+        })
+      } else {
+        console.error('[CREATE USER] Failed to send invite email:', emailResult.error)
+        // Log email failure
+        await logCreate('User', user.id, session.user.id, {
+          action: 'invite_email_failed',
+          email: user.email,
+          error: emailResult.error,
+        })
+      }
+    } catch (error: any) {
+      console.error('[CREATE USER] Exception sending invite email:', {
+        userId: user.id,
         email: user.email,
+        error: error.message,
+        stack: error.stack,
       })
-    } catch (error) {
-      console.error('Failed to send invite email:', error)
-      // Don't fail user creation if email fails
+      // Log email failure
+      await logCreate('User', user.id, session.user.id, {
+        action: 'invite_email_failed',
+        email: user.email,
+        error: error.message || 'Unknown error',
+      })
     }
 
     // Don't return temp password in response
     const userResponse = { ...user }
     delete (userResponse as any).password
 
-    return NextResponse.json(userResponse, { status: 201 })
+    return NextResponse.json({ ...userResponse, emailSent }, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
     return NextResponse.json(

@@ -58,12 +58,13 @@ export default function SetNewPasswordPage() {
         return
       }
 
-      toast.success('Password set successfully! Please login again.')
+      toast.success('Password set successfully! Redirecting...')
       
-      // Sign out and redirect to login
+      // Refresh session and redirect to dashboard
+      // The middleware will allow access now that mustChangePassword is false
       setTimeout(() => {
-        window.location.href = '/login'
-      }, 1500)
+        window.location.href = '/dashboard'
+      }, 1000)
     } catch (error) {
       toast.error('An error occurred. Please try again.')
       setLoading(false)

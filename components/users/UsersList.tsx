@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Search, Edit, Trash2, CheckCircle, XCircle, Shield, Settings } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, CheckCircle, XCircle, Shield, Settings, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatDate } from '@/lib/utils'
 
@@ -33,6 +33,7 @@ export function UsersList() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchUsers()
@@ -85,6 +86,35 @@ export function UsersList() {
       toast.error('An error occurred while deleting user')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleResendInvite = async (id: string, email: string) => {
+    if (!confirm(`Resend invitation email to ${email}?`)) {
+      return
+    }
+
+    setResendingInviteId(id)
+    try {
+      const res = await fetch(`/api/users/${id}/resend-invite`, {
+        method: 'POST',
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.ok) {
+        if (data.emailSent) {
+          toast.success('Invitation email sent successfully')
+        } else {
+          toast.error('User updated, but invitation email failed. Please check SMTP configuration.', { duration: 6000 })
+        }
+      } else {
+        toast.error(data.message || data.error || 'Failed to resend invitation')
+      }
+    } catch (error) {
+      toast.error('An error occurred while resending invitation')
+    } finally {
+      setResendingInviteId(null)
     }
   }
 
@@ -285,6 +315,14 @@ export function UsersList() {
                       {formatDate(user.createdAt)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={() => handleResendInvite(user.id, user.email)}
+                        disabled={resendingInviteId === user.id}
+                        className="text-blue-600 hover:text-blue-900 disabled:opacity-50 mr-4"
+                        title="Resend invitation email"
+                      >
+                        <Mail className="w-4 h-4 inline" />
+                      </button>
                       <Link
                         href={`/users/${user.id}/edit`}
                         className="text-primary-600 hover:text-primary-900 mr-4"

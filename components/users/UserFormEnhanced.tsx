@@ -44,7 +44,7 @@ export function UserFormEnhanced({ user }: UserFormProps) {
   const [loading, setLoading] = useState(false)
   const [username, setUsername] = useState(user?.username || '')
   const [email, setEmail] = useState(user?.email || '')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(user?.id ? '' : '') // Only allow password for existing users
   const [role, setRole] = useState<'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'CUSTOM'>(user?.role as any || 'USER')
   const [customRoleId, setCustomRoleId] = useState<string>(user?.customRoleId || '')
   const [active, setActive] = useState(user?.active !== undefined ? user.active : true)
@@ -101,7 +101,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
       return
     }
 
-    if (!user || password) {
+    // Only validate password if editing existing user and password is provided
+    if (user && password) {
       const validation = validatePassword(password)
       if (!validation.valid) {
         toast.error(validation.errors.join(', '))
@@ -138,7 +139,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
         body.customRoleId = customRoleId
       }
 
-      if (!user || password) {
+      // Only include password if editing existing user and password is provided
+      if (user && password) {
         body.password = password
       }
 
@@ -149,7 +151,17 @@ export function UserFormEnhanced({ user }: UserFormProps) {
       })
 
       if (res.ok) {
-        toast.success(`User ${user ? 'updated' : 'created'} successfully`)
+        const data = await res.json()
+        if (!user) {
+          // New user created
+          if (data.emailSent) {
+            toast.success('User created. Invitation email sent.')
+          } else {
+            toast.success('User created, but invitation email failed. You can resend the invitation from the user list.', { duration: 6000 })
+          }
+        } else {
+          toast.success('User updated successfully')
+        }
         router.push('/users')
         router.refresh()
       } else {
@@ -209,36 +221,43 @@ export function UserFormEnhanced({ user }: UserFormProps) {
           />
         </div>
 
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-            Password {!user && <span className="text-red-500">*</span>}
-            {user && <span className="text-gray-500 text-xs ml-2">(leave blank to keep current)</span>}
-          </label>
-          <input
-            type="password"
-            id="password"
-            required={!user}
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value)
-              validatePasswordOnChange(e.target.value)
-            }}
-            className={`w-full px-3 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
-              passwordErrors.length > 0 ? 'border-red-500' : 'border-gray-300'
-            }`}
-            placeholder={user ? 'Enter new password' : 'Enter password'}
-          />
-          {passwordErrors.length > 0 && (
-            <ul className="mt-1 text-sm text-red-600 list-disc list-inside">
-              {passwordErrors.map((error, idx) => (
-                <li key={idx}>{error}</li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-1 text-xs text-gray-500">
-            Password must be 10-15 characters with uppercase, lowercase, and special character
-          </p>
-        </div>
+        {user ? (
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              Password <span className="text-gray-500 text-xs ml-2">(leave blank to keep current)</span>
+            </label>
+            <input
+              type="password"
+              id="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                validatePasswordOnChange(e.target.value)
+              }}
+              className={`w-full px-3 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
+                passwordErrors.length > 0 ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="Enter new password"
+            />
+            {passwordErrors.length > 0 && (
+              <ul className="mt-1 text-sm text-red-600 list-disc list-inside">
+                {passwordErrors.map((error, idx) => (
+                  <li key={idx}>{error}</li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-1 text-xs text-gray-500">
+              Password must be 10-15 characters with uppercase, lowercase, and special character
+            </p>
+          </div>
+        ) : (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <p className="text-sm text-blue-800">
+              <strong>Invite User:</strong> A temporary password will be generated and emailed to the user. 
+              They will be required to set a new password on first login.
+            </p>
+          </div>
+        )}
 
         <div>
           <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">

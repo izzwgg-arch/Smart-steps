@@ -6,16 +6,17 @@ export default withAuth(
     const token = req.nextauth.token
     const pathname = req.nextUrl.pathname
 
-    // If user must change password, redirect to change-password page
-    // Allow access to change-password, logout, and API routes
+    // If user must change password, redirect to set-new-password page
+    // Allow access to set-new-password, logout, and API routes
     if (
       token &&
       (token as any).mustChangePassword &&
-      pathname !== '/change-password' &&
+      pathname !== '/set-new-password' &&
       !pathname.startsWith('/api/auth/signout') &&
-      !pathname.startsWith('/api/auth/change-password')
+      !pathname.startsWith('/api/auth/set-new-password') &&
+      !pathname.startsWith('/api/auth/log-activity')
     ) {
-      return NextResponse.redirect(new URL('/change-password', req.url))
+      return NextResponse.redirect(new URL('/set-new-password', req.url))
     }
 
     return NextResponse.next()
@@ -35,12 +36,12 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - change-password (to prevent redirect loops)
+     * - set-new-password (to prevent redirect loops)
      * - login (to allow login)
      * - forgot-password (to allow password reset)
      * - reset-password (to allow password reset)
      * - public folder
      */
-    '/((?!api/auth|_next/static|_next/image|favicon.ico|change-password|login|forgot-password|reset-password|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api/auth|_next/static|_next/image|favicon.ico|set-new-password|login|forgot-password|reset-password|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
