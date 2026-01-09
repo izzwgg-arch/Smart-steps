@@ -233,15 +233,11 @@ export function TimesheetsList() {
     switch (status) {
       case 'DRAFT':
         return 'bg-gray-100 text-gray-800'
-      case 'SUBMITTED':
-        return 'bg-blue-100 text-blue-800'
       case 'APPROVED':
         return 'bg-green-100 text-green-800'
       case 'REJECTED':
         return 'bg-red-100 text-red-800'
-      case 'LOCKED':
-        return 'bg-purple-100 text-purple-800'
-      case 'QUEUED_FOR_EMAIL':
+      case 'QUEUED':
         return 'bg-cyan-100 text-cyan-800'
       case 'EMAILED':
         return 'bg-purple-100 text-purple-800'
@@ -501,7 +497,7 @@ export function TimesheetsList() {
                         Edit
                       </Link>
                     )}
-                    {(timesheet.status === 'DRAFT' || timesheet.status === 'SUBMITTED') && (canApproveTimesheets || isAdmin) && (
+                    {timesheet.status === 'DRAFT' && (canApproveTimesheets || isAdmin) && (
                       <>
                         <button
                           onClick={() => handleApprove(timesheet.id)}

@@ -31,12 +31,12 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Get pending timesheets (SUBMITTED status)
+    // Get pending timesheets (DRAFT status - ready for approval)
     // Apply timesheet visibility scope
     const visibilityScope = await getTimesheetVisibilityScope(userId)
     
     const pendingTimesheetsWhere: any = {
-      status: 'SUBMITTED' as const,
+      status: 'DRAFT' as const,
       deletedAt: null,
     }
     
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         provider: { select: { name: true } },
         user: { select: { email: true } },
       },
-      orderBy: { submittedAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
       take: 10,
     })
 
@@ -128,12 +128,12 @@ export async function GET(request: NextRequest) {
         where: { ...statsWhere, status: 'DRAFT', deletedAt: null },
       }),
       prisma.timesheet.count({
-        where: { ...statsWhere, status: 'SUBMITTED', deletedAt: null },
+        where: { ...statsWhere, status: 'DRAFT', deletedAt: null },
       }),
       prisma.timesheet.count({
         where: { 
           ...statsWhere, 
-          status: { in: ['APPROVED', 'QUEUED_FOR_EMAIL', 'EMAILED'] }, 
+          status: { in: ['APPROVED', 'QUEUED', 'EMAILED'] }, 
           deletedAt: null 
         },
       }),

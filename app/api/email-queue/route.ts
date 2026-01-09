@@ -4,6 +4,12 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getUserPermissions } from '@/lib/permissions'
 
+/**
+ * GET EMAIL QUEUE (REBUILT - CLEAN)
+ * 
+ * Returns all queued items with timesheet details
+ * Permission: emailQueue.view
+ */
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -11,14 +17,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check permissions - use permission check instead of just role check
+    // Check permissions
     const userPermissions = await getUserPermissions(session.user.id)
-    const canViewQueue = userPermissions['emailQueue.view']?.canView === true || 
-                        session.user.role === 'SUPER_ADMIN' || 
-                        session.user.role === 'ADMIN'
+    const canViewQueue =
+      userPermissions['emailQueue.view']?.canView === true ||
+      session.user.role === 'SUPER_ADMIN' ||
+      session.user.role === 'ADMIN'
 
     if (!canViewQueue) {
-      return NextResponse.json({ error: 'Forbidden - Not authorized to view email queue' }, { status: 403 })
+      return NextResponse.json(
+        { error: 'Forbidden - Not authorized to view email queue' },
+        { status: 403 }
+      )
     }
 
     const searchParams = request.nextUrl.searchParams
@@ -29,41 +39,29 @@ export async function GET(request: NextRequest) {
       where.status = status
     }
 
-    console.log('[EMAIL-QUEUE] Fetching queue items with status:', status || 'all')
-    let queueItems
-    try {
-      queueItems = await prisma.emailQueueItem.findMany({
-        where,
-        orderBy: { queuedAt: 'desc' },
-        include: {
-          queuedBy: {
-            select: {
-              id: true,
-              username: true,
-              email: true,
-            },
+    // Fetch all queue items
+    const queueItems = await prisma.emailQueueItem.findMany({
+      where,
+      orderBy: { queuedAt: 'desc' },
+      include: {
+        queuedBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
           },
         },
-      })
-      console.log('[EMAIL-QUEUE] Found', queueItems.length, 'queue items')
-    } catch (error: any) {
-      console.error('[EMAIL-QUEUE] Error fetching queue items:', error)
-      console.error('[EMAIL-QUEUE] Error details:', {
-        message: error?.message,
-        code: error?.code,
-        meta: error?.meta,
-      })
-      throw error
-    }
+      },
+    })
 
     // Fetch timesheet details for each item
     const itemsWithTimesheets = await Promise.all(
       queueItems.map(async (item) => {
         try {
           const timesheet = await prisma.timesheet.findFirst({
-            where: { 
+            where: {
               id: item.entityId,
-              deletedAt: null, // Only get non-deleted timesheets
+              deletedAt: null,
             },
             include: {
               client: { select: { name: true } },
@@ -78,15 +76,14 @@ export async function GET(request: NextRequest) {
           })
 
           if (!timesheet) {
-            // Timesheet not found or deleted - still return item but without timesheet data
             return {
               id: item.id,
-              type: item.type,
+              entityType: item.entityType,
               entityId: item.entityId,
               queuedAt: item.queuedAt.toISOString(),
               sentAt: item.sentAt?.toISOString() || null,
               status: item.status,
-              lastError: item.lastError || 'Timesheet not found or deleted',
+              errorMessage: item.errorMessage || 'Timesheet not found or deleted',
               batchId: item.batchId,
               queuedBy: item.queuedBy,
               timesheet: null,
@@ -98,12 +95,12 @@ export async function GET(request: NextRequest) {
 
           return {
             id: item.id,
-            type: item.type,
+            entityType: item.entityType,
             entityId: item.entityId,
             queuedAt: item.queuedAt.toISOString(),
             sentAt: item.sentAt?.toISOString() || null,
             status: item.status,
-            lastError: item.lastError,
+            errorMessage: item.errorMessage,
             batchId: item.batchId,
             queuedBy: item.queuedBy,
             timesheet: {
@@ -118,16 +115,16 @@ export async function GET(request: NextRequest) {
               sessionData: timesheet.sessionData || undefined,
             },
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Error fetching timesheet ${item.entityId}:`, error)
           return {
             id: item.id,
-            type: item.type,
+            entityType: item.entityType,
             entityId: item.entityId,
             queuedAt: item.queuedAt.toISOString(),
             sentAt: item.sentAt?.toISOString() || null,
             status: item.status,
-            lastError: item.lastError || `Error loading timesheet: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            errorMessage: item.errorMessage || `Error loading timesheet: ${error.message || 'Unknown error'}`,
             batchId: item.batchId,
             queuedBy: item.queuedBy,
             timesheet: null,
@@ -137,10 +134,13 @@ export async function GET(request: NextRequest) {
     )
 
     return NextResponse.json({ items: itemsWithTimesheets })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching email queue:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch email queue' },
+      {
+        error: 'Failed to fetch email queue',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      },
       { status: 500 }
     )
   }

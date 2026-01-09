@@ -19,11 +19,9 @@ enum UserRole {
 
 enum TimesheetStatus {
   DRAFT
-  SUBMITTED
   APPROVED
   REJECTED
-  LOCKED
-  QUEUED_FOR_EMAIL
+  QUEUED
   EMAILED
 }
 
@@ -42,8 +40,7 @@ enum AuditAction {
   DELETE
   APPROVE
   REJECT
-  SUBMIT
-  LOCK
+  QUEUE
   GENERATE
   PAYMENT
   ADJUSTMENT
@@ -55,6 +52,7 @@ enum AuditAction {
   BCBA_TIMESHEET_APPROVED
   BCBA_TIMESHEET_REJECTED
   USER_PASSWORD_SET
+  USER_LOGIN
 }
 
 model User {
@@ -224,14 +222,10 @@ model Timesheet {
   endDate         DateTime
   timezone        String          @default("America/New_York") // IANA timezone identifier
   rejectionReason String?
-  submittedAt     DateTime?
   approvedAt      DateTime?
-  lockedAt        DateTime?
-  queuedForEmailAt DateTime? // When timesheet was queued for email
+  rejectedAt      DateTime?
+  queuedAt        DateTime? // When timesheet was queued for email
   emailedAt       DateTime? // When email was actually sent
-  emailedBatchId  String? // Batch ID for grouped email sends
-  emailStatus     String? // 'QUEUED', 'SENT', 'FAILED'
-  emailError      String? // Sanitized error message if email failed
   lastEditedBy    String? // User ID who last edited
   lastEditedAt    DateTime? // Timestamp of last edit
   createdAt       DateTime        @default(now())
@@ -252,7 +246,6 @@ model Timesheet {
   @@index([deletedAt])
   @@index([isBCBA, deletedAt]) // Index for BCBA filtering
   @@index([status, deletedAt]) // Index for status filtering
-  @@index([emailStatus, deletedAt]) // Index for email queue filtering
 }
 
 model TimesheetEntry {
@@ -433,22 +426,36 @@ model RoleTimesheetVisibility {
   @@unique([roleId, userId])
 }
 
+enum EmailQueueStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum EmailQueueEntityType {
+  REGULAR
+  BCBA
+}
+
 model EmailQueueItem {
-  id            String    @id @default(cuid())
-  type          String    // 'REGULAR_TIMESHEET' | 'BCBA_TIMESHEET'
-  entityId      String    // Timesheet ID
+  id            String              @id @default(cuid())
+  entityType    EmailQueueEntityType // REGULAR | BCBA
+  entityId      String              // Timesheet ID
   queuedByUserId String
-  queuedAt      DateTime  @default(now())
+  queuedAt      DateTime            @default(now())
   sentAt        DateTime?
-  batchId       String?   // Batch ID for grouped sends
-  status        String    @default("QUEUED") // 'QUEUED' | 'SENT' | 'FAILED'
-  lastError     String?   // Sanitized error message
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  batchId       String?             // Batch ID for grouped sends
+  status        EmailQueueStatus    @default(QUEUED)
+  errorMessage  String?             // Sanitized error message
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   queuedBy User @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
 
+  // Unique constraint: prevent duplicate queueing of same entity
+  @@unique([entityType, entityId])
   @@index([status, createdAt])
-  @@index([type, status])
+  @@index([entityType, status])
   @@index([batchId])
 }

@@ -68,10 +68,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
     }
 
-    // Only DRAFT timesheets can be edited (LOCKED timesheets cannot be edited)
-    if (timesheet.status === 'LOCKED') {
+    // Only DRAFT timesheets can be edited (EMAILED timesheets cannot be edited)
+    if (timesheet.status === 'EMAILED') {
       return NextResponse.json(
-        { error: 'Locked timesheets cannot be edited' },
+        { error: 'Emailed timesheets cannot be edited' },
         { status: 400 }
       )
     }

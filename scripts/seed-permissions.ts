@@ -86,6 +86,10 @@ const permissions = [
   // Audit Logs
   { name: 'audit.view', description: 'View audit logs', category: 'audit' },
   
+  // Email Queue
+  { name: 'emailQueue.view', description: 'View email queue', category: 'emailQueue' },
+  { name: 'emailQueue.sendBatch', description: 'Send batch emails from queue', category: 'emailQueue' },
+  
   // Dashboard Visibility
   { name: 'dashboard.analytics', description: 'Show Analytics in Dashboard', category: 'dashboard' },
   { name: 'dashboard.providers', description: 'Show Providers in Dashboard', category: 'dashboard' },

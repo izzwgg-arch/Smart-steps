@@ -78,7 +78,7 @@ export const authOptions: NextAuthOptions = {
           if (failedAttempts >= maxAttempts) {
             updateData.lockedUntil = new Date(Date.now() + lockDuration)
             await createAuditLog({
-              action: 'LOCK',
+              action: 'UPDATE',
               entityType: 'User',
               entityId: user.id,
               userId: 'system',

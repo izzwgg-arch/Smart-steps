@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
-import { logCreate, logLock } from '@/lib/audit'
+import { logCreate } from '@/lib/audit'
 
 export async function GET(request: NextRequest) {
   try {
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         status: 'APPROVED',
         startDate: { gte: new Date(startDate) },
         endDate: { lte: new Date(endDate) },
-        lockedAt: null, // Not already invoiced
+        // Timesheets that are approved/emailed can be invoiced (not locked)
         deletedAt: null,
         ...(timesheetIds && timesheetIds.length > 0
           ? { id: { in: timesheetIds } }
@@ -234,8 +234,7 @@ export async function POST(request: NextRequest) {
           id: { in: timesheets.map((t) => t.id) },
         },
         data: {
-          status: 'LOCKED',
-          lockedAt: new Date(),
+          // Status remains APPROVED - invoice tracking is handled via invoiceEntries
         },
       })
 
@@ -250,10 +249,7 @@ export async function POST(request: NextRequest) {
       timesheetCount: timesheets.length,
     })
 
-    // Log timesheet locks
-    for (const timesheet of timesheets) {
-      await logLock('Timesheet', timesheet.id, session.user.id)
-    }
+    // Timesheet locking removed - invoice tracking handled via invoiceEntries
 
     return NextResponse.json(invoice, { status: 201 })
   } catch (error) {

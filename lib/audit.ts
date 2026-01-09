@@ -130,37 +130,9 @@ export async function logReject(
   })
 }
 
-/**
- * Log a SUBMIT action
- */
-export async function logSubmit(
-  entityType: string,
-  entityId: string,
-  userId: string
-): Promise<void> {
-  await createAuditLog({
-    action: 'SUBMIT',
-    entityType,
-    entityId,
-    userId,
-  })
-}
+// SUBMIT action removed - replaced with APPROVE/REJECT workflow
 
-/**
- * Log a LOCK action
- */
-export async function logLock(
-  entityType: string,
-  entityId: string,
-  userId: string
-): Promise<void> {
-  await createAuditLog({
-    action: 'LOCK',
-    entityType,
-    entityId,
-    userId,
-  })
-}
+// LOCK action removed - no longer using LOCKED status
 
 /**
  * Log a GENERATE action (e.g., invoice generation)
@@ -213,5 +185,60 @@ export async function logAdjustment(
     entityId,
     userId,
     newValues: adjustmentDetails,
+  })
+}
+
+/**
+ * Log a QUEUE action (when item is queued for email)
+ */
+export async function logQueue(
+  entityType: string,
+  entityId: string,
+  userId: string,
+  details?: Record<string, any>
+): Promise<void> {
+  await createAuditLog({
+    action: 'QUEUE',
+    entityType,
+    entityId,
+    userId,
+    newValues: details,
+  })
+}
+
+/**
+ * Log an EMAIL_SENT action
+ */
+export async function logEmailSent(
+  entityType: string,
+  entityId: string,
+  userId: string,
+  details?: Record<string, any>
+): Promise<void> {
+  await createAuditLog({
+    action: 'EMAIL_SENT',
+    entityType,
+    entityId,
+    userId,
+    metadata: details,
+  })
+}
+
+/**
+ * Log an EMAIL_FAILED action
+ */
+export async function logEmailFailed(
+  entityType: string,
+  entityId: string,
+  userId: string,
+  errorMessage: string,
+  details?: Record<string, any>
+): Promise<void> {
+  await createAuditLog({
+    action: 'EMAIL_FAILED',
+    entityType,
+    entityId,
+    userId,
+    metadata: { error: errorMessage, ...details },
   })
 }

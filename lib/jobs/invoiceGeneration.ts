@@ -378,19 +378,8 @@ async function generateInvoiceForClient(
       })
     }
 
-    // Lock all timesheets included in this invoice (prevents further edits)
-    const timesheetIds = timesheets.map((t) => t.id)
-    if (timesheetIds.length > 0) {
-      await tx.timesheet.updateMany({
-        where: {
-          id: { in: timesheetIds },
-        },
-        data: {
-          status: 'LOCKED',
-          lockedAt: new Date(),
-        },
-      })
-    }
+    // Timesheet locking removed - invoice tracking is handled via invoiceEntries
+    // Timesheets remain in their current status (APPROVED/EMAILED)
 
     console.log(
       `[INVOICE GENERATION] Generated invoice ${invoiceNumber} for client ${clientId} ` +
