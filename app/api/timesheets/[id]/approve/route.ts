@@ -85,7 +85,7 @@ export async function POST(
       console.log('[APPROVE] Transaction: Checking for existing queue item')
       const existingQueueItem = await tx.emailQueueItem.findFirst({
         where: {
-          entityId: params.id,
+          entityId: resolvedParams.id,
           status: 'QUEUED',
         },
       })
