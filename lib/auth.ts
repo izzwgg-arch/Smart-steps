@@ -124,11 +124,11 @@ export const authOptions: NextAuthOptions = {
           entityType: 'User',
           entityId: user.id,
           userId: user.id,
-          metadata: JSON.stringify({
+          metadata: {
             email: user.email,
             usingTempPassword,
             timestamp: new Date().toISOString(),
-          }),
+          },
         })
 
         return {
