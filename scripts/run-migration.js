@@ -95,7 +95,13 @@ async function runMigration() {
     }
     
     console.log('Step 9: Updating AuditAction enum...')
+    // First convert to TEXT and update any invalid values
     await prisma.$executeRawUnsafe('ALTER TABLE "AuditLog" ALTER COLUMN "action" TYPE TEXT USING "action"::TEXT;')
+    // Update SUBMIT to CREATE (closest equivalent)
+    await prisma.$executeRawUnsafe(`UPDATE "AuditLog" SET "action" = 'CREATE' WHERE "action" = 'SUBMIT';`)
+    // Update LOCK to UPDATE (closest equivalent)
+    await prisma.$executeRawUnsafe(`UPDATE "AuditLog" SET "action" = 'UPDATE' WHERE "action" = 'LOCK';`)
+    
     await prisma.$executeRawUnsafe('DROP TYPE IF EXISTS "AuditAction" CASCADE;')
     await prisma.$executeRawUnsafe(`CREATE TYPE "AuditAction" AS ENUM (
       'CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT', 'QUEUE', 
