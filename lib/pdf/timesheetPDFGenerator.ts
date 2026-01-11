@@ -226,32 +226,33 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
 
       console.log(`[TIMESHEET_PDF] ${corrId} Rendering ${sortedEntries.length} table entries`)
       
-      // PHASE 3 FIX: Use calculated Y positions and ensure content is written
-      // CRITICAL: PDFKit flushes content when doc.y advances OR when using absolute positions correctly
-      let currentRowY = tableTop + 20 // Start below header line (15px header + 5px spacing)
-      const rowSpacing = 20
+      // CRITICAL FIX: Use relative positioning (let PDFKit manage Y cursor)
+      // PDFKit doesn't flush content properly when using absolute Y positions in a loop
+      // Instead, use doc.y (relative) and let PDFKit advance naturally
+      doc.font('Helvetica').fontSize(9)
       
-      console.log(`[TIMESHEET_PDF] ${corrId} Starting table rows at Y=${currentRowY}, tableTop=${tableTop}, pageHeight=${doc.page.height}`)
+      console.log(`[TIMESHEET_PDF] ${corrId} Starting table rows, doc.y=${doc.y}, tableTop=${tableTop}`)
       
       sortedEntries.forEach((entry, index) => {
         const entryDate = typeof entry.date === 'string' ? new Date(entry.date) : entry.date
+        const currentY = doc.y // Capture current Y for this row
         xPos = tableLeft
 
         // Log first few entries in detail
         if (index < 3) {
-          console.log(`[TIMESHEET_PDF] ${corrId} Rendering entry ${index + 1} at Y=${currentRowY}:`, {
+          console.log(`[TIMESHEET_PDF] ${corrId} Rendering entry ${index + 1} at doc.y=${currentY}:`, {
             date: entry.date,
             startTime: entry.startTime,
             endTime: entry.endTime,
             minutes: entry.minutes,
             notes: entry.notes,
-            xPos: tableLeft,
           })
         }
 
+        // Write all columns at the SAME Y position (current doc.y)
         // Date
         const dateStr = format(entryDate, 'EEE M/d/yyyy').toLowerCase()
-        doc.text(dateStr, xPos, currentRowY)
+        doc.text(dateStr, xPos, currentY)
         xPos += colWidths[0]
 
         // In (formatted time)
@@ -259,7 +260,7 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         if (!inTime) {
           console.warn(`[TIMESHEET_PDF] ${corrId} Entry ${index + 1} has invalid startTime: ${entry.startTime}`)
         }
-        doc.text(inTime || entry.startTime, xPos, currentRowY)
+        doc.text(inTime || entry.startTime, xPos, currentY)
         xPos += colWidths[1]
 
         // Out (formatted time)
@@ -267,38 +268,36 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         if (!outTime) {
           console.warn(`[TIMESHEET_PDF] ${corrId} Entry ${index + 1} has invalid endTime: ${entry.endTime}`)
         }
-        doc.text(outTime || entry.endTime, xPos, currentRowY)
+        doc.text(outTime || entry.endTime, xPos, currentY)
         xPos += colWidths[2]
 
         // Hours
         const hours = (entry.minutes / 60).toFixed(1)
-        doc.text(hours, xPos, currentRowY)
+        doc.text(hours, xPos, currentY)
         xPos += colWidths[3]
 
         if (!isBCBA) {
           // Type (DR/SV or notes)
-          doc.text(entry.notes || '-', xPos, currentRowY)
+          doc.text(entry.notes || '-', xPos, currentY)
           xPos += colWidths[4]
 
           // Location
-          doc.text('Home', xPos, currentRowY)
+          doc.text('Home', xPos, currentY)
         } else {
           // Notes for BCBA
-          doc.text(entry.notes || '', xPos, currentRowY)
+          doc.text(entry.notes || '', xPos, currentY)
         }
 
-        // Move to next row position
-        currentRowY += rowSpacing
+        // CRITICAL: Advance doc.y AFTER writing all columns (this ensures PDFKit flushes)
+        doc.y = currentY + 20 // Move down for next row
         
         // Log every 10 entries to track progress
         if ((index + 1) % 10 === 0 || index === sortedEntries.length - 1) {
-          console.log(`[TIMESHEET_PDF] ${corrId} Rendered ${index + 1}/${sortedEntries.length} entries, next Y: ${currentRowY}`)
+          console.log(`[TIMESHEET_PDF] ${corrId} Rendered ${index + 1}/${sortedEntries.length} entries, doc.y now=${doc.y}`)
         }
       })
       
-      // CRITICAL: Update doc.y AFTER all rows are written so subsequent content continues
-      doc.y = currentRowY
-      console.log(`[TIMESHEET_PDF] ${corrId} All table rows written, updated doc.y to ${doc.y}`)
+      console.log(`[TIMESHEET_PDF] ${corrId} All table rows written, final doc.y=${doc.y}`)
       
       console.log(`[TIMESHEET_PDF] ${corrId} Finished rendering all ${sortedEntries.length} entries`)
 
