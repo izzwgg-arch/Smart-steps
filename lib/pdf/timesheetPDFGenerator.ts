@@ -124,8 +124,10 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         currentY += 15
       }
 
-      // Right Column: Provider Info
-      let rightY = doc.y - (currentY - doc.y) // Align with left column start
+      // Right Column: Provider Info (start at same Y as left column)
+      let rightY = doc.y - (currentY - (doc.y - (isBCBA && timesheet.client.address ? 45 : 30)))
+      rightY = doc.y - (currentY - doc.y) // Reset to start position
+      rightY = doc.y // Start at same position as left column
       doc.fontSize(12).font('Helvetica-Bold')
       doc.text('Provider:', rightColX, rightY)
       doc.font('Helvetica').text(timesheet.provider.name, rightColX + 60, rightY)
@@ -152,7 +154,7 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         rightY += 15
       }
 
-      // Move to below the info section
+      // Move to below the info section (use the maximum Y from both columns)
       doc.y = Math.max(currentY, rightY) + 10
 
       // PERIOD
