@@ -228,7 +228,6 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
       
       // MATCH INVOICE APPROACH EXACTLY: Use calculated rowY like invoices use dataRowY
       let rowY = tableTop + 20 // Start below header line
-      const rowHeight = 20
       
       console.log(`[TIMESHEET_PDF] ${corrId} Starting table rows, rowY=${rowY}, tableTop=${tableTop}`)
       
