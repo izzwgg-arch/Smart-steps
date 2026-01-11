@@ -17,6 +17,7 @@ import {
   Receipt,
   ClipboardList,
   Mail,
+  GraduationCap,
 } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -146,6 +147,14 @@ export default async function DashboardPage() {
       color: 'bg-teal-500',
       permissionKey: 'dashboard.insurance',
     },
+    {
+      title: 'Community Classes',
+      description: 'Manage community classes, clients, and invoices',
+      href: '/community',
+      icon: GraduationCap,
+      color: 'bg-amber-500',
+      permissionKey: 'dashboard.community',
+    },
   ]
 
   // Helper function to check if user can see a dashboard section
@@ -168,6 +177,7 @@ export default async function DashboardPage() {
         'dashboard.users': 'quickAccess.users',
         'dashboard.bcbas': 'quickAccess.bcbas',
         'dashboard.insurance': 'quickAccess.insurance',
+        'dashboard.community': 'quickAccess.community',
       }
       const sectionKey = sectionKeyMap[permissionKey]
       if (sectionKey && dashboardVisibility[sectionKey] !== undefined) {
@@ -187,7 +197,13 @@ export default async function DashboardPage() {
 
   // Filter admin cards based on permissions and role
   const visibleAdminCards = adminCards.filter(card => {
-    // Only show admin cards to ADMIN and SUPER_ADMIN roles
+    // Community Classes can be shown based on dashboard visibility permission
+    if (card.permissionKey === 'dashboard.community') {
+      // Use canSeeSection which handles all role types (SUPER_ADMIN, ADMIN, CUSTOM, USER)
+      return canSeeSection(card.permissionKey)
+    }
+    
+    // Other admin cards only show to ADMIN and SUPER_ADMIN roles
     if (session.user.role !== 'ADMIN' && session.user.role !== 'SUPER_ADMIN') {
       return false
     }

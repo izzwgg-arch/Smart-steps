@@ -482,15 +482,16 @@ export function RoleForm({ role }: RoleFormProps) {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
-              { key: 'quickAccess.analytics', label: 'Analytics', icon: '📊' },
-              { key: 'quickAccess.providers', label: 'Providers', icon: '👥' },
-              { key: 'quickAccess.clients', label: 'Clients', icon: '👤' },
-              { key: 'quickAccess.timesheets', label: 'Timesheets', icon: '📅' },
-              { key: 'quickAccess.invoices', label: 'Invoices', icon: '📄' },
-              { key: 'quickAccess.reports', label: 'Reports', icon: '📋' },
-              { key: 'quickAccess.users', label: 'Users', icon: '👤' },
-              { key: 'quickAccess.bcbas', label: 'BCBAs', icon: '🎓' },
-              { key: 'quickAccess.insurance', label: 'Insurance', icon: '🛡️' },
+              { key: 'quickAccess.analytics', label: 'Analytics', icon: '📊', subtext: 'View analytics and reports' },
+              { key: 'quickAccess.providers', label: 'Providers', icon: '👥', subtext: 'Manage providers' },
+              { key: 'quickAccess.clients', label: 'Clients', icon: '👤', subtext: 'Manage clients' },
+              { key: 'quickAccess.timesheets', label: 'Timesheets', icon: '📅', subtext: 'View and manage timesheets' },
+              { key: 'quickAccess.invoices', label: 'Invoices', icon: '📄', subtext: 'View and manage invoices' },
+              { key: 'quickAccess.reports', label: 'Reports', icon: '📋', subtext: 'Generate and view reports' },
+              { key: 'quickAccess.users', label: 'Users', icon: '👤', subtext: 'Manage users and roles' },
+              { key: 'quickAccess.bcbas', label: 'BCBAs', icon: '🎓', subtext: 'Manage BCBAs' },
+              { key: 'quickAccess.insurance', label: 'Insurance', icon: '🛡️', subtext: 'Manage insurance information' },
+              { key: 'quickAccess.community', label: 'Community Classes', icon: '🎓', subtext: 'Manage community classes, clients, and invoices' },
             ].map((section) => (
               <div
                 key={section.key}
@@ -508,9 +509,14 @@ export function RoleForm({ role }: RoleFormProps) {
                     }}
                     className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                   />
-                  <div className="ml-3 flex items-center">
-                    <span className="text-xl mr-2">{section.icon}</span>
-                    <span className="font-medium text-gray-900">{section.label}</span>
+                  <div className="ml-3 flex-1">
+                    <div className="flex items-center">
+                      <span className="text-xl mr-2">{section.icon}</span>
+                      <span className="font-medium text-gray-900">{section.label}</span>
+                    </div>
+                    {section.subtext && (
+                      <p className="text-xs text-gray-500 mt-1 ml-7">{section.subtext}</p>
+                    )}
                   </div>
                 </label>
                 {dashboardVisibility[section.key] && (

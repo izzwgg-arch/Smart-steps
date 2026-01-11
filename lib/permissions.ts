@@ -105,6 +105,7 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
       'dashboard.users': ['users.view'],
       'dashboard.bcbas': ['bcbas.view'],
       'dashboard.insurance': ['insurance.view'],
+      'dashboard.community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
     }
 
     for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
@@ -164,6 +165,7 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
     'dashboard.users': ['users.view'],
     'dashboard.bcbas': ['bcbas.view'],
     'dashboard.insurance': ['insurance.view'],
+    'dashboard.community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
   }
 
   for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
@@ -212,6 +214,7 @@ export async function canSeeDashboardSection(userId: string, section: string): P
     'users': ['users.view'],
     'bcbas': ['bcbas.view'],
     'insurance': ['insurance.view'],
+    'community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
   }
 
   const underlyingPerms = underlyingPermissionMap[section]
@@ -238,6 +241,7 @@ export async function canAccessRoute(userId: string, route: string): Promise<boo
     '/users': 'users',
     '/bcbas': 'bcbas',
     '/insurance': 'insurance',
+    '/community': 'community',
   }
 
   const section = routeSectionMap[route]
