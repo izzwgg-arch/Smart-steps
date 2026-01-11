@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     // Step 4: Generate PDFs for each timesheet
     const pdfAttachments: Array<{ filename: string; content: Buffer; contentType: string }> = []
     const emailItems: QueuedTimesheetItem[] = []
-    const pdfErrors: Array<{ queueItemId: string; error: string }> = []
+    const pdfErrors: Array<{ queueItemId: string; error: string; correlationId?: string }> = []
 
     const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || 'http://66.94.105.43:3000'
 
