@@ -47,7 +47,19 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json()
-    const { name, description, active, permissions, dashboardVisibility, timesheetVisibility } = data
+    const { 
+      name, 
+      description, 
+      active, 
+      permissions, 
+      dashboardVisibility, 
+      timesheetVisibility,
+      canViewCommunityClasses,
+      canViewCommunityClassesClasses,
+      canViewCommunityClassesClients,
+      canViewCommunityClassesInvoices,
+      canViewCommunityClassesEmailQueue,
+    } = data
 
     if (!name) {
       return NextResponse.json(
@@ -93,6 +105,12 @@ export async function POST(request: NextRequest) {
         name,
         description: description || null,
         active: active !== undefined ? active : true,
+        // Community Classes permissions
+        canViewCommunityClasses: canViewCommunityClasses || false,
+        canViewCommunityClassesClasses: canViewCommunityClassesClasses || false,
+        canViewCommunityClassesClients: canViewCommunityClassesClients || false,
+        canViewCommunityClassesInvoices: canViewCommunityClassesInvoices || false,
+        canViewCommunityClassesEmailQueue: canViewCommunityClassesEmailQueue || false,
         ...(permissionsData.length > 0 && {
           permissions: {
             create: permissionsData

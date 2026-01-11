@@ -19,6 +19,16 @@ export interface TimesheetVisibilityScope {
 /**
  * Get all permissions for a user based on their role
  */
+export interface CommunityPermissions {
+  enabled: boolean
+  sections: {
+    classes: boolean
+    clients: boolean
+    invoices: boolean
+    emailQueue: boolean
+  }
+}
+
 export async function getUserPermissions(userId: string): Promise<UserPermissions> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -186,6 +196,85 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
 }
 
 /**
+ * Get Community Classes permissions for a user
+ */
+export async function getCommunityPermissions(userId: string): Promise<CommunityPermissions> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      customRole: true
+    }
+  })
+
+  if (!user) {
+    return {
+      enabled: false,
+      sections: {
+        classes: false,
+        clients: false,
+        invoices: false,
+        emailQueue: false,
+      }
+    }
+  }
+
+  // SUPER_ADMIN and ADMIN have all Community Classes permissions
+  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') {
+    return {
+      enabled: true,
+      sections: {
+        classes: true,
+        clients: true,
+        invoices: true,
+        emailQueue: true,
+      }
+    }
+  }
+
+  // CUSTOM role uses role's Community Classes permissions
+  if (user.role === 'CUSTOM' && user.customRole) {
+    return {
+      enabled: user.customRole.canViewCommunityClasses || false,
+      sections: {
+        classes: user.customRole.canViewCommunityClassesClasses || false,
+        clients: user.customRole.canViewCommunityClassesClients || false,
+        invoices: user.customRole.canViewCommunityClassesInvoices || false,
+        emailQueue: user.customRole.canViewCommunityClassesEmailQueue || false,
+      }
+    }
+  }
+
+  // USER role has no Community Classes permissions by default
+  return {
+    enabled: false,
+    sections: {
+      classes: false,
+      clients: false,
+      invoices: false,
+      emailQueue: false,
+    }
+  }
+}
+
+/**
+ * Check if user can access a Community Classes subsection
+ */
+export async function canAccessCommunitySection(
+  userId: string, 
+  section: 'classes' | 'clients' | 'invoices' | 'emailQueue'
+): Promise<boolean> {
+  const communityPerms = await getCommunityPermissions(userId)
+  
+  // Must have Community Classes enabled
+  if (!communityPerms.enabled) {
+    return false
+  }
+  
+  // Check specific section permission
+  return communityPerms.sections[section] === true
+}
+
+/**
  * Check if user can see a dashboard section
  */
 export async function canSeeDashboardSection(userId: string, section: string): Promise<boolean> {
@@ -230,6 +319,39 @@ export async function canSeeDashboardSection(userId: string, section: string): P
  * Returns true if user has access, false otherwise
  */
 export async function canAccessRoute(userId: string, route: string): Promise<boolean> {
+  // Handle Community Classes subsection routes
+  if (route.startsWith('/community/')) {
+    const { getCommunityPermissions } = await import('@/lib/permissions')
+    const communityPerms = await getCommunityPermissions(userId)
+    
+    // Must have Community Classes enabled
+    if (!communityPerms.enabled) {
+      return false
+    }
+    
+    // Map subsection routes to sections
+    if (route === '/community/classes' || route.startsWith('/community/classes/')) {
+      return communityPerms.sections.classes
+    }
+    if (route === '/community/clients' || route.startsWith('/community/clients/')) {
+      return communityPerms.sections.clients
+    }
+    if (route === '/community/invoices' || route.startsWith('/community/invoices/')) {
+      return communityPerms.sections.invoices
+    }
+    if (route === '/community/email-queue' || route.startsWith('/community/email-queue/')) {
+      return communityPerms.sections.emailQueue
+    }
+    
+    // Main /community route - just check if enabled
+    if (route === '/community') {
+      return communityPerms.enabled
+    }
+    
+    // Unknown community route - deny by default
+    return false
+  }
+  
   // Map routes to dashboard section names
   const routeSectionMap: Record<string, string> = {
     '/providers': 'providers',

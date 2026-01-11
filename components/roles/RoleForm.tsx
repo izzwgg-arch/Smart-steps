@@ -79,6 +79,13 @@ export function RoleForm({ role }: RoleFormProps) {
   const [showUserSelector, setShowUserSelector] = useState(false)
   const userSelectorRef = useRef<HTMLDivElement>(null)
   
+  // Community Classes permissions
+  const [canViewCommunityClasses, setCanViewCommunityClasses] = useState(false)
+  const [canViewCommunityClassesClasses, setCanViewCommunityClassesClasses] = useState(false)
+  const [canViewCommunityClassesClients, setCanViewCommunityClassesClients] = useState(false)
+  const [canViewCommunityClassesInvoices, setCanViewCommunityClassesInvoices] = useState(false)
+  const [canViewCommunityClassesEmailQueue, setCanViewCommunityClassesEmailQueue] = useState(false)
+  
   // Close user selector when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -127,6 +134,19 @@ export function RoleForm({ role }: RoleFormProps) {
   useEffect(() => {
     if (role?.id) {
       fetchDashboardVisibility()
+      // Fetch role to get Community Classes permissions
+      fetch(`/api/roles/${role.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data) {
+            setCanViewCommunityClasses(data.canViewCommunityClasses || false)
+            setCanViewCommunityClassesClasses(data.canViewCommunityClassesClasses || false)
+            setCanViewCommunityClassesClients(data.canViewCommunityClassesClients || false)
+            setCanViewCommunityClassesInvoices(data.canViewCommunityClassesInvoices || false)
+            setCanViewCommunityClassesEmailQueue(data.canViewCommunityClassesEmailQueue || false)
+          }
+        })
+        .catch(err => console.error('Failed to fetch role permissions:', err))
     }
   }, [role?.id])
 
@@ -369,6 +389,13 @@ export function RoleForm({ role }: RoleFormProps) {
           visible,
         })),
         timesheetVisibility: timesheetViewSelectedUsers ? selectedUserIds : [],
+        // Community Classes permissions
+        // Sync with dashboard visibility - if quickAccess.community is enabled, enable canViewCommunityClasses
+        canViewCommunityClasses: dashboardVisibility['quickAccess.community'] || canViewCommunityClasses || false,
+        canViewCommunityClassesClasses: canViewCommunityClassesClasses,
+        canViewCommunityClassesClients: canViewCommunityClassesClients,
+        canViewCommunityClassesInvoices: canViewCommunityClassesInvoices,
+        canViewCommunityClassesEmailQueue: canViewCommunityClassesEmailQueue,
       }
 
       const res = await fetch(url, {
@@ -567,6 +594,88 @@ export function RoleForm({ role }: RoleFormProps) {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Community Classes - Subsections */}
+        <div className="border-b pb-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Community Classes - Subsections</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Control which Community Classes subsections users with this role can access. 
+            The main Community Classes tile must be enabled in "Quick Access" above for these to take effect.
+          </p>
+          
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-yellow-800">
+              <strong>Note:</strong> Subsection toggles are disabled until "Community Classes" is enabled in Quick Access above.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { 
+                key: 'classes', 
+                label: 'Classes', 
+                icon: '🎓',
+                state: canViewCommunityClassesClasses,
+                setState: setCanViewCommunityClassesClasses,
+              },
+              { 
+                key: 'clients', 
+                label: 'Clients', 
+                icon: '👥',
+                state: canViewCommunityClassesClients,
+                setState: setCanViewCommunityClassesClients,
+              },
+              { 
+                key: 'invoices', 
+                label: 'Invoices', 
+                icon: '📄',
+                state: canViewCommunityClassesInvoices,
+                setState: setCanViewCommunityClassesInvoices,
+              },
+              { 
+                key: 'emailQueue', 
+                label: 'Email Queue', 
+                icon: '📧',
+                state: canViewCommunityClassesEmailQueue,
+                setState: setCanViewCommunityClassesEmailQueue,
+              },
+            ].map((section) => {
+              const isDisabled = !canViewCommunityClasses && !dashboardVisibility['quickAccess.community']
+              return (
+                <div
+                  key={section.key}
+                  className={`border border-gray-200 rounded-lg p-4 transition-colors ${
+                    isDisabled ? 'bg-gray-100 opacity-60' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <label className={`flex items-center ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                    <input
+                      type="checkbox"
+                      checked={section.state}
+                      disabled={isDisabled}
+                      onChange={(e) => {
+                        if (!isDisabled) {
+                          section.setState(e.target.checked)
+                        }
+                      }}
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded disabled:opacity-50"
+                    />
+                    <div className="ml-3 flex items-center">
+                      <span className="text-xl mr-2">{section.icon}</span>
+                      <span className="font-medium text-gray-900">{section.label}</span>
+                    </div>
+                  </label>
+                  {section.state && !isDisabled && (
+                    <p className="text-xs text-green-600 mt-1 ml-7">Access Enabled</p>
+                  )}
+                  {isDisabled && (
+                    <p className="text-xs text-gray-500 mt-1 ml-7">Enable Community Classes first</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 

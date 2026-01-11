@@ -61,7 +61,19 @@ export async function PUT(
     }
 
     const data = await request.json()
-    const { name, description, active, permissions, dashboardVisibility, timesheetVisibility } = data
+    const { 
+      name, 
+      description, 
+      active, 
+      permissions, 
+      dashboardVisibility, 
+      timesheetVisibility,
+      canViewCommunityClasses,
+      canViewCommunityClassesClasses,
+      canViewCommunityClassesClients,
+      canViewCommunityClassesInvoices,
+      canViewCommunityClassesEmailQueue,
+    } = data
 
     const existing = await prisma.role.findUnique({
       where: { id: params.id }
@@ -76,6 +88,13 @@ export async function PUT(
     if (name !== undefined) updateData.name = name
     if (description !== undefined) updateData.description = description
     if (active !== undefined) updateData.active = active
+    
+    // Update Community Classes permissions
+    if (canViewCommunityClasses !== undefined) updateData.canViewCommunityClasses = canViewCommunityClasses
+    if (canViewCommunityClassesClasses !== undefined) updateData.canViewCommunityClassesClasses = canViewCommunityClassesClasses
+    if (canViewCommunityClassesClients !== undefined) updateData.canViewCommunityClassesClients = canViewCommunityClassesClients
+    if (canViewCommunityClassesInvoices !== undefined) updateData.canViewCommunityClassesInvoices = canViewCommunityClassesInvoices
+    if (canViewCommunityClassesEmailQueue !== undefined) updateData.canViewCommunityClassesEmailQueue = canViewCommunityClassesEmailQueue
 
     const role = await prisma.role.update({
       where: { id: params.id },

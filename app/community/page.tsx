@@ -50,19 +50,24 @@ export default async function CommunityDashboardPage() {
     }
   }
 
-  // Get user permissions
-  const userPermissions = await getUserPermissions(session.user.id)
+  // Get Community Classes permissions
+  const { getCommunityPermissions } = await import('@/lib/permissions')
+  const communityPerms = await getCommunityPermissions(session.user.id)
+  
+  // If Community Classes is not enabled, redirect
+  if (!communityPerms.enabled) {
+    redirect('/dashboard?error=not-authorized')
+  }
 
   // Helper function to check if user can see a section
-  const canSeeSection = (permissionKey: string): boolean => {
+  const canSeeSection = (section: 'classes' | 'clients' | 'invoices' | 'emailQueue'): boolean => {
     // SUPER_ADMIN and ADMIN see all by default
     if (session.user.role === 'SUPER_ADMIN' || session.user.role === 'ADMIN') {
       return true
     }
 
-    // Check permissions
-    const permission = userPermissions[permissionKey]
-    return permission?.canView === true
+    // Check Community Classes subsection permissions
+    return communityPerms.sections[section] === true
   }
 
   const cards = [
@@ -72,7 +77,7 @@ export default async function CommunityDashboardPage() {
       href: '/community/classes',
       icon: GraduationCap,
       color: 'bg-blue-500',
-      permissionKey: 'community.classes.view',
+      section: 'classes' as const,
     },
     {
       title: 'Clients',
@@ -80,7 +85,7 @@ export default async function CommunityDashboardPage() {
       href: '/community/clients',
       icon: Users,
       color: 'bg-green-500',
-      permissionKey: 'community.clients.view',
+      section: 'clients' as const,
     },
     {
       title: 'Invoices',
@@ -88,7 +93,7 @@ export default async function CommunityDashboardPage() {
       href: '/community/invoices',
       icon: Receipt,
       color: 'bg-purple-500',
-      permissionKey: 'community.invoices.view',
+      section: 'invoices' as const,
     },
     {
       title: 'Email Queue',
@@ -96,12 +101,12 @@ export default async function CommunityDashboardPage() {
       href: '/community/email-queue',
       icon: Mail,
       color: 'bg-cyan-500',
-      permissionKey: 'community.invoices.emailqueue.view',
+      section: 'emailQueue' as const,
     },
   ]
 
-  // Filter cards based on permissions
-  const visibleCards = cards.filter(card => canSeeSection(card.permissionKey))
+  // Filter cards based on Community Classes subsection permissions
+  const visibleCards = cards.filter(card => canSeeSection(card.section))
 
   return (
     <div className="min-h-screen">

@@ -56,36 +56,39 @@ enum AuditAction {
 }
 
 model User {
-  id               String    @id @default(cuid())
-  username         String    @unique
-  email            String    @unique
-  password         String
-  role             UserRole  @default(USER)
-  customRoleId     String?
-  active           Boolean   @default(true)
-  activationStart  DateTime?
-  activationEnd    DateTime?
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  tempPasswordHash String? // Temporary password hash for new users
+  id                    String    @id @default(cuid())
+  username              String    @unique
+  email                 String    @unique
+  password              String
+  role                  UserRole  @default(USER)
+  customRoleId          String?
+  active                Boolean   @default(true)
+  activationStart       DateTime?
+  activationEnd         DateTime?
+  resetToken            String?
+  resetTokenExpiry      DateTime?
+  tempPasswordHash      String? // Temporary password hash for new users
   tempPasswordExpiresAt DateTime? // Expiration for temp password
-  mustChangePassword Boolean @default(false)
-  failedLoginAttempts Int    @default(0)
-  lockedUntil      DateTime?
-  lastLoginAt      DateTime? // Last successful login timestamp
-  lastSeenActivityAt DateTime? // For admin activity badge tracking
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
+  mustChangePassword    Boolean   @default(false)
+  failedLoginAttempts   Int       @default(0)
+  lockedUntil           DateTime?
+  lastLoginAt           DateTime? // Last successful login timestamp
+  lastSeenActivityAt    DateTime? // For admin activity badge tracking
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
 
-  timesheets      Timesheet[]
-  invoicesCreated Invoice[]      @relation("InvoiceCreator")
-  auditLogs       AuditLog[]
-  notifications   Notification[]
-  activities      Activity[]     @relation("ActivityActor")
-  emailQueueItems EmailQueueItem[] @relation("EmailQueueCreator")
-  customRole      Role?          @relation(fields: [customRoleId], references: [id])
-  timesheetVisibility RoleTimesheetVisibility[]
+  timesheets                Timesheet[]
+  invoicesCreated           Invoice[]                 @relation("InvoiceCreator")
+  auditLogs                 AuditLog[]
+  notifications             Notification[]
+  activities                Activity[]                @relation("ActivityActor")
+  emailQueueItems           EmailQueueItem[]          @relation("EmailQueueCreator")
+  customRole                Role?                     @relation(fields: [customRoleId], references: [id])
+  timesheetVisibility       RoleTimesheetVisibility[]
+  communityInvoicesApproved CommunityInvoice[]        @relation("CommunityInvoiceApprover")
+  communityInvoicesRejected CommunityInvoice[]        @relation("CommunityInvoiceRejector")
+  communityInvoicesCreated  CommunityInvoice[]        @relation("CommunityInvoiceCreator")
 }
 
 model Role {
@@ -96,6 +99,13 @@ model Role {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
+
+  // Community Classes permissions
+  canViewCommunityClasses           Boolean @default(false)
+  canViewCommunityClassesClasses    Boolean @default(false)
+  canViewCommunityClassesClients    Boolean @default(false)
+  canViewCommunityClassesInvoices   Boolean @default(false)
+  canViewCommunityClassesEmailQueue Boolean @default(false)
 
   permissions         RolePermission[]
   dashboardVisibility RoleDashboardVisibility[]
@@ -289,6 +299,8 @@ model Invoice {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   deletedAt       DateTime?
+  viewToken       String?       @unique // Token for public invoice view
+  tokenExpiresAt  DateTime? // Token expiration date
 
   client          Client              @relation(fields: [clientId], references: [id])
   creator         User                @relation("InvoiceCreator", fields: [createdBy], references: [id])
@@ -297,6 +309,8 @@ model Invoice {
   entries         InvoiceEntry[]
   payments        Payment[]
   adjustmentsList InvoiceAdjustment[]
+
+  @@index([viewToken])
 }
 
 model InvoiceEntry {
@@ -342,15 +356,15 @@ model InvoiceAdjustment {
 }
 
 model AuditLog {
-  id        String      @id @default(cuid())
-  action    AuditAction
-  entityType String     // Model name (e.g., 'Timesheet', 'User')
-  entityId  String
-  userId    String
-  oldValues String?     // JSON
-  newValues String?     // JSON
-  metadata  String?     // JSON for additional context
-  createdAt DateTime    @default(now())
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String // Model name (e.g., 'Timesheet', 'User')
+  entityId   String
+  userId     String
+  oldValues  String? // JSON
+  newValues  String? // JSON
+  metadata   String? // JSON for additional context
+  createdAt  DateTime    @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
@@ -361,15 +375,15 @@ model AuditLog {
 }
 
 model Activity {
-  id           String   @id @default(cuid())
-  actionType   String   // e.g., "LOGIN"
-  actorUserId  String
-  actorEmail   String
-  actorRole    UserRole
-  ipAddress    String?
-  userAgent    String?
-  metadata     String?  // JSON
-  createdAt    DateTime @default(now())
+  id          String   @id @default(cuid())
+  actionType  String // e.g., "LOGIN"
+  actorUserId String
+  actorEmail  String
+  actorRole   UserRole
+  ipAddress   String?
+  userAgent   String?
+  metadata    String? // JSON
+  createdAt   DateTime @default(now())
 
   actor User @relation("ActivityActor", fields: [actorUserId], references: [id])
 
@@ -436,20 +450,35 @@ enum EmailQueueStatus {
 enum EmailQueueEntityType {
   REGULAR
   BCBA
+  COMMUNITY_INVOICE
+}
+
+enum CommunityClientStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CommunityInvoiceStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+  QUEUED
+  EMAILED
+  FAILED
 }
 
 model EmailQueueItem {
-  id            String              @id @default(cuid())
-  entityType    EmailQueueEntityType // REGULAR | BCBA
-  entityId      String              // Timesheet ID
+  id             String               @id @default(cuid())
+  entityType     EmailQueueEntityType // REGULAR | BCBA | COMMUNITY_INVOICE
+  entityId       String // Timesheet ID or CommunityInvoice ID
   queuedByUserId String
-  queuedAt      DateTime            @default(now())
-  sentAt        DateTime?
-  batchId       String?             // Batch ID for grouped sends
-  status        EmailQueueStatus    @default(QUEUED)
-  errorMessage  String?             // Sanitized error message
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  queuedAt       DateTime             @default(now())
+  sentAt         DateTime?
+  batchId        String? // Batch ID for grouped sends
+  status         EmailQueueStatus     @default(QUEUED)
+  errorMessage   String? // Sanitized error message
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   queuedBy User @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
 
@@ -458,4 +487,80 @@ model EmailQueueItem {
   @@index([status, createdAt])
   @@index([entityType, status])
   @@index([batchId])
+}
+
+// Community Classes Module Models
+
+model CommunityClient {
+  id         String                @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String?
+  phone      String?
+  address    String?
+  city       String?
+  state      String?
+  zipCode    String?
+  medicaidId String?
+  status     CommunityClientStatus @default(ACTIVE)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  deletedAt  DateTime?
+
+  invoices CommunityInvoice[]
+
+  @@index([status, deletedAt])
+  @@index([deletedAt])
+}
+
+model CommunityClass {
+  id          String    @id @default(cuid())
+  name        String
+  ratePerUnit Decimal   @db.Decimal(10, 2) // Rate per 30-minute unit
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  invoices CommunityInvoice[]
+
+  @@index([isActive, deletedAt])
+  @@index([deletedAt])
+}
+
+model CommunityInvoice {
+  id               String                 @id @default(cuid())
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  deletedAt        DateTime?
+  clientId         String
+  classId          String
+  units            Int // Number of 30-minute units
+  unitMinutes      Int                    @default(30) // Fixed at 30 minutes
+  ratePerUnit      Decimal                @db.Decimal(10, 2) // Snapshot at invoice time
+  totalAmount      Decimal                @db.Decimal(10, 2) // units * ratePerUnit
+  status           CommunityInvoiceStatus @default(DRAFT)
+  approvedAt       DateTime?
+  approvedByUserId String?
+  rejectedAt       DateTime?
+  rejectedByUserId String?
+  queuedAt         DateTime?
+  emailedAt        DateTime?
+  notes            String?
+  serviceDate      DateTime? // Optional service date
+  createdByUserId  String
+  viewToken        String?                @unique // Token for public invoice view
+  tokenExpiresAt   DateTime? // Token expiration date
+
+  client         CommunityClient @relation(fields: [clientId], references: [id])
+  class          CommunityClass  @relation(fields: [classId], references: [id])
+  approvedByUser User?           @relation("CommunityInvoiceApprover", fields: [approvedByUserId], references: [id])
+  rejectedByUser User?           @relation("CommunityInvoiceRejector", fields: [rejectedByUserId], references: [id])
+  createdByUser  User            @relation("CommunityInvoiceCreator", fields: [createdByUserId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([clientId, deletedAt])
+  @@index([classId, deletedAt])
+  @@index([deletedAt])
+  @@index([viewToken])
 }
