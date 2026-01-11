@@ -459,16 +459,40 @@ export function BCBATimesheetsList() {
                       onClick={async () => {
                         try {
                           const url = `/api/bcba-timesheets/${timesheet.id}/pdf`
-                          const response = await fetch(url)
+                          const response = await fetch(url, {
+                            method: 'GET',
+                            headers: {
+                              'Accept': 'application/pdf',
+                            },
+                          })
+                          
                           if (!response.ok) {
                             const error = await response.json().catch(() => ({ error: 'Failed to generate PDF' }))
                             const correlationId = error.correlationId ? ` (ID: ${error.correlationId})` : ''
                             toast.error(`${error.error || 'Failed to generate PDF'}${correlationId}`)
                             return
                           }
+                          
+                          // Check if response is actually a PDF
+                          const contentType = response.headers.get('content-type')
+                          if (!contentType || !contentType.includes('application/pdf')) {
+                            console.error('Response is not a PDF:', contentType)
+                            toast.error('Server returned non-PDF content. Please check server logs.')
+                            return
+                          }
+                          
                           const blob = await response.blob()
+                          
+                          // Create a download link and trigger it
                           const pdfUrl = URL.createObjectURL(blob)
-                          window.open(pdfUrl, '_blank')
+                          const link = document.createElement('a')
+                          link.href = pdfUrl
+                          link.download = `bcba-timesheet-${timesheet.id}.pdf`
+                          link.target = '_blank'
+                          document.body.appendChild(link)
+                          link.click()
+                          document.body.removeChild(link)
+                          
                           // Clean up the URL after a delay
                           setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000)
                         } catch (error: any) {
