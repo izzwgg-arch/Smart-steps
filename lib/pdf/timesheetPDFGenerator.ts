@@ -113,32 +113,37 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
 
       const isBCBA = timesheet.isBCBA
       const margin = 50
+      const pageWidth = doc.page.width
 
-      // CANARY: Write canary text first to prove PDFKit is working
-      doc.fontSize(18).text('CANARY_TIMESHEET_PDF_RENDER', 50, 50)
+      // CANARY: Write canary text first to prove PDFKit is working (absolute position)
+      doc.fontSize(18).font('Helvetica-Bold').text('CANARY_TIMESHEET_PDF_RENDER', margin, margin)
       
-      // MINIMAL CONTENT: Title
-      doc.fontSize(24).font('Helvetica-Bold').text('Smart Steps ABA', { align: 'center' })
-      doc.moveDown(1)
+      // MINIMAL CONTENT: Title (use absolute Y position like invoices)
+      let currentY = margin + 30
+      doc.fontSize(24).font('Helvetica-Bold')
+      doc.text('Smart Steps ABA', 0, currentY, { align: 'center', width: pageWidth })
+      currentY += 40
       
-      // Timesheet ID
-      doc.fontSize(12).font('Helvetica').text(`Timesheet ID: ${timesheet.id}`)
-      doc.moveDown(0.5)
+      // Timesheet ID (absolute position)
+      doc.fontSize(12).font('Helvetica')
+      doc.text(`Timesheet ID: ${timesheet.id}`, margin, currentY)
+      currentY += 20
       
-      // Entries count
-      doc.text(`Entries: ${timesheet.entries.length}`)
-      doc.moveDown(0.5)
+      // Entries count (absolute position)
+      doc.text(`Entries: ${timesheet.entries.length}`, margin, currentY)
+      currentY += 20
       
-      // Test sentence
-      doc.text('If you see this, PDF generation works.')
-      doc.moveDown(2)
+      // Test sentence (absolute position)
+      doc.text('If you see this, PDF generation works.', margin, currentY)
+      currentY += 30
       
-      // Write some more content to ensure PDF is > 5KB
+      // Write some more content to ensure PDF is > 5KB (absolute positions)
       for (let i = 0; i < 20; i++) {
-        doc.text(`Line ${i + 1}: This is test content to ensure PDF is large enough.`, { width: 500 })
+        doc.text(`Line ${i + 1}: This is test content to ensure PDF is large enough.`, margin, currentY, { width: pageWidth - margin * 2 })
+        currentY += 15
       }
 
-      console.log(`[TIMESHEET_PDF_DEBUG] ${corrId} Minimal content written, about to call doc.end()`)
+      console.log(`[TIMESHEET_PDF_DEBUG] ${corrId} Minimal content written, currentY=${currentY}, about to call doc.end()`)
       
       doc.end()
       
