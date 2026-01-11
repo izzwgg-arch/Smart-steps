@@ -459,15 +459,31 @@ export function BCBATimesheetsList() {
                       onClick={async () => {
                         try {
                           const url = `/api/bcba-timesheets/${timesheet.id}/pdf`
+                          console.log('[PRINT_BUTTON] Fetching PDF from:', url)
+                          
                           const response = await fetch(url, {
                             method: 'GET',
                             headers: {
                               'Accept': 'application/pdf',
                             },
+                            credentials: 'include', // Include cookies for authentication
+                          })
+                          
+                          console.log('[PRINT_BUTTON] Response status:', response.status)
+                          console.log('[PRINT_BUTTON] Response headers:', {
+                            'content-type': response.headers.get('content-type'),
+                            'content-length': response.headers.get('content-length'),
                           })
                           
                           if (!response.ok) {
-                            const error = await response.json().catch(() => ({ error: 'Failed to generate PDF' }))
+                            const errorText = await response.text()
+                            console.error('[PRINT_BUTTON] Error response:', errorText)
+                            let error
+                            try {
+                              error = JSON.parse(errorText)
+                            } catch {
+                              error = { error: errorText || 'Failed to generate PDF' }
+                            }
                             const correlationId = error.correlationId ? ` (ID: ${error.correlationId})` : ''
                             toast.error(`${error.error || 'Failed to generate PDF'}${correlationId}`)
                             return
@@ -475,28 +491,43 @@ export function BCBATimesheetsList() {
                           
                           // Check if response is actually a PDF
                           const contentType = response.headers.get('content-type')
+                          console.log('[PRINT_BUTTON] Content-Type:', contentType)
+                          
                           if (!contentType || !contentType.includes('application/pdf')) {
-                            console.error('Response is not a PDF:', contentType)
+                            const responseText = await response.text()
+                            console.error('[PRINT_BUTTON] Response is not a PDF. Content:', responseText.substring(0, 200))
                             toast.error('Server returned non-PDF content. Please check server logs.')
                             return
                           }
                           
                           const blob = await response.blob()
+                          console.log('[PRINT_BUTTON] Blob size:', blob.size, 'bytes')
                           
-                          // Create a download link and trigger it
+                          if (blob.size < 1000) {
+                            console.warn('[PRINT_BUTTON] PDF blob is very small, might be empty')
+                            toast.error('PDF appears to be empty. Please check server logs.')
+                            return
+                          }
+                          
+                          // Open PDF in new tab using blob URL
                           const pdfUrl = URL.createObjectURL(blob)
-                          const link = document.createElement('a')
-                          link.href = pdfUrl
-                          link.download = `bcba-timesheet-${timesheet.id}.pdf`
-                          link.target = '_blank'
-                          document.body.appendChild(link)
-                          link.click()
-                          document.body.removeChild(link)
+                          const newWindow = window.open(pdfUrl, '_blank')
+                          
+                          if (!newWindow) {
+                            // If popup blocked, fall back to download
+                            const link = document.createElement('a')
+                            link.href = pdfUrl
+                            link.download = `bcba-timesheet-${timesheet.id}.pdf`
+                            document.body.appendChild(link)
+                            link.click()
+                            document.body.removeChild(link)
+                            toast.success('PDF downloaded (popup was blocked)')
+                          }
                           
                           // Clean up the URL after a delay
-                          setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000)
+                          setTimeout(() => URL.revokeObjectURL(pdfUrl), 5000)
                         } catch (error: any) {
-                          console.error('Error generating PDF:', error)
+                          console.error('[PRINT_BUTTON] Error generating PDF:', error)
                           toast.error(`Failed to generate PDF: ${error.message || 'Unknown error'}`)
                         }
                       }}
