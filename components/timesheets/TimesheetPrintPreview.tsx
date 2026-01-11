@@ -82,7 +82,7 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
   return (
     <>
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 no-print" onClick={onClose}>
-        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto no-print" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b no-print">
             <h2 className="text-xl font-bold">Timesheet Print Preview</h2>
@@ -94,8 +94,8 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
             </button>
           </div>
 
-          {/* Content */}
-          <div className={`p-6 print-preview-content ${isBCBATimesheet ? 'bcba-print-layout' : ''}`}>
+          {/* Content - This is what gets printed */}
+          <div className={`p-6 print-preview-content ${isBCBATimesheet ? 'bcba-print-layout' : ''}`} style={{ color: '#000', backgroundColor: '#fff' }}>
             {/* Company Name Header */}
             <div className="mb-4 print-company-header">
               <h1 className="text-3xl font-bold text-center">Smart Steps ABA</h1>
