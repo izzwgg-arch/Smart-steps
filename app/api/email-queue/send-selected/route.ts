@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
         // Update timesheets to EMAILED
         await tx.timesheet.updateMany({
           where: {
-            id: { in: validTimesheets.map((item) => item.timesheet.id) },
+            id: { in: validTimesheets.map((item) => item.timesheetId) },
           },
           data: {
             status: 'EMAILED',
