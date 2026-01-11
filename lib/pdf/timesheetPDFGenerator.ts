@@ -100,34 +100,33 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
       // INFO SECTION: 2-column layout
       const leftColX = margin
       const rightColX = pageWidth / 2 + 20
-      let currentY = doc.y
+      const infoStartY = doc.y
 
       // Left Column: Client/Child Info
+      let leftY = infoStartY
       doc.fontSize(12).font('Helvetica-Bold')
-      doc.text(isBCBA ? 'Client:' : 'Child:', leftColX, currentY)
-      doc.font('Helvetica').text(timesheet.client.name || '', leftColX + 60, currentY)
-      currentY += 15
+      doc.text(isBCBA ? 'Client:' : 'Child:', leftColX, leftY)
+      doc.font('Helvetica').text(timesheet.client.name || '', leftColX + 60, leftY)
+      leftY += 15
 
       if (isBCBA && timesheet.client.address) {
-        doc.font('Helvetica-Bold').text('Address:', leftColX, currentY)
-        doc.font('Helvetica').text(timesheet.client.address, leftColX + 60, currentY)
-        currentY += 15
+        doc.font('Helvetica-Bold').text('Address:', leftColX, leftY)
+        doc.font('Helvetica').text(timesheet.client.address, leftColX + 60, leftY)
+        leftY += 15
       }
 
-      doc.font('Helvetica-Bold').text('Phone:', leftColX, currentY)
-      doc.font('Helvetica').text(timesheet.client.phone || '', leftColX + 60, currentY)
-      currentY += 15
+      doc.font('Helvetica-Bold').text('Phone:', leftColX, leftY)
+      doc.font('Helvetica').text(timesheet.client.phone || '', leftColX + 60, leftY)
+      leftY += 15
 
       if (isBCBA && (timesheet.client.dlb || timesheet.provider.dlb)) {
-        doc.font('Helvetica-Bold').text('DLB:', leftColX, currentY)
-        doc.font('Helvetica').text(timesheet.client.dlb || timesheet.provider.dlb || 'N/A', leftColX + 60, currentY)
-        currentY += 15
+        doc.font('Helvetica-Bold').text('DLB:', leftColX, leftY)
+        doc.font('Helvetica').text(timesheet.client.dlb || timesheet.provider.dlb || 'N/A', leftColX + 60, leftY)
+        leftY += 15
       }
 
       // Right Column: Provider Info (start at same Y as left column)
-      let rightY = doc.y - (currentY - (doc.y - (isBCBA && timesheet.client.address ? 45 : 30)))
-      rightY = doc.y - (currentY - doc.y) // Reset to start position
-      rightY = doc.y // Start at same position as left column
+      let rightY = infoStartY
       doc.fontSize(12).font('Helvetica-Bold')
       doc.text('Provider:', rightColX, rightY)
       doc.font('Helvetica').text(timesheet.provider.name, rightColX + 60, rightY)
@@ -155,7 +154,7 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
       }
 
       // Move to below the info section (use the maximum Y from both columns)
-      doc.y = Math.max(currentY, rightY) + 10
+      doc.y = Math.max(leftY, rightY) + 10
 
       // PERIOD
       const startDate = typeof timesheet.startDate === 'string' ? new Date(timesheet.startDate) : timesheet.startDate
