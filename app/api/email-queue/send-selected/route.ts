@@ -89,12 +89,33 @@ export async function POST(request: NextRequest) {
               deletedAt: null,
             },
             include: {
-              client: { select: { name: true } },
-              provider: { select: { name: true } },
+              client: {
+                select: {
+                  id: true,
+                  name: true,
+                  address: true,
+                  idNumber: true,
+                  dlb: true,
+                  signature: true,
+                },
+              },
+              provider: {
+                select: {
+                  name: true,
+                  phone: true,
+                  signature: true,
+                  dlb: true,
+                },
+              },
               bcba: { select: { name: true } },
               entries: {
+                orderBy: { date: 'asc' },
                 select: {
+                  date: true,
+                  startTime: true,
+                  endTime: true,
                   minutes: true,
+                  notes: true,
                 },
               },
             },
@@ -142,7 +163,24 @@ export async function POST(request: NextRequest) {
     // Step 4: Generate PDFs for all timesheets
     const pdfPromises = validTimesheets.map(async (item) => {
       try {
-        const pdfBuffer = await generateTimesheetPDF(item.timesheet.id)
+        const pdfBuffer = await generateTimesheetPDF({
+          id: item.timesheet.id,
+          client: item.timesheet.client as any,
+          provider: item.timesheet.provider as any,
+          bcba: item.timesheet.bcba,
+          startDate: item.timesheet.startDate,
+          endDate: item.timesheet.endDate,
+          isBCBA: item.timesheet.isBCBA,
+          serviceType: item.timesheet.serviceType || undefined,
+          sessionData: item.timesheet.sessionData || undefined,
+          entries: item.timesheet.entries.map((entry) => ({
+            date: entry.date,
+            startTime: entry.startTime,
+            endTime: entry.endTime,
+            minutes: entry.minutes,
+            notes: entry.notes,
+          })),
+        })
         return {
           queueItem: item.queueItem,
           timesheet: item.timesheet,
