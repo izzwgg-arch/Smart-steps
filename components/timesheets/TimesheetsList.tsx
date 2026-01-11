@@ -324,15 +324,6 @@ export function TimesheetsList() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold text-gray-900">Timesheets</h1>
-            {canViewAllTimesheets && (
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                hasViewSelectedUsers 
-                  ? 'bg-blue-100 text-blue-800' 
-                  : 'bg-green-100 text-green-800'
-              }`}>
-                {hasViewSelectedUsers ? 'Scope: Selected Users' : 'Scope: All Users'}
-              </span>
-            )}
           </div>
         </div>
         <div className="flex space-x-3">
@@ -386,23 +377,6 @@ export function TimesheetsList() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        {canViewAllTimesheets && (
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">User:</label>
-            <select
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-            >
-              <option value="">All Users</option>
-              {availableUsers.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.username || user.email}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -467,6 +441,23 @@ export function TimesheetsList() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-[80px] flex-shrink-0">
                   <RowActionsMenu>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/timesheets/${timesheet.id}`)
+                          if (res.ok) {
+                            const data = await res.json()
+                            setPrintTimesheet(data)
+                          }
+                        } catch (error) {
+                          toast.error('Failed to load timesheet')
+                        }
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      View
+                    </button>
                     <button
                       onClick={async () => {
                         try {

@@ -122,16 +122,6 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 <div className="mb-2">
                   <span className="font-semibold">Phone:</span> {timesheet.client.phone || ''}
                 </div>
-                <div>
-                  <span className="font-semibold">ID Number:</span>{' '}
-                  {isBCBATimesheet 
-                    ? (timesheet.client.idNumber || timesheet.client.id || '')
-                    : (timesheet.client.idNumber || 
-                       (timesheet.client as any).clientId || 
-                       (timesheet.client as any).medicaidId || 
-                       (timesheet.client as any).externalId || 
-                       '')}
-                </div>
                 {isBCBATimesheet && (timesheet.client.dlb || timesheet.provider.dlb) && (
                   <div className="mt-2">
                     <span className="font-semibold">DLB:</span> {timesheet.client.dlb || timesheet.provider.dlb || ''}

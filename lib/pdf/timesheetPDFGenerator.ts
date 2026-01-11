@@ -74,8 +74,6 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
       doc.text(`Address: ${timesheet.client.address}`)
     }
     
-    doc.text(`ID Number: ${timesheet.client.idNumber || timesheet.client.id || 'N/A'}`)
-    
     if (isBCBA && (timesheet.client.dlb || timesheet.provider.dlb)) {
       doc.text(`DLB: ${timesheet.client.dlb || timesheet.provider.dlb || 'N/A'}`)
     }
