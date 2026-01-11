@@ -179,6 +179,8 @@ export async function POST(request: NextRequest) {
     const totalHours = validPdfs.reduce((sum, item) => sum + item.timesheet.totalHours, 0)
 
     const emailItems: QueuedTimesheetItem[] = validPdfs.map((item) => ({
+      id: item.timesheet.id,
+      timesheetUrl: `${process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://app.smartstepsabapc.org'}/timesheets/${item.timesheet.id}`,
       clientName: item.timesheet.client.name,
       providerName: item.timesheet.provider.name,
       bcbaName: item.timesheet.bcba?.name || 'N/A',
