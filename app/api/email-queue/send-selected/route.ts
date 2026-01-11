@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
           isBCBA: item.timesheet.isBCBA,
           serviceType: item.timesheet.serviceType || undefined,
           sessionData: item.timesheet.sessionData || undefined,
-          entries: item.timesheet.entries.map((entry) => ({
+          entries: item.timesheet.entries.map((entry: any) => ({
             date: entry.date,
             startTime: entry.startTime,
             endTime: entry.endTime,
