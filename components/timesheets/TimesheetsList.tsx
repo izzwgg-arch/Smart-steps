@@ -459,7 +459,15 @@ export function TimesheetsList() {
                       View
                     </button>
                     <button
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        // PHASE 1: Prevent all navigation
+                        e.preventDefault()
+                        e.stopPropagation()
+                        
+                        // PHASE 2: Log handler invocation with stack trace
+                        console.log('[PRINT_BUTTON] ==== PRINT_CLICK HANDLER INVOKED ====')
+                        console.log('[PRINT_BUTTON] Stack trace:', new Error().stack)
+                        
                         const url = `/api/timesheets/${timesheet.id}/pdf`
                         console.log('[PRINT_BUTTON] Fetching PDF from:', url)
                         
@@ -501,6 +509,12 @@ export function TimesheetsList() {
                           const blob = await response.blob()
                           console.log('[PRINT_BUTTON] Blob size:', blob.size, 'bytes')
                           
+                          if (blob.size < 10000) {
+                            console.error('[PRINT_BUTTON] ERROR: PDF blob is too small (<10KB), likely empty or error document')
+                            toast.error('PDF appears to be empty or invalid. Check server logs.')
+                            return
+                          }
+                          
                           // Read first 4 bytes to verify PDF header
                           const arrayBuffer = await blob.slice(0, 4).arrayBuffer()
                           const uint8Array = new Uint8Array(arrayBuffer)
@@ -513,21 +527,40 @@ export function TimesheetsList() {
                             return
                           }
                           
-                          // Create object URL and open PDF
-                          const pdfUrl = URL.createObjectURL(blob)
-                          const link = document.createElement('a')
-                          link.href = pdfUrl
-                          link.download = `timesheet-${timesheet.id}.pdf`
-                          link.target = '_blank'
-                          document.body.appendChild(link)
-                          link.click()
-                          document.body.removeChild(link)
+                          // PHASE 3: Create blob URL and open with window.open ONLY
+                          const blobUrl = URL.createObjectURL(blob)
+                          console.log('[PRINT_BUTTON] Opening blob URL:', blobUrl.substring(0, 50) + '...')
+                          console.log('[PRINT_BUTTON] VERIFY: This is a blob URL, NOT a regular HTTP URL')
+                          
+                          // Guard: Throw if trying to open non-blob URL
+                          if (!blobUrl.startsWith('blob:')) {
+                            throw new Error('PRINT_NAV_GUARD: Attempted to open non-blob URL: ' + blobUrl)
+                          }
+                          
+                          // Open blob URL in new window
+                          const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer')
+                          
+                          if (!newWindow) {
+                            // Popup blocked - fall back to download
+                            const link = document.createElement('a')
+                            link.href = blobUrl
+                            link.download = `timesheet-${timesheet.id}.pdf`
+                            document.body.appendChild(link)
+                            link.click()
+                            document.body.removeChild(link)
+                            toast.success('PDF downloaded (popup was blocked)')
+                          }
                           
                           // Clean up after delay
-                          setTimeout(() => URL.revokeObjectURL(pdfUrl), 5000)
+                          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
                         } catch (error: any) {
                           console.error('[PRINT_BUTTON] Exception:', error)
-                          toast.error(`Failed to generate PDF: ${error.message || 'Unknown error'}`)
+                          if (error.message?.includes('PRINT_NAV_GUARD')) {
+                            console.error('[PRINT_BUTTON] CRITICAL: Navigation guard triggered!', error)
+                            toast.error('CRITICAL: Attempted to navigate to non-blob URL. Check console.')
+                          } else {
+                            toast.error(`Failed to generate PDF: ${error.message || 'Unknown error'}`)
+                          }
                         }
                       }}
                       className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"

@@ -67,9 +67,22 @@ export async function GET(
     // Generate PDF using shared function (same for both regular and BCBA)
     const pdfBuffer = await generateTimesheetPDFFromId(timesheetId, prisma, correlationId)
 
+    // PHASE 4: Verify PDF size and content
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated, bytes=${pdfBuffer.length}`)
+    
+    if (pdfBuffer.length < 10000) {
+      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF is too small (<10KB), likely empty or error document`)
+      return NextResponse.json(
+        { error: 'PDF generation failed: PDF is too small', correlationId },
+        { status: 500 }
+      )
+    }
+
     // Verify PDF starts with %PDF
     const pdfHeader = pdfBuffer.slice(0, 4).toString('ascii')
+    const first16Bytes = pdfBuffer.slice(0, 16).toString('hex')
     console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF header check: "${pdfHeader}" (expected: "%PDF")`)
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} First 16 bytes (hex): ${first16Bytes}`)
 
     if (pdfHeader !== '%PDF') {
       console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF does not start with %PDF! First 20 bytes:`, pdfBuffer.slice(0, 20).toString('hex'))
@@ -79,7 +92,7 @@ export async function GET(
       )
     }
 
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated OK, bytes=${pdfBuffer.length}`)
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated OK, bytes=${pdfBuffer.length} (>10KB)`)
     console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Returning response: Status=200, Content-Type=application/pdf`)
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
