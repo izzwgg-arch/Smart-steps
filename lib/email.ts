@@ -56,6 +56,7 @@ export interface EmailOptions {
   subject: string
   html: string
   text?: string
+  from?: string // Optional custom from field (format: "Display Name <email@domain.com>")
   attachments?: Array<{
     filename: string
     content: Buffer | string
@@ -141,9 +142,11 @@ export async function sendMailSafe(
     })
 
     const transporter = getTransporter()
-    const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@smartstepsabapc.org'
+    // Use custom from field if provided, otherwise use env vars or defaults
+    const from = options.from || process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@smartstepsabapc.org'
     
     console.log('[EMAIL] Attempting to send email to:', recipients.join(', '))
+    console.log('[EMAIL] From:', from)
     
     const info = await transporter.sendMail({
       from,
