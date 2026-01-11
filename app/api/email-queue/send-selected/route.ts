@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
       totalHours: item.timesheet.totalHours,
       serviceType: item.timesheet.serviceType || undefined,
       sessionData: item.timesheet.sessionData || undefined,
-      type: item.queueItem.entityType === 'BCBA' ? 'BCBA' : 'Regular',
+      type: item.queueItem.entityType === 'BCBA' ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
     }))
 
     // Step 6: Prepare PDF attachments
