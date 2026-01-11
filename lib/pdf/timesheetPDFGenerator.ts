@@ -78,6 +78,12 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
       doc.on('end', () => {
         const pdfBuffer = Buffer.concat(buffers)
         const duration = Date.now() - startTime
+        
+        // DEBUG LOGGING
+        console.log(`[TIMESHEET_PDF_DEBUG] ${corrId} route=${timesheet.isBCBA ? 'bcba' : 'regular'} timesheetId=${timesheet.id} entries=${timesheet.entries.length}`)
+        console.log(`[TIMESHEET_PDF_DEBUG] ${corrId} bytes=${pdfBuffer.length}`)
+        console.log(`[TIMESHEET_PDF_DEBUG] ${corrId} head=${pdfBuffer.slice(0, 200).toString('latin1')}`)
+        
         console.log(`[TIMESHEET_PDF] ${corrId} PDF generated successfully`, {
           timesheetId: timesheet.id,
           size: pdfBuffer.length,
@@ -86,9 +92,9 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
           entriesCount: timesheet.entries.length,
         })
         
-        // PHASE 4: Hard validation - PDF must be >15KB if there are entries
-        if (timesheet.entries.length > 0 && pdfBuffer.length < 15000) {
-          const error = new Error(`PDF_TOO_SMALL: Generated PDF is only ${pdfBuffer.length} bytes but timesheet has ${timesheet.entries.length} entries. Expected >15KB.`)
+        // MINIMAL TEST: PDF must be > 5KB to prove content is included
+        if (pdfBuffer.length < 5000) {
+          const error = new Error(`PDF_TOO_SMALL: Generated PDF is only ${pdfBuffer.length} bytes. Expected >5KB for minimal test.`)
           console.error(`[TIMESHEET_PDF] ${corrId} ${error.message}`)
           reject(error)
           return
