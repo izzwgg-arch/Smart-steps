@@ -170,7 +170,25 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                   </Link>
                 )}
                 <button 
-                  onClick={() => window.print()}
+                  onClick={async () => {
+                    try {
+                      const url = `/api/invoices/${invoiceId}/pdf`
+                      const response = await fetch(url)
+                      if (!response.ok) {
+                        const error = await response.json().catch(() => ({ error: 'Failed to generate PDF' }))
+                        toast.error(error.error || 'Failed to generate PDF')
+                        return
+                      }
+                      const blob = await response.blob()
+                      const pdfUrl = URL.createObjectURL(blob)
+                      window.open(pdfUrl, '_blank')
+                      // Clean up the URL after a delay
+                      setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000)
+                    } catch (error) {
+                      console.error('Error generating PDF:', error)
+                      toast.error('Failed to generate PDF')
+                    }
+                  }}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 flex items-center space-x-2"
                 >
                   <Printer className="w-4 h-4" />
