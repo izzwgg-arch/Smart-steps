@@ -526,19 +526,44 @@ export function BCBATimesheetsList() {
                           
                           // PHASE 3: Create blob URL and open with window.open ONLY
                           const blobUrl = URL.createObjectURL(blob)
-                          console.log('[PRINT_BUTTON] Opening blob URL:', blobUrl.substring(0, 50) + '...')
-                          console.log('[PRINT_BUTTON] VERIFY: This is a blob URL, NOT a regular HTTP URL')
+                          console.log('[PRINT_BUTTON] ====== BLOB URL CREATED ======')
+                          console.log('[PRINT_BUTTON] Full blob URL:', blobUrl)
+                          console.log('[PRINT_BUTTON] Blob URL starts with blob:?', blobUrl.startsWith('blob:'))
+                          console.log('[PRINT_BUTTON] Blob size:', blob.size, 'bytes')
+                          console.log('[PRINT_BUTTON] Blob type:', blob.type)
                           
                           // Guard: Throw if trying to open non-blob URL
                           if (!blobUrl.startsWith('blob:')) {
+                            console.error('[PRINT_BUTTON] CRITICAL ERROR: Blob URL does not start with blob:')
                             throw new Error('PRINT_NAV_GUARD: Attempted to open non-blob URL: ' + blobUrl)
                           }
+                          
+                          // Log before opening
+                          console.log('[PRINT_BUTTON] About to call window.open with:', blobUrl)
+                          console.log('[PRINT_BUTTON] Current window location:', window.location.href)
                           
                           // Open blob URL in new window
                           const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer')
                           
-                          if (!newWindow) {
+                          console.log('[PRINT_BUTTON] window.open returned:', newWindow ? 'Window object' : 'null (popup blocked)')
+                          
+                          if (newWindow) {
+                            // Monitor the new window's location
+                            setTimeout(() => {
+                              try {
+                                const newWindowLocation = newWindow.location.href
+                                console.log('[PRINT_BUTTON] New window location after 1s:', newWindowLocation)
+                                if (!newWindowLocation.startsWith('blob:')) {
+                                  console.error('[PRINT_BUTTON] ERROR: New window navigated to non-blob URL!', newWindowLocation)
+                                }
+                              } catch (e) {
+                                // Cross-origin error is expected for blob URLs
+                                console.log('[PRINT_BUTTON] Cannot access new window location (expected for blob URLs)')
+                              }
+                            }, 1000)
+                          } else {
                             // Popup blocked - fall back to download
+                            console.log('[PRINT_BUTTON] Popup blocked, falling back to download')
                             const link = document.createElement('a')
                             link.href = blobUrl
                             link.download = `bcba-timesheet-${timesheet.id}.pdf`
@@ -549,7 +574,10 @@ export function BCBATimesheetsList() {
                           }
                           
                           // Clean up after delay
-                          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
+                          setTimeout(() => {
+                            console.log('[PRINT_BUTTON] Revoking blob URL:', blobUrl)
+                            URL.revokeObjectURL(blobUrl)
+                          }, 10000)
                         } catch (error: any) {
                           console.error('[PRINT_BUTTON] Exception:', error)
                           if (error.message?.includes('PRINT_NAV_GUARD')) {
