@@ -287,7 +287,6 @@ export function RoleForm({ role }: RoleFormProps) {
             canCreate: enabled && (perm.name.includes('.create') || perm.name.includes('.generate') || perm.name.includes('.sendBatch') || perm.name.includes('.send')),
             canDelete: enabled && perm.name.includes('.delete'),
             canUpdate: enabled && perm.name.includes('.update'),
-            canDelete: enabled && perm.name.includes('.delete'),
             canApprove: enabled && perm.name.includes('.approve'),
             canExport: enabled && perm.name.includes('.export'),
           }
