@@ -64,16 +64,72 @@ export async function GET(
       )
     }
 
-    // Generate PDF using shared function
+    // PHASE 2: Fetch timesheet to get row count BEFORE generating PDF
+    const timesheetCheck = await prisma.timesheet.findUnique({
+      where: { id: timesheetId, deletedAt: null },
+      include: {
+        entries: {
+          select: { id: true },
+        },
+      },
+    })
+
+    const rowsCount = timesheetCheck?.entries?.length || 0
+    console.log(`[TIMESHEET_PDF_ROUTE] ${correlationId} Timesheet has ${rowsCount} entries`)
+
+    // PHASE 4: Generate PDF using shared function
     const pdfBuffer = await generateTimesheetPDFFromId(timesheetId, prisma, correlationId)
 
-    // PHASE 4: Verify PDF size and content
-    console.log(`[TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated, bytes=${pdfBuffer.length}`)
+    // PHASE 4: Verify PDF size and content with HARD FAIL GUARDS
+    const generatedBytes = pdfBuffer.length
+    console.log(`[TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated, bytes=${generatedBytes}, rowsCount=${rowsCount}`)
     
-    if (pdfBuffer.length < 10000) {
-      console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF is too small (<10KB), likely empty or error document`)
+    // Hard fail: If there are rows but PDF is too small
+    if (rowsCount > 0 && generatedBytes < 15000) {
+      console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF_TOO_SMALL`, {
+        rowsCount,
+        generatedBytes,
+        expectedMin: 15000,
+      })
       return NextResponse.json(
-        { error: 'PDF generation failed: PDF is too small', correlationId },
+        { 
+          error: 'PDF_TOO_SMALL',
+          message: 'PDF generation failed: PDF is too small for the number of rows',
+          rowsCount,
+          generatedBytes,
+          correlationId 
+        },
+        { status: 500 }
+      )
+    }
+
+    // Hard fail: If no rows (unless empty PDFs are allowed - we do NOT want this)
+    if (rowsCount === 0) {
+      console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: NO_ROWS_TO_PRINT`)
+      return NextResponse.json(
+        { 
+          error: 'NO_ROWS_TO_PRINT',
+          message: 'Cannot generate PDF: Timesheet has no entries',
+          correlationId 
+        },
+        { status: 400 }
+      )
+    }
+
+    // Additional check: Even if rowsCount is 0, PDF should still be >15KB for header/content
+    if (generatedBytes < 15000) {
+      console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF is too small (<15KB)`, {
+        rowsCount,
+        generatedBytes,
+      })
+      return NextResponse.json(
+        { 
+          error: 'PDF_TOO_SMALL',
+          message: 'PDF generation failed: PDF is too small',
+          rowsCount,
+          generatedBytes,
+          correlationId 
+        },
         { status: 500 }
       )
     }

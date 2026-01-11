@@ -54,14 +54,27 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
     timesheetId: timesheet.id,
     type: timesheet.isBCBA ? 'BCBA' : 'REGULAR',
     entriesCount: timesheet.entries.length,
+    entries: timesheet.entries.length > 0 ? `First entry: ${JSON.stringify(timesheet.entries[0])}` : 'NO ENTRIES',
   })
+
+  // PHASE 3: Validate entries exist
+  if (!timesheet.entries || timesheet.entries.length === 0) {
+    throw new Error(`Timesheet ${timesheet.id} has no entries - cannot generate PDF`)
+  }
 
   try {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 50, size: 'LETTER' })
       const buffers: Buffer[] = []
+      let dataChunks = 0
 
-      doc.on('data', buffers.push.bind(buffers))
+      doc.on('data', (chunk: Buffer) => {
+        buffers.push(chunk)
+        dataChunks++
+        if (dataChunks === 1) {
+          console.log(`[TIMESHEET_PDF] ${corrId} First data chunk received, size: ${chunk.length} bytes`)
+        }
+      })
       doc.on('end', () => {
         const pdfBuffer = Buffer.concat(buffers)
         const duration = Date.now() - startTime
@@ -69,7 +82,18 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
           timesheetId: timesheet.id,
           size: pdfBuffer.length,
           duration: `${duration}ms`,
+          dataChunks,
+          entriesCount: timesheet.entries.length,
         })
+        
+        // PHASE 4: Hard validation - PDF must be >15KB if there are entries
+        if (timesheet.entries.length > 0 && pdfBuffer.length < 15000) {
+          const error = new Error(`PDF_TOO_SMALL: Generated PDF is only ${pdfBuffer.length} bytes but timesheet has ${timesheet.entries.length} entries. Expected >15KB.`)
+          console.error(`[TIMESHEET_PDF] ${corrId} ${error.message}`)
+          reject(error)
+          return
+        }
+        
         resolve(pdfBuffer)
       })
       doc.on('error', (error) => {
