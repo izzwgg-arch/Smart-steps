@@ -225,50 +225,75 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
 
       console.log(`[TIMESHEET_PDF] ${corrId} Rendering ${sortedEntries.length} table entries`)
       
+      // PHASE 3 FIX: Use absolute Y positions but calculate them properly
+      // PDFKit needs absolute positions for table layout, but we must ensure content is written
+      let currentRowY = tableTop + 20 // Start below header line
+      const rowSpacing = 20
+      
       sortedEntries.forEach((entry, index) => {
         const entryDate = typeof entry.date === 'string' ? new Date(entry.date) : entry.date
-        const rowY = doc.y
         xPos = tableLeft
+
+        // Log first few entries in detail
+        if (index < 3) {
+          console.log(`[TIMESHEET_PDF] ${corrId} Rendering entry ${index + 1} at Y=${currentRowY}:`, {
+            date: entry.date,
+            startTime: entry.startTime,
+            endTime: entry.endTime,
+            minutes: entry.minutes,
+            notes: entry.notes,
+          })
+        }
 
         // Date
         const dateStr = format(entryDate, 'EEE M/d/yyyy').toLowerCase()
-        doc.text(dateStr, xPos, rowY)
+        doc.text(dateStr, xPos, currentRowY)
         xPos += colWidths[0]
 
         // In (formatted time)
         const inTime = formatTime(entry.startTime)
-        doc.text(inTime, xPos, rowY)
+        if (!inTime) {
+          console.warn(`[TIMESHEET_PDF] ${corrId} Entry ${index + 1} has invalid startTime: ${entry.startTime}`)
+        }
+        doc.text(inTime || entry.startTime, xPos, currentRowY)
         xPos += colWidths[1]
 
         // Out (formatted time)
         const outTime = formatTime(entry.endTime)
-        doc.text(outTime, xPos, rowY)
+        if (!outTime) {
+          console.warn(`[TIMESHEET_PDF] ${corrId} Entry ${index + 1} has invalid endTime: ${entry.endTime}`)
+        }
+        doc.text(outTime || entry.endTime, xPos, currentRowY)
         xPos += colWidths[2]
 
         // Hours
         const hours = (entry.minutes / 60).toFixed(1)
-        doc.text(hours, xPos, rowY)
+        doc.text(hours, xPos, currentRowY)
         xPos += colWidths[3]
 
         if (!isBCBA) {
           // Type (DR/SV or notes)
-          doc.text(entry.notes || '-', xPos, rowY)
+          doc.text(entry.notes || '-', xPos, currentRowY)
           xPos += colWidths[4]
 
           // Location
-          doc.text('Home', xPos, rowY)
+          doc.text('Home', xPos, currentRowY)
         } else {
           // Notes for BCBA
-          doc.text(entry.notes || '', xPos, rowY)
+          doc.text(entry.notes || '', xPos, currentRowY)
         }
 
-        doc.moveDown(0.4)
+        // Move to next row position
+        currentRowY += rowSpacing
         
         // Log every 10 entries to track progress
         if ((index + 1) % 10 === 0 || index === sortedEntries.length - 1) {
-          console.log(`[TIMESHEET_PDF] ${corrId} Rendered ${index + 1}/${sortedEntries.length} entries, current Y: ${doc.y}`)
+          console.log(`[TIMESHEET_PDF] ${corrId} Rendered ${index + 1}/${sortedEntries.length} entries, next Y: ${currentRowY}`)
         }
       })
+      
+      // Update doc.y to current position for subsequent content
+      doc.y = currentRowY
       
       console.log(`[TIMESHEET_PDF] ${corrId} Finished rendering all ${sortedEntries.length} entries`)
 
