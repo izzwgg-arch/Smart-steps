@@ -199,21 +199,26 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         return a.startTime.localeCompare(b.startTime)
       })
 
-      sortedEntries.forEach((entry) => {
+      console.log(`[TIMESHEET_PDF] ${corrId} Rendering ${sortedEntries.length} table entries`)
+      
+      sortedEntries.forEach((entry, index) => {
         const entryDate = typeof entry.date === 'string' ? new Date(entry.date) : entry.date
         const rowY = doc.y
         xPos = tableLeft
 
         // Date
-        doc.text(format(entryDate, 'EEE M/d/yyyy').toLowerCase(), xPos, rowY)
+        const dateStr = format(entryDate, 'EEE M/d/yyyy').toLowerCase()
+        doc.text(dateStr, xPos, rowY)
         xPos += colWidths[0]
 
         // In (formatted time)
-        doc.text(formatTime(entry.startTime), xPos, rowY)
+        const inTime = formatTime(entry.startTime)
+        doc.text(inTime, xPos, rowY)
         xPos += colWidths[1]
 
         // Out (formatted time)
-        doc.text(formatTime(entry.endTime), xPos, rowY)
+        const outTime = formatTime(entry.endTime)
+        doc.text(outTime, xPos, rowY)
         xPos += colWidths[2]
 
         // Hours
@@ -234,7 +239,14 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         }
 
         doc.moveDown(0.4)
+        
+        // Log every 10 entries to track progress
+        if ((index + 1) % 10 === 0 || index === sortedEntries.length - 1) {
+          console.log(`[TIMESHEET_PDF] ${corrId} Rendered ${index + 1}/${sortedEntries.length} entries, current Y: ${doc.y}`)
+        }
       })
+      
+      console.log(`[TIMESHEET_PDF] ${corrId} Finished rendering all ${sortedEntries.length} entries`)
 
       // Draw bottom line
       doc.moveTo(tableLeft, doc.y).lineTo(tableRight, doc.y).stroke()
@@ -301,7 +313,12 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         doc.text('SV = Super Vision', tableLeft, doc.y)
       }
 
+      console.log(`[TIMESHEET_PDF] ${corrId} About to call doc.end(), final Y position: ${doc.y}`)
+      console.log(`[TIMESHEET_PDF] ${corrId} Total entries rendered: ${timesheet.entries.length}`)
+      
       doc.end()
+      
+      console.log(`[TIMESHEET_PDF] ${corrId} doc.end() called, waiting for 'end' event...`)
     })
   } catch (error: any) {
     console.error(`[TIMESHEET_PDF] ${corrId} PDF generation failed`, {
