@@ -144,14 +144,39 @@ export function UserFormEnhanced({ user }: UserFormProps) {
         body.password = password
       }
 
+      // Log request payload (excluding sensitive data)
+      console.log('[CREATE USER] Request', {
+        url,
+        method,
+        body: {
+          ...body,
+          password: body.password ? '[REDACTED]' : undefined,
+        },
+      })
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
 
+      // Log response
+      const responseText = await res.text()
+      let responseData
+      try {
+        responseData = JSON.parse(responseText)
+      } catch {
+        responseData = { error: responseText }
+      }
+
+      console.log('[CREATE USER] Response', {
+        status: res.status,
+        statusText: res.statusText,
+        data: responseData,
+      })
+
       if (res.ok) {
-        const data = await res.json()
+        const data = responseData
         if (!user) {
           // New user created
           if (data.emailSent) {
@@ -165,11 +190,54 @@ export function UserFormEnhanced({ user }: UserFormProps) {
         router.push('/users')
         router.refresh()
       } else {
-        const data = await res.json()
-        toast.error(data.error || `Failed to ${user ? 'update' : 'create'} user`)
+        // Handle specific error codes
+        const errorCode = responseData.error || 'UNKNOWN_ERROR'
+        const errorMessage = responseData.message || responseData.error || `Failed to ${user ? 'update' : 'create'} user`
+        
+        let displayMessage = errorMessage
+        
+        // Map error codes to user-friendly messages
+        switch (errorCode) {
+          case 'DUPLICATE_EMAIL':
+            displayMessage = 'That email is already in use'
+            break
+          case 'DUPLICATE_USERNAME':
+            displayMessage = 'That username is already in use'
+            break
+          case 'DUPLICATE_ENTRY':
+            displayMessage = 'A user with this information already exists'
+            break
+          case 'VALIDATION_ERROR':
+            displayMessage = errorMessage // Already user-friendly
+            break
+          case 'UNAUTHORIZED':
+            displayMessage = 'You do not have permission to perform this action'
+            break
+          case 'DATABASE_ERROR':
+            displayMessage = 'Database error occurred. Please contact support.'
+            break
+          case 'SERVER_ERROR':
+            displayMessage = 'Server error occurred. Please try again or contact support.'
+            break
+          default:
+            displayMessage = errorMessage
+        }
+        
+        console.error('[CREATE USER] Error response', {
+          status: res.status,
+          errorCode,
+          errorMessage,
+          displayMessage,
+        })
+        
+        toast.error(displayMessage, { duration: 5000 })
       }
-    } catch (error) {
-      toast.error('An error occurred. Please try again.')
+    } catch (error: any) {
+      console.error('[CREATE USER] Network/parsing error', {
+        error: error?.message,
+        stack: error?.stack,
+      })
+      toast.error('Network error. Please check your connection and try again.')
     } finally {
       setLoading(false)
     }

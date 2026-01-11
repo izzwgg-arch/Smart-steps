@@ -88,10 +88,28 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'SUPER_ADMIN')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.error('[CREATE USER] Unauthorized access attempt', {
+        userId: session?.user?.id,
+        role: session?.user?.role,
+      })
+      return NextResponse.json(
+        { 
+          error: 'UNAUTHORIZED',
+          message: 'You do not have permission to create users',
+        },
+        { status: 401 }
+      )
     }
 
     const data = await request.json()
+    console.log('[CREATE USER] Request received', {
+      username: data.username,
+      email: data.email,
+      role: data.role,
+      hasCustomRoleId: !!data.customRoleId,
+      active: data.active,
+    })
+
     const {
       username,
       email,
@@ -102,9 +120,46 @@ export async function POST(request: NextRequest) {
       activationEnd,
     } = data
 
-    if (!username || !email) {
+    // Validation
+    if (!username || !username.trim()) {
       return NextResponse.json(
-        { error: 'Username and email are required' },
+        { 
+          error: 'VALIDATION_ERROR',
+          message: 'Username is required',
+        },
+        { status: 400 }
+      )
+    }
+
+    if (!email || !email.trim()) {
+      return NextResponse.json(
+        { 
+          error: 'VALIDATION_ERROR',
+          message: 'Email is required',
+        },
+        { status: 400 }
+      )
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email.trim())) {
+      return NextResponse.json(
+        { 
+          error: 'VALIDATION_ERROR',
+          message: 'Invalid email format',
+        },
+        { status: 400 }
+      )
+    }
+
+    // Validate custom role if CUSTOM role is selected
+    if (role === 'CUSTOM' && !data.customRoleId) {
+      return NextResponse.json(
+        { 
+          error: 'VALIDATION_ERROR',
+          message: 'Custom role ID is required when role is CUSTOM',
+        },
         { status: 400 }
       )
     }
@@ -125,42 +180,52 @@ export async function POST(request: NextRequest) {
 
     // Check if user already exists by username or email
     const existingUserByUsername = await prisma.user.findUnique({
-      where: { username },
+      where: { username: username.trim() },
     })
 
     if (existingUserByUsername && !existingUserByUsername.deletedAt) {
+      console.error('[CREATE USER] Username already exists', { username: username.trim() })
       return NextResponse.json(
-        { error: 'Username already exists' },
-        { status: 400 }
+        { 
+          error: 'DUPLICATE_USERNAME',
+          message: 'That username is already in use',
+        },
+        { status: 409 }
       )
     }
 
     const existingUserByEmail = await prisma.user.findUnique({
-      where: { email },
+      where: { email: email.trim() },
     })
 
     if (existingUserByEmail && !existingUserByEmail.deletedAt) {
+      console.error('[CREATE USER] Email already exists', { email: email.trim() })
       return NextResponse.json(
-        { error: 'Email already exists' },
-        { status: 400 }
+        { 
+          error: 'DUPLICATE_EMAIL',
+          message: 'That email is already in use',
+        },
+        { status: 409 }
       )
     }
 
     // Create user with temp password
-    const user = await prisma.user.create({
-      data: {
-        username,
-        email,
-        password: placeholderPassword, // Placeholder - cannot login with this
-        tempPasswordHash: tempPasswordHash, // Actual temp password for first login
-        tempPasswordExpiresAt: tempPasswordExpiresAt,
-        role: role || 'USER',
-        customRoleId: role === 'CUSTOM' && data.customRoleId ? data.customRoleId : null,
-        active: active !== undefined ? active : true,
-        activationStart: activationStart ? new Date(activationStart) : null,
-        activationEnd: activationEnd ? new Date(activationEnd) : null,
-        mustChangePassword: true, // Always force password change on first login
-      },
+    let user
+    try {
+      user = await prisma.user.create({
+        data: {
+          username: username.trim(),
+          email: email.trim(),
+          password: placeholderPassword, // Placeholder - cannot login with this
+          tempPasswordHash: tempPasswordHash, // Actual temp password for first login
+          tempPasswordExpiresAt: tempPasswordExpiresAt,
+          role: role || 'USER',
+          customRoleId: role === 'CUSTOM' && data.customRoleId ? data.customRoleId : null,
+          active: active !== undefined ? active : true,
+          activationStart: activationStart ? new Date(activationStart) : null,
+          activationEnd: activationEnd ? new Date(activationEnd) : null,
+          mustChangePassword: true, // Always force password change on first login
+        },
         select: {
           id: true,
           username: true,
@@ -179,7 +244,69 @@ export async function POST(request: NextRequest) {
           createdAt: true,
           updatedAt: true,
         },
-    })
+      })
+      console.log('[CREATE USER] User created successfully', { userId: user.id, email: user.email })
+    } catch (prismaError: any) {
+      // Handle Prisma unique constraint violations
+      if (prismaError?.code === 'P2002') {
+        const target = prismaError?.meta?.target
+        console.error('[CREATE USER] Unique constraint violation', {
+          code: prismaError.code,
+          target,
+          username: username.trim(),
+          email: email.trim(),
+        })
+        
+        if (Array.isArray(target)) {
+          if (target.includes('username')) {
+            return NextResponse.json(
+              { 
+                error: 'DUPLICATE_USERNAME',
+                message: 'That username is already in use',
+              },
+              { status: 409 }
+            )
+          }
+          if (target.includes('email')) {
+            return NextResponse.json(
+              { 
+                error: 'DUPLICATE_EMAIL',
+                message: 'That email is already in use',
+              },
+              { status: 409 }
+            )
+          }
+        }
+        
+        return NextResponse.json(
+          { 
+            error: 'DUPLICATE_ENTRY',
+            message: 'A user with this information already exists',
+          },
+          { status: 409 }
+        )
+      }
+      
+      // Handle other Prisma errors
+      if (prismaError?.code?.startsWith('P')) {
+        console.error('[CREATE USER] Prisma error', {
+          code: prismaError.code,
+          message: prismaError.message,
+          meta: prismaError.meta,
+        })
+        return NextResponse.json(
+          { 
+            error: 'DATABASE_ERROR',
+            message: 'Database error occurred. Please check logs.',
+            code: prismaError.code,
+          },
+          { status: 500 }
+        )
+      }
+      
+      // Re-throw if not a Prisma error
+      throw prismaError
+    }
 
     // Log audit (do NOT log temp password)
     await logCreate('User', user.id, session.user.id, {
@@ -244,10 +371,23 @@ export async function POST(request: NextRequest) {
     delete (userResponse as any).password
 
     return NextResponse.json({ ...userResponse, emailSent }, { status: 201 })
-  } catch (error) {
-    console.error('Error creating user:', error)
+  } catch (error: any) {
+    // Log full error details
+    console.error('[CREATE USER] Unexpected error', {
+      error: error?.message,
+      stack: error?.stack,
+      code: error?.code,
+      name: error?.name,
+      meta: error?.meta,
+    })
+    
+    // Return structured error response
     return NextResponse.json(
-      { error: 'Failed to create user' },
+      { 
+        error: 'SERVER_ERROR',
+        message: 'An unexpected error occurred while creating the user',
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined,
+      },
       { status: 500 }
     )
   }
