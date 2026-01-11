@@ -89,6 +89,7 @@ const permissions = [
   // Email Queue
   { name: 'emailQueue.view', description: 'View email queue', category: 'emailQueue' },
   { name: 'emailQueue.sendBatch', description: 'Send batch emails from queue', category: 'emailQueue' },
+  { name: 'emailQueue.delete', description: 'Delete items from email queue', category: 'emailQueue' },
   
   // Community Classes Module
   { name: 'community.view', description: 'View community classes module', category: 'community' },
@@ -108,6 +109,7 @@ const permissions = [
   { name: 'community.invoices.reject', description: 'Reject community invoices', category: 'community' },
   { name: 'community.invoices.emailqueue.view', description: 'View community email queue', category: 'community' },
   { name: 'community.invoices.emailqueue.send', description: 'Send community invoice emails', category: 'community' },
+  { name: 'community.invoices.emailqueue.delete', description: 'Delete items from community email queue', category: 'community' },
   
   // Dashboard Visibility
   { name: 'dashboard.analytics', description: 'Show Analytics in Dashboard', category: 'dashboard' },

@@ -46,9 +46,11 @@ export default function CommunityEmailQueuePage() {
   const [sending, setSending] = useState(false)
   const [canViewQueue, setCanViewQueue] = useState(false)
   const [canSendBatch, setCanSendBatch] = useState(false)
+  const [canDelete, setCanDelete] = useState(false)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [customEmail, setCustomEmail] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (sessionStatus === 'loading') return
@@ -76,6 +78,11 @@ export default function CommunityEmailQueuePage() {
         )
         setCanSendBatch(
           data.permissions['community.invoices.emailqueue.send']?.canCreate === true ||
+            session?.user?.role === 'SUPER_ADMIN' ||
+            session?.user?.role === 'ADMIN'
+        )
+        setCanDelete(
+          data.permissions['community.invoices.emailqueue.delete']?.canDelete === true ||
             session?.user?.role === 'SUPER_ADMIN' ||
             session?.user?.role === 'ADMIN'
         )
@@ -118,27 +125,31 @@ export default function CommunityEmailQueuePage() {
   }
 
   const handleSelectAll = () => {
-    const queuedItemIds = queueItems
-      .filter((item) => item.status === 'QUEUED')
-      .map((item) => item.id)
-    if (queuedItemIds.every((id) => selectedItems.has(id))) {
+    const visibleItemIds = queueItems.map((item) => item.id)
+    if (visibleItemIds.every((id) => selectedItems.has(id))) {
       setSelectedItems(new Set())
     } else {
-      setSelectedItems(new Set(queuedItemIds))
+      setSelectedItems(new Set(visibleItemIds))
     }
   }
 
-  const handleRemoveFromQueue = async (itemId: string) => {
-    if (!confirm('Are you sure you want to remove this invoice from the email queue? The invoice will not be deleted.')) {
+  const handleDeleteItem = async (itemId: string) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete queue items')
       return
     }
 
+    if (!confirm('Remove this item from the email queue? This does not delete the invoice.')) {
+      return
+    }
+
+    setDeleting(true)
     try {
       const res = await fetch(`/api/community/email-queue/${itemId}/remove`, { method: 'DELETE' })
       const data = await res.json()
 
       if (res.ok) {
-        toast.success('Invoice removed from queue')
+        toast.success('Item removed from queue')
         fetchQueueItems() // Refresh the list
         setSelectedItems((prev) => {
           const newSet = new Set(prev)
@@ -146,11 +157,52 @@ export default function CommunityEmailQueuePage() {
           return newSet
         })
       } else {
-        toast.error(data.error || 'Failed to remove invoice from queue')
+        toast.error(data.error || 'Failed to remove item from queue')
       }
     } catch (error) {
       console.error('Error removing from queue:', error)
       toast.error('An unexpected error occurred')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete queue items')
+      return
+    }
+
+    if (selectedItems.size === 0) {
+      toast.error('Please select items to delete')
+      return
+    }
+
+    if (!confirm(`Remove ${selectedItems.size} selected item(s) from the email queue? This does not delete invoices.`)) {
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/community/email-queue/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedItems) }),
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        toast.success(`${data.deletedCount || selectedItems.size} item(s) removed from queue`)
+        fetchQueueItems() // Refresh the list
+        setSelectedItems(new Set())
+      } else {
+        toast.error(data.error || 'Failed to delete items')
+      }
+    } catch (error) {
+      console.error('Error deleting items:', error)
+      toast.error('An unexpected error occurred')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -161,16 +213,44 @@ export default function CommunityEmailQueuePage() {
     }
 
     const queuedItems = queueItems.filter((item) => item.status === 'QUEUED')
-    const itemsToSend = selectedItems.size > 0
-      ? queuedItems.filter((item) => selectedItems.has(item.id))
-      : queuedItems
-
-    if (itemsToSend.length === 0) {
-      toast.error('No items selected to send')
+    if (queuedItems.length === 0) {
+      toast.error('No items in the queue to send')
       return
     }
 
-    // Show email modal
+    // Show email modal (will send all queued items)
+    setShowEmailModal(true)
+  }
+
+  const handleSendSelected = async () => {
+    if (!canSendBatch) {
+      toast.error('You do not have permission to send batch emails')
+      return
+    }
+
+    if (selectedItems.size === 0) {
+      toast.error('Please select items to send')
+      return
+    }
+
+    const selectedQueued = queueItems.filter(
+      (item) => selectedItems.has(item.id) && item.status === 'QUEUED'
+    )
+    const selectedNonQueued = queueItems.filter(
+      (item) => selectedItems.has(item.id) && item.status !== 'QUEUED'
+    )
+
+    if (selectedNonQueued.length > 0) {
+      toast.error('Only queued items can be sent. Please deselect non-queued items.')
+      return
+    }
+
+    if (selectedQueued.length === 0) {
+      toast.error('No queued items selected to send')
+      return
+    }
+
+    // Show email modal (will send only selected items)
     setShowEmailModal(true)
   }
 
@@ -270,20 +350,51 @@ export default function CommunityEmailQueuePage() {
               <span>Refresh</span>
             </button>
             {canSendBatch && queuedCount > 0 && (
+              <>
+                <button
+                  onClick={handleSendBatch}
+                  disabled={sending || queuedCount === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-50"
+                >
+                  {sending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4" />
+                      <span>Send All Queued ({queuedCount})</span>
+                    </>
+                  )}
+                </button>
+                {selectedItems.size > 0 && (
+                  <button
+                    onClick={handleSendSelected}
+                    disabled={sending || loading}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
+                  >
+                    <Mail className="w-4 h-4" />
+                    <span>Send Selected ({selectedItems.size})</span>
+                  </button>
+                )}
+              </>
+            )}
+            {canDelete && selectedItems.size > 0 && (
               <button
-                onClick={handleSendBatch}
-                disabled={sending || queuedCount === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-50"
+                onClick={handleBulkDelete}
+                disabled={deleting || loading}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center space-x-2 disabled:opacity-50"
               >
-                {sending ? (
+                {deleting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Sending...</span>
+                    <span>Deleting...</span>
                   </>
                 ) : (
                   <>
-                    <Mail className="w-4 h-4" />
-                    <span>Send {selectedItems.size > 0 ? `Selected (${selectedItems.size})` : `All Queued (${queuedCount})`}</span>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Selected ({selectedItems.size})</span>
                   </>
                 )}
               </button>
@@ -311,21 +422,54 @@ export default function CommunityEmailQueuePage() {
           </div>
         </div>
 
+        {/* Bulk Action Bar */}
+        {selectedItems.size > 0 && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-900">
+              {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+            </span>
+            <div className="flex items-center gap-2">
+              {canSendBatch && (
+                <button
+                  onClick={handleSendSelected}
+                  disabled={sending || loading}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
+                >
+                  Send Selected
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={deleting || loading}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50"
+                >
+                  Delete Selected
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedItems(new Set())}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Queue Items Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {canSendBatch && queuedCount > 0 && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <input
-                      type="checkbox"
-                      checked={queueItems.filter((item) => item.status === 'QUEUED').every((item) => selectedItems.has(item.id)) && queueItems.filter((item) => item.status === 'QUEUED').length > 0}
-                      onChange={handleSelectAll}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </th>
-                )}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                  <input
+                    type="checkbox"
+                    checked={queueItems.length > 0 && queueItems.every((item) => selectedItems.has(item.id))}
+                    onChange={handleSelectAll}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Client
                 </th>
@@ -350,42 +494,35 @@ export default function CommunityEmailQueuePage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Error
                 </th>
-                {canSendBatch && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                )}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={canSendBatch ? 9 : 8} className="px-6 py-8 text-center">
+                  <td colSpan={10} className="px-6 py-8 text-center">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
                   </td>
                 </tr>
               ) : queueItems.length === 0 ? (
                 <tr>
-                  <td colSpan={canSendBatch ? 9 : 8} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
                     No items in the queue
                   </td>
                 </tr>
               ) : (
                 queueItems.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
-                    {canSendBatch && item.status === 'QUEUED' && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.has(item.id)}
-                          onChange={() => handleToggleSelect(item.id)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                      </td>
-                    )}
-                    {canSendBatch && item.status !== 'QUEUED' && (
-                      <td className="px-6 py-4 whitespace-nowrap"></td>
-                    )}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedItems.has(item.id)}
+                        onChange={() => handleToggleSelect(item.id)}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {item.invoice
                         ? `${item.invoice.client.firstName} ${item.invoice.client.lastName}`
@@ -434,20 +571,19 @@ export default function CommunityEmailQueuePage() {
                     <td className="px-6 py-4 text-sm text-red-600 max-w-xs truncate">
                       {item.errorMessage || '-'}
                     </td>
-                    {canSendBatch && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {item.status === 'QUEUED' && (
-                          <button
-                            onClick={() => handleRemoveFromQueue(item.id)}
-                            className="text-red-600 hover:text-red-800 flex items-center space-x-1"
-                            title="Remove from queue"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span>Remove</span>
-                          </button>
-                        )}
-                      </td>
-                    )}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDeleteItem(item.id)}
+                          disabled={deleting}
+                          className="text-red-600 hover:text-red-800 flex items-center space-x-1 disabled:opacity-50"
+                          title="Remove from queue"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Delete</span>
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

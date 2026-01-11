@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { canAccessCommunitySection, getUserPermissions } from '@/lib/permissions'
+import { getUserPermissions } from '@/lib/permissions'
 
 /**
- * DELETE COMMUNITY EMAIL QUEUE ITEM
+ * DELETE EMAIL QUEUE ITEM
  * 
- * Soft deletes a community email queue item
- * Permission: community.invoices.emailqueue.delete
+ * Soft deletes an email queue item
+ * Permission: emailQueue.delete
  */
 export async function DELETE(
   request: NextRequest,
@@ -23,19 +23,10 @@ export async function DELETE(
     const resolvedParams = await Promise.resolve(params)
     const itemId = resolvedParams.id
 
-    // Check Community Classes subsection permission
-    const hasAccess = await canAccessCommunitySection(session.user.id, 'emailQueue')
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: 'Forbidden - No access to Community Classes Email Queue' },
-        { status: 403 }
-      )
-    }
-
-    // Check delete permission
+    // Check permissions
     const userPermissions = await getUserPermissions(session.user.id)
     const canDelete =
-      userPermissions['community.invoices.emailqueue.delete']?.canDelete === true ||
+      userPermissions['emailQueue.delete']?.canDelete === true ||
       session.user.role === 'SUPER_ADMIN' ||
       session.user.role === 'ADMIN'
 
@@ -46,22 +37,17 @@ export async function DELETE(
       )
     }
 
-    // Find the queue item
-    const queueItem = await prisma.emailQueueItem.findUnique({
+    // Verify item exists and is not already deleted
+    const item = await prisma.emailQueueItem.findUnique({
       where: { id: itemId },
     })
 
-    if (!queueItem) {
+    if (!item) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    if (queueItem.deletedAt) {
+    if (item.deletedAt) {
       return NextResponse.json({ error: 'Item already deleted' }, { status: 400 })
-    }
-
-    // Ensure it's a community invoice queue item
-    if (queueItem.entityType !== 'COMMUNITY_INVOICE') {
-      return NextResponse.json({ error: 'Invalid queue item type' }, { status: 400 })
     }
 
     // Soft delete
@@ -75,12 +61,12 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Item removed from queue' })
   } catch (error: any) {
-    console.error('[COMMUNITY EMAIL QUEUE DELETE] Error:', error)
+    console.error('[EMAIL QUEUE DELETE] Error:', {
+      error: error?.message,
+      stack: error?.stack,
+    })
     return NextResponse.json(
-      {
-        error: 'Failed to delete item',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
-      },
+      { error: 'Failed to delete item', details: process.env.NODE_ENV === 'development' ? error.message : undefined },
       { status: 500 }
     )
   }

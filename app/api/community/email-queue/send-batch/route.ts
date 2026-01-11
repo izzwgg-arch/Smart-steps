@@ -44,10 +44,11 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Lock selected QUEUED items to SENDING in a transaction
     const lockedItems = await prisma.$transaction(async (tx) => {
-      // Find QUEUED items for community invoices (optionally filtered by selectedItemIds)
+      // Find QUEUED items for community invoices (optionally filtered by selectedItemIds, not deleted)
       const where: any = {
         status: 'QUEUED',
         entityType: 'COMMUNITY_INVOICE',
+        deletedAt: null,
       }
       if (selectedItemIds && Array.isArray(selectedItemIds) && selectedItemIds.length > 0) {
         where.id = { in: selectedItemIds }

@@ -51,12 +51,14 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const status = searchParams.get('status') // 'QUEUED', 'SENT', 'FAILED', or null for all
 
-    const where: any = {}
+    const where: any = {
+      deletedAt: null, // Only show non-deleted items
+    }
     if (status) {
       where.status = status
     }
 
-    // Fetch all queue items
+    // Fetch all queue items (excluding deleted)
     const queueItems = await prisma.emailQueueItem.findMany({
       where,
       orderBy: { queuedAt: 'desc' },

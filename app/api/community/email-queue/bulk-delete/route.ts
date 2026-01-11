@@ -5,23 +5,17 @@ import { prisma } from '@/lib/prisma'
 import { canAccessCommunitySection, getUserPermissions } from '@/lib/permissions'
 
 /**
- * DELETE COMMUNITY EMAIL QUEUE ITEM
+ * BULK DELETE COMMUNITY EMAIL QUEUE ITEMS
  * 
- * Soft deletes a community email queue item
+ * Soft deletes multiple community email queue items
  * Permission: community.invoices.emailqueue.delete
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
-) {
+export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const resolvedParams = await Promise.resolve(params)
-    const itemId = resolvedParams.id
 
     // Check Community Classes subsection permission
     const hasAccess = await canAccessCommunitySection(session.user.id, 'emailQueue')
@@ -46,41 +40,49 @@ export async function DELETE(
       )
     }
 
-    // Find the queue item
-    const queueItem = await prisma.emailQueueItem.findUnique({
-      where: { id: itemId },
+    const body = await request.json()
+    const { ids } = body
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'Invalid request: ids array required' }, { status: 400 })
+    }
+
+    // Verify items exist, are community invoices, and are not already deleted
+    const items = await prisma.emailQueueItem.findMany({
+      where: {
+        id: { in: ids },
+        entityType: 'COMMUNITY_INVOICE',
+        deletedAt: null,
+      },
     })
 
-    if (!queueItem) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+    if (items.length === 0) {
+      return NextResponse.json({ error: 'No valid items found to delete' }, { status: 404 })
     }
 
-    if (queueItem.deletedAt) {
-      return NextResponse.json({ error: 'Item already deleted' }, { status: 400 })
-    }
-
-    // Ensure it's a community invoice queue item
-    if (queueItem.entityType !== 'COMMUNITY_INVOICE') {
-      return NextResponse.json({ error: 'Invalid queue item type' }, { status: 400 })
-    }
-
-    // Soft delete
-    await prisma.emailQueueItem.update({
-      where: { id: itemId },
+    // Soft delete all items
+    const result = await prisma.emailQueueItem.updateMany({
+      where: {
+        id: { in: items.map((item) => item.id) },
+      },
       data: {
         deletedAt: new Date(),
         deletedByUserId: session.user.id,
       },
     })
 
-    return NextResponse.json({ success: true, message: 'Item removed from queue' })
+    return NextResponse.json({
+      success: true,
+      deletedCount: result.count,
+      message: `${result.count} item(s) removed from queue`,
+    })
   } catch (error: any) {
-    console.error('[COMMUNITY EMAIL QUEUE DELETE] Error:', error)
+    console.error('[COMMUNITY EMAIL QUEUE BULK DELETE] Error:', {
+      error: error?.message,
+      stack: error?.stack,
+    })
     return NextResponse.json(
-      {
-        error: 'Failed to delete item',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
-      },
+      { error: 'Failed to delete items', details: process.env.NODE_ENV === 'development' ? error.message : undefined },
       { status: 500 }
     )
   }

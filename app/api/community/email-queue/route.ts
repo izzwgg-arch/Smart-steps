@@ -44,12 +44,13 @@ export async function GET(request: NextRequest) {
 
     const where: any = {
       entityType: 'COMMUNITY_INVOICE',
+      deletedAt: null, // Only show non-deleted items
     }
     if (status) {
       where.status = status
     }
 
-    // Fetch all queue items for community invoices
+    // Fetch all queue items for community invoices (excluding deleted)
     const queueItems = await prisma.emailQueueItem.findMany({
       where,
       orderBy: { queuedAt: 'desc' },

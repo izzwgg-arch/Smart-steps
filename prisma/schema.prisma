@@ -84,6 +84,7 @@ model User {
   notifications             Notification[]
   activities                Activity[]                @relation("ActivityActor")
   emailQueueItems           EmailQueueItem[]          @relation("EmailQueueCreator")
+  deletedEmailQueueItems    EmailQueueItem[]          @relation("EmailQueueDeleter")
   customRole                Role?                     @relation(fields: [customRoleId], references: [id])
   timesheetVisibility       RoleTimesheetVisibility[]
   communityInvoicesApproved CommunityInvoice[]        @relation("CommunityInvoiceApprover")
@@ -477,16 +478,20 @@ model EmailQueueItem {
   batchId        String? // Batch ID for grouped sends
   status         EmailQueueStatus     @default(QUEUED)
   errorMessage   String? // Sanitized error message
+  deletedAt      DateTime?            // Soft delete timestamp
+  deletedByUserId String?            // User who deleted this item
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
   queuedBy User @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
+  deletedBy User? @relation("EmailQueueDeleter", fields: [deletedByUserId], references: [id])
 
-  // Unique constraint: prevent duplicate queueing of same entity
-  @@unique([entityType, entityId])
+  // Note: Removed unique constraint to allow re-queueing after soft delete
   @@index([status, createdAt])
   @@index([entityType, status])
   @@index([batchId])
+  @@index([deletedAt])
+  @@index([entityType, entityId, deletedAt])
 }
 
 // Community Classes Module Models

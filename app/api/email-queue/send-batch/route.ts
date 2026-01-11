@@ -48,9 +48,12 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Lock all QUEUED items to SENDING in a transaction
     const lockedItems = await prisma.$transaction(async (tx) => {
-      // Find all QUEUED items
+      // Find all QUEUED items (not deleted)
       const queuedItems = await tx.emailQueueItem.findMany({
-        where: { status: 'QUEUED' },
+        where: {
+          status: 'QUEUED',
+          deletedAt: null,
+        },
         orderBy: { queuedAt: 'asc' },
       })
 
