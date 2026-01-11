@@ -368,42 +368,17 @@ export async function generateTimesheetPDFFromId(
   console.log(`[TIMESHEET_PDF] ${corrId} Fetching timesheet data`, { timesheetId })
 
   try {
-    // Fetch timesheet with all required data
+    // PHASE 2: Fetch timesheet with ALL data - use SAME query as UI route
+    // Match exactly what /api/timesheets/[id] uses for Print Preview
     const timesheet = await prisma.timesheet.findUnique({
       where: { id: timesheetId, deletedAt: null },
       include: {
-        client: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-            phone: true,
-            dlb: true,
-            signature: true,
-          },
-        },
-        provider: {
-          select: {
-            name: true,
-            phone: true,
-            signature: true,
-            dlb: true,
-          },
-        },
-        bcba: {
-          select: {
-            name: true,
-          },
-        },
+        client: true, // Include all client fields (matches UI)
+        provider: true, // Include all provider fields (matches UI)
+        bcba: true, // Include all bcba fields (matches UI)
         entries: {
-          orderBy: { date: 'asc' },
-          select: {
-            date: true,
-            startTime: true,
-            endTime: true,
-            minutes: true,
-            notes: true,
-          },
+          orderBy: { date: 'asc' }, // Same orderBy as UI
+          // Don't use select - include all fields like UI does
         },
       },
     })
@@ -415,8 +390,42 @@ export async function generateTimesheetPDFFromId(
     console.log(`[TIMESHEET_PDF] ${corrId} Timesheet data fetched`, {
       timesheetId,
       isBCBA: timesheet.isBCBA,
-      entriesCount: timesheet.entries.length,
+      entriesCount: timesheet.entries?.length || 0,
+      firstEntry: timesheet.entries?.[0] ? {
+        date: timesheet.entries[0].date,
+        startTime: timesheet.entries[0].startTime,
+        endTime: timesheet.entries[0].endTime,
+        minutes: timesheet.entries[0].minutes,
+        notes: timesheet.entries[0].notes,
+      } : 'NO ENTRIES',
+      allEntryKeys: timesheet.entries?.[0] ? Object.keys(timesheet.entries[0]) : [],
     })
+    
+    // PHASE 2: Validate entries exist
+    if (!timesheet.entries || timesheet.entries.length === 0) {
+      throw new Error(`NO_ROWS_TO_PRINT: Timesheet ${timesheetId} has no entries`)
+    }
+
+    // PHASE 3: Map entries exactly as they come from Prisma
+    const mappedEntries = timesheet.entries.map((entry: any) => {
+      console.log(`[TIMESHEET_PDF] ${corrId} Mapping entry:`, {
+        date: entry.date,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        minutes: entry.minutes,
+        notes: entry.notes,
+        allKeys: Object.keys(entry),
+      })
+      return {
+        date: entry.date,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        minutes: entry.minutes,
+        notes: entry.notes || null,
+      }
+    })
+    
+    console.log(`[TIMESHEET_PDF] ${corrId} Mapped ${mappedEntries.length} entries for PDF generation`)
 
     // Generate PDF using the shared generator
     const pdfBuffer = await generateTimesheetPDF(
@@ -430,13 +439,7 @@ export async function generateTimesheetPDFFromId(
         isBCBA: timesheet.isBCBA,
         serviceType: timesheet.serviceType || undefined,
         sessionData: timesheet.sessionData || undefined,
-        entries: timesheet.entries.map((entry: any) => ({
-          date: entry.date,
-          startTime: entry.startTime,
-          endTime: entry.endTime,
-          minutes: entry.minutes,
-          notes: entry.notes,
-        })),
+        entries: mappedEntries,
       },
       corrId
     )
