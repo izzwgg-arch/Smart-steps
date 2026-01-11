@@ -205,6 +205,7 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         ? ['DATE', 'IN', 'OUT', 'HOURS', 'NOTES']
         : ['DATE', 'IN', 'OUT', 'HOURS', 'TYPE', 'LOCATION']
       
+      console.log(`[TIMESHEET_PDF] ${corrId} Drawing table headers at Y=${tableTop}`)
       headers.forEach((header, i) => {
         doc.text(header, xPos, tableTop)
         xPos += colWidths[i]
@@ -212,7 +213,7 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
 
       // Draw header line
       doc.moveTo(tableLeft, tableTop + 15).lineTo(tableRight, tableTop + 15).stroke()
-      doc.moveDown(0.3)
+      console.log(`[TIMESHEET_PDF] ${corrId} Table header drawn, doc.y=${doc.y}, tableTop=${tableTop}`)
 
       // Table Rows
       doc.font('Helvetica').fontSize(9)
@@ -225,10 +226,12 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
 
       console.log(`[TIMESHEET_PDF] ${corrId} Rendering ${sortedEntries.length} table entries`)
       
-      // PHASE 3 FIX: Use absolute Y positions but calculate them properly
-      // PDFKit needs absolute positions for table layout, but we must ensure content is written
-      let currentRowY = tableTop + 20 // Start below header line
+      // PHASE 3 FIX: Use calculated Y positions and ensure content is written
+      // CRITICAL: PDFKit flushes content when doc.y advances OR when using absolute positions correctly
+      let currentRowY = tableTop + 20 // Start below header line (15px header + 5px spacing)
       const rowSpacing = 20
+      
+      console.log(`[TIMESHEET_PDF] ${corrId} Starting table rows at Y=${currentRowY}, tableTop=${tableTop}, pageHeight=${doc.page.height}`)
       
       sortedEntries.forEach((entry, index) => {
         const entryDate = typeof entry.date === 'string' ? new Date(entry.date) : entry.date
@@ -242,6 +245,7 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
             endTime: entry.endTime,
             minutes: entry.minutes,
             notes: entry.notes,
+            xPos: tableLeft,
           })
         }
 
@@ -292,8 +296,9 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
         }
       })
       
-      // Update doc.y to current position for subsequent content
+      // CRITICAL: Update doc.y AFTER all rows are written so subsequent content continues
       doc.y = currentRowY
+      console.log(`[TIMESHEET_PDF] ${corrId} All table rows written, updated doc.y to ${doc.y}`)
       
       console.log(`[TIMESHEET_PDF] ${corrId} Finished rendering all ${sortedEntries.length} entries`)
 
