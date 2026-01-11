@@ -22,10 +22,18 @@ export async function GET(
   const correlationId = `pdf-bcba-${Date.now()}-${randomBytes(4).toString('hex')}`
   let session: any = null
   
+  const method = request.method
+  const pathname = request.nextUrl.pathname
+  
+  console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ==== REQUEST START ====`)
+  console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Method: ${method}, Pathname: ${pathname}`)
+  
   try {
     session = await getServerSession(authOptions)
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Session present: ${!!session}, User ID: ${session?.user?.id || 'N/A'}`)
+    
     if (!session) {
-      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Unauthorized`)
+      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Unauthorized - returning 401 JSON (NO REDIRECT)`)
       return NextResponse.json({ error: 'Unauthorized', correlationId }, { status: 401 })
     }
 
@@ -59,10 +67,20 @@ export async function GET(
     // Generate PDF using shared function (same for both regular and BCBA)
     const pdfBuffer = await generateTimesheetPDFFromId(timesheetId, prisma, correlationId)
 
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated successfully`, {
-      timesheetId,
-      size: pdfBuffer.length,
-    })
+    // Verify PDF starts with %PDF
+    const pdfHeader = pdfBuffer.slice(0, 4).toString('ascii')
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF header check: "${pdfHeader}" (expected: "%PDF")`)
+
+    if (pdfHeader !== '%PDF') {
+      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF does not start with %PDF! First 20 bytes:`, pdfBuffer.slice(0, 20).toString('hex'))
+      return NextResponse.json(
+        { error: 'Invalid PDF generated', correlationId },
+        { status: 500 }
+      )
+    }
+
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated OK, bytes=${pdfBuffer.length}`)
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Returning response: Status=200, Content-Type=application/pdf`)
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
