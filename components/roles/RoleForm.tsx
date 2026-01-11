@@ -284,7 +284,7 @@ export function RoleForm({ role }: RoleFormProps) {
           updated[perm.id] = {
             ...updated[perm.id],
             canView: enabled,
-            canCreate: enabled && perm.name.includes('.create'),
+            canCreate: enabled && (perm.name.includes('.create') || perm.name.includes('.generate') || perm.name.includes('.sendBatch')),
             canUpdate: enabled && perm.name.includes('.update'),
             canDelete: enabled && perm.name.includes('.delete'),
             canApprove: enabled && perm.name.includes('.approve'),
@@ -1025,6 +1025,17 @@ export function RoleForm({ role }: RoleFormProps) {
                                     className="h-3 w-3 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                                   />
                                   <span className="ml-2 text-xs text-gray-700">Generate</span>
+                                </label>
+                              )}
+                              {perm.name.includes('.sendBatch') && (
+                                <label className="flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={state.canCreate}
+                                    onChange={(e) => updatePermission(perm.id, 'canCreate', e.target.checked)}
+                                    className="h-3 w-3 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                                  />
+                                  <span className="ml-2 text-xs text-gray-700">Send Batch</span>
                                 </label>
                               )}
                             </div>
