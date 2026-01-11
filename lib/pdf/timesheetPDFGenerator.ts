@@ -301,9 +301,10 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlati
       
       console.log(`[TIMESHEET_PDF] ${corrId} Finished rendering all ${sortedEntries.length} entries`)
 
-      // Draw bottom line
-      doc.moveTo(tableLeft, doc.y).lineTo(tableRight, doc.y).stroke()
-      doc.moveDown(0.5)
+      // Draw bottom line at end of table (use the rowY position, not doc.y which was moved forward)
+      const tableBottomY = doc.y - 10 // Back up to where table actually ended
+      doc.moveTo(tableLeft, tableBottomY).lineTo(tableRight, tableBottomY).stroke()
+      doc.y = tableBottomY + 10 // Continue from below the line
 
       // TOTALS
       const drEntries = timesheet.entries.filter(e => e.notes === 'DR')
