@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendMailSafe, getBatchApprovalEmailHtml, getBatchApprovalEmailText, QueuedTimesheetItem } from '@/lib/email'
-import { generateTimesheetPDF } from '@/lib/pdf/timesheetPDFGenerator'
+import { generateTimesheetPDFFromId } from '@/lib/pdf/timesheetPDFGenerator'
 import { logEmailSent, logEmailFailed } from '@/lib/audit'
 import { getUserPermissions } from '@/lib/permissions'
 import { format } from 'date-fns'
@@ -142,12 +142,6 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // Filter out null results
-    const validTimesheets = timesheetsWithDetails.filter((item) => item !== null) as Array<{
-      queueItem: any
-      timesheet: any
-    }>
-
     if (validTimesheets.length === 0) {
       // Mark items as FAILED
       await prisma.emailQueueItem.updateMany({
@@ -160,34 +154,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No valid timesheets found' }, { status: 400 })
     }
 
-    // Step 4: Generate PDFs for all timesheets
+    // Step 4: Generate PDFs for all timesheets using shared function
     const pdfPromises = validTimesheets.map(async (item) => {
+      const itemCorrelationId = `${batchId}-${item.timesheetId}`
       try {
-        const pdfBuffer = await generateTimesheetPDF({
-          id: item.timesheet.id,
-          client: item.timesheet.client as any,
-          provider: item.timesheet.provider as any,
-          bcba: item.timesheet.bcba,
-          startDate: item.timesheet.startDate,
-          endDate: item.timesheet.endDate,
-          isBCBA: item.timesheet.isBCBA,
-          serviceType: item.timesheet.serviceType || undefined,
-          sessionData: item.timesheet.sessionData || undefined,
-          entries: item.timesheet.entries.map((entry: any) => ({
-            date: entry.date,
-            startTime: entry.startTime,
-            endTime: entry.endTime,
-            minutes: entry.minutes,
-            notes: entry.notes,
-          })),
+        // Use shared PDF generator function (it fetches data internally)
+        const pdfBuffer = await generateTimesheetPDFFromId(item.timesheetId, prisma, itemCorrelationId)
+        
+        // Fetch timesheet data for email content
+        const timesheet = await prisma.timesheet.findUnique({
+          where: { id: item.timesheetId },
+          include: {
+            client: { select: { name: true } },
+            provider: { select: { name: true } },
+            bcba: { select: { name: true } },
+            entries: { select: { minutes: true } },
+          },
         })
+        
+        if (!timesheet) {
+          return null
+        }
+        
+        const totalMinutes = timesheet.entries.reduce((sum, entry) => sum + entry.minutes, 0)
+        const totalHours = totalMinutes / 60
+        
         return {
           queueItem: item.queueItem,
-          timesheet: item.timesheet,
+          timesheet: {
+            ...timesheet,
+            totalHours,
+          },
           pdfBuffer,
         }
       } catch (error: any) {
-        console.error(`Error generating PDF for timesheet ${item.timesheet.id}:`, error)
+        console.error(`[EMAIL_QUEUE_SEND_SELECTED] ${itemCorrelationId} Error generating PDF`, {
+          timesheetId: item.timesheetId,
+          error: error?.message,
+          stack: error?.stack,
+        })
         return null
       }
     })

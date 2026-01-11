@@ -10,29 +10,29 @@ import { randomBytes } from 'crypto'
 export const runtime = 'nodejs'
 
 /**
- * GET /api/timesheets/[id]/pdf
+ * GET /api/bcba-timesheets/[id]/pdf
  * 
- * Authenticated route for downloading Timesheet PDF (Regular or BCBA)
+ * Authenticated route for downloading BCBA Timesheet PDF
  * Requires authentication and timesheet view permissions
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
-  const correlationId = `pdf-${Date.now()}-${randomBytes(4).toString('hex')}`
+  const correlationId = `pdf-bcba-${Date.now()}-${randomBytes(4).toString('hex')}`
   let session: any = null
   
   try {
     session = await getServerSession(authOptions)
     if (!session) {
-      console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} Unauthorized`)
+      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Unauthorized`)
       return NextResponse.json({ error: 'Unauthorized', correlationId }, { status: 401 })
     }
 
     const resolvedParams = await Promise.resolve(params)
     const timesheetId = resolvedParams.id
 
-    console.log(`[TIMESHEET_PDF_ROUTE] ${correlationId} Request received`, {
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Request received`, {
       timesheetId,
       userId: session.user.id,
       userRole: session.user.role,
@@ -46,7 +46,7 @@ export async function GET(
       session.user.role === 'ADMIN'
 
     if (!canView) {
-      console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} Permission denied`, {
+      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Permission denied`, {
         userId: session.user.id,
         userRole: session.user.role,
       })
@@ -56,10 +56,10 @@ export async function GET(
       )
     }
 
-    // Generate PDF using shared function
+    // Generate PDF using shared function (same for both regular and BCBA)
     const pdfBuffer = await generateTimesheetPDFFromId(timesheetId, prisma, correlationId)
 
-    console.log(`[TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated successfully`, {
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated successfully`, {
       timesheetId,
       size: pdfBuffer.length,
     })
@@ -68,12 +68,12 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="timesheet-${timesheetId}.pdf"`,
+        'Content-Disposition': `inline; filename="bcba-timesheet-${timesheetId}.pdf"`,
         'Content-Length': pdfBuffer.length.toString(),
       },
     })
   } catch (error: any) {
-    console.error(`[TIMESHEET_PDF_ROUTE] ${correlationId} Error:`, {
+    console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Error:`, {
       timesheetId: (await Promise.resolve(params)).id,
       userId: session?.user?.id,
       userRole: session?.user?.role,

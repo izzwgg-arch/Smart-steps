@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendMailSafe, getBatchApprovalEmailHtml, getBatchApprovalEmailText, QueuedTimesheetItem } from '@/lib/email'
-import { generateTimesheetPDF } from '@/lib/pdf/timesheetPDFGenerator'
+import { generateTimesheetPDFFromId } from '@/lib/pdf/timesheetPDFGenerator'
 import { logEmailSent, logEmailFailed } from '@/lib/audit'
 import { getUserPermissions } from '@/lib/permissions'
 import { format } from 'date-fns'
@@ -169,24 +169,9 @@ export async function POST(request: NextRequest) {
 
     for (const item of validTimesheets) {
       try {
-        const pdfBuffer = await generateTimesheetPDF({
-          id: item.timesheet.id,
-          client: item.timesheet.client as any,
-          provider: item.timesheet.provider as any,
-          bcba: item.timesheet.bcba,
-          startDate: item.timesheet.startDate,
-          endDate: item.timesheet.endDate,
-          isBCBA: item.timesheet.isBCBA,
-          serviceType: item.timesheet.serviceType,
-          sessionData: item.timesheet.sessionData,
-          entries: item.timesheet.entries.map((entry) => ({
-            date: entry.date,
-            startTime: entry.startTime,
-            endTime: entry.endTime,
-            minutes: entry.minutes,
-            notes: entry.notes,
-          })),
-        })
+        const itemCorrelationId = `${batchId}-${item.timesheet.id}`
+        // Use shared PDF generator function
+        const pdfBuffer = await generateTimesheetPDFFromId(item.timesheet.id, prisma, itemCorrelationId)
 
         const filename = `${item.entityType === 'BCBA' ? 'BCBA' : 'Regular'}_Timesheet_${item.timesheet.client.name.replace(/[^a-z0-9]/gi, '_')}_${format(new Date(item.timesheet.startDate), 'yyyy-MM-dd')}.pdf`
 
@@ -210,10 +195,17 @@ export async function POST(request: NextRequest) {
           sessionData: item.timesheet.sessionData || undefined,
         })
       } catch (error: any) {
-        console.error(`Failed to generate PDF for timesheet ${item.timesheet.id}:`, error)
+        const itemCorrelationId = `${batchId}-${item.timesheet.id}`
+        console.error(`[EMAIL_QUEUE_SEND_BATCH] ${itemCorrelationId} Failed to generate PDF`, {
+          timesheetId: item.timesheet.id,
+          queueItemId: item.queueItemId,
+          error: error?.message,
+          stack: error?.stack,
+        })
         pdfErrors.push({
           queueItemId: item.queueItemId,
           error: error.message || 'PDF generation failed',
+          correlationId: itemCorrelationId,
         })
       }
     }

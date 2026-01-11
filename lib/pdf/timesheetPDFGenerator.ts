@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit'
 import { format } from 'date-fns'
+import { randomBytes } from 'crypto'
 
 interface TimesheetForPDF {
   id: string
@@ -20,14 +21,44 @@ interface TimesheetForPDF {
   }>
 }
 
-export async function generateTimesheetPDF(timesheet: TimesheetForPDF): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: 'LETTER' })
-    const buffers: Buffer[] = []
+/**
+ * Generate Timesheet PDF with correlationId logging
+ * Uses built-in Helvetica fonts (no external font dependencies)
+ */
+export async function generateTimesheetPDF(timesheet: TimesheetForPDF, correlationId?: string): Promise<Buffer> {
+  const corrId = correlationId || `pdf-${Date.now()}-${randomBytes(4).toString('hex')}`
+  const startTime = Date.now()
+  
+  console.log(`[TIMESHEET_PDF] ${corrId} Starting PDF generation`, {
+    timesheetId: timesheet.id,
+    type: timesheet.isBCBA ? 'BCBA' : 'REGULAR',
+    entriesCount: timesheet.entries.length,
+  })
 
-    doc.on('data', buffers.push.bind(buffers))
-    doc.on('end', () => resolve(Buffer.concat(buffers)))
-    doc.on('error', reject)
+  try {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50, size: 'LETTER' })
+      const buffers: Buffer[] = []
+
+      doc.on('data', buffers.push.bind(buffers))
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(buffers)
+        const duration = Date.now() - startTime
+        console.log(`[TIMESHEET_PDF] ${corrId} PDF generated successfully`, {
+          timesheetId: timesheet.id,
+          size: pdfBuffer.length,
+          duration: `${duration}ms`,
+        })
+        resolve(pdfBuffer)
+      })
+      doc.on('error', (error) => {
+        console.error(`[TIMESHEET_PDF] ${corrId} PDF generation error`, {
+          timesheetId: timesheet.id,
+          error: error.message,
+          stack: error.stack,
+        })
+        reject(error)
+      })
 
     const isBCBA = timesheet.isBCBA
 
@@ -184,5 +215,111 @@ export async function generateTimesheetPDF(timesheet: TimesheetForPDF): Promise<
     }
 
     doc.end()
-  })
+    })
+  } catch (error: any) {
+    console.error(`[TIMESHEET_PDF] ${corrId} PDF generation failed`, {
+      timesheetId: timesheet.id,
+      error: error?.message,
+      stack: error?.stack,
+    })
+    throw error
+  }
+}
+
+/**
+ * Generate PDF from timesheet ID (fetches data and generates PDF)
+ * This is the shared function used by both API routes and Email Queue
+ */
+export async function generateTimesheetPDFFromId(
+  timesheetId: string,
+  prisma: any,
+  correlationId?: string
+): Promise<Buffer> {
+  const corrId = correlationId || `pdf-${Date.now()}-${randomBytes(4).toString('hex')}`
+  
+  console.log(`[TIMESHEET_PDF] ${corrId} Fetching timesheet data`, { timesheetId })
+
+  try {
+    // Fetch timesheet with all required data
+    const timesheet = await prisma.timesheet.findUnique({
+      where: { id: timesheetId, deletedAt: null },
+      include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            idNumber: true,
+            dlb: true,
+            signature: true,
+          },
+        },
+        provider: {
+          select: {
+            name: true,
+            phone: true,
+            signature: true,
+            dlb: true,
+          },
+        },
+        bcba: {
+          select: {
+            name: true,
+          },
+        },
+        entries: {
+          orderBy: { date: 'asc' },
+          select: {
+            date: true,
+            startTime: true,
+            endTime: true,
+            minutes: true,
+            notes: true,
+          },
+        },
+      },
+    })
+
+    if (!timesheet) {
+      throw new Error(`Timesheet ${timesheetId} not found`)
+    }
+
+    console.log(`[TIMESHEET_PDF] ${corrId} Timesheet data fetched`, {
+      timesheetId,
+      isBCBA: timesheet.isBCBA,
+      entriesCount: timesheet.entries.length,
+    })
+
+    // Generate PDF using the shared generator
+    const pdfBuffer = await generateTimesheetPDF(
+      {
+        id: timesheet.id,
+        client: timesheet.client as any,
+        provider: timesheet.provider as any,
+        bcba: timesheet.bcba,
+        startDate: timesheet.startDate,
+        endDate: timesheet.endDate,
+        isBCBA: timesheet.isBCBA,
+        serviceType: timesheet.serviceType || undefined,
+        sessionData: timesheet.sessionData || undefined,
+        entries: timesheet.entries.map((entry: any) => ({
+          date: entry.date,
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          minutes: entry.minutes,
+          notes: entry.notes,
+        })),
+      },
+      corrId
+    )
+
+    return pdfBuffer
+  } catch (error: any) {
+    console.error(`[TIMESHEET_PDF] ${corrId} Failed to generate PDF from ID`, {
+      timesheetId,
+      error: error?.message,
+      stack: error?.stack,
+    })
+    throw error
+  }
 }

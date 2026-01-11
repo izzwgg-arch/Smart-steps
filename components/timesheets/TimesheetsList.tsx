@@ -470,13 +470,22 @@ export function TimesheetsList() {
                     <button
                       onClick={async () => {
                         try {
-                          const res = await fetch(`/api/timesheets/${timesheet.id}`)
-                          if (res.ok) {
-                            const data = await res.json()
-                            setPrintTimesheet(data)
+                          const url = `/api/timesheets/${timesheet.id}/pdf`
+                          const response = await fetch(url)
+                          if (!response.ok) {
+                            const error = await response.json().catch(() => ({ error: 'Failed to generate PDF' }))
+                            const correlationId = error.correlationId ? ` (ID: ${error.correlationId})` : ''
+                            toast.error(`${error.error || 'Failed to generate PDF'}${correlationId}`)
+                            return
                           }
-                        } catch (error) {
-                          toast.error('Failed to load timesheet')
+                          const blob = await response.blob()
+                          const pdfUrl = URL.createObjectURL(blob)
+                          window.open(pdfUrl, '_blank')
+                          // Clean up the URL after a delay
+                          setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000)
+                        } catch (error: any) {
+                          console.error('Error generating PDF:', error)
+                          toast.error(`Failed to generate PDF: ${error.message || 'Unknown error'}`)
                         }
                       }}
                       className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
