@@ -16,7 +16,7 @@ export default async function InvoiceDetailPage({
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <InvoiceDetail invoiceId={params.id} userRole={session.user.role} />

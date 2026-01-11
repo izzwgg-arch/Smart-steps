@@ -90,6 +90,25 @@ const permissions = [
   { name: 'emailQueue.view', description: 'View email queue', category: 'emailQueue' },
   { name: 'emailQueue.sendBatch', description: 'Send batch emails from queue', category: 'emailQueue' },
   
+  // Community Classes Module
+  { name: 'community.view', description: 'View community classes module', category: 'community' },
+  { name: 'community.clients.view', description: 'View community clients', category: 'community' },
+  { name: 'community.clients.create', description: 'Create community clients', category: 'community' },
+  { name: 'community.clients.update', description: 'Update community clients', category: 'community' },
+  { name: 'community.clients.delete', description: 'Delete community clients', category: 'community' },
+  { name: 'community.classes.view', description: 'View community classes', category: 'community' },
+  { name: 'community.classes.create', description: 'Create community classes', category: 'community' },
+  { name: 'community.classes.update', description: 'Update community classes', category: 'community' },
+  { name: 'community.classes.delete', description: 'Delete community classes', category: 'community' },
+  { name: 'community.invoices.view', description: 'View community invoices', category: 'community' },
+  { name: 'community.invoices.create', description: 'Create community invoices', category: 'community' },
+  { name: 'community.invoices.update', description: 'Update community invoices', category: 'community' },
+  { name: 'community.invoices.delete', description: 'Delete community invoices', category: 'community' },
+  { name: 'community.invoices.approve', description: 'Approve community invoices', category: 'community' },
+  { name: 'community.invoices.reject', description: 'Reject community invoices', category: 'community' },
+  { name: 'community.invoices.emailqueue.view', description: 'View community email queue', category: 'community' },
+  { name: 'community.invoices.emailqueue.send', description: 'Send community invoice emails', category: 'community' },
+  
   // Dashboard Visibility
   { name: 'dashboard.analytics', description: 'Show Analytics in Dashboard', category: 'dashboard' },
   { name: 'dashboard.providers', description: 'Show Providers in Dashboard', category: 'dashboard' },
@@ -100,6 +119,9 @@ const permissions = [
   { name: 'dashboard.users', description: 'Show Users in Dashboard', category: 'dashboard' },
   { name: 'dashboard.bcbas', description: 'Show BCBAs in Dashboard', category: 'dashboard' },
   { name: 'dashboard.insurance', description: 'Show Insurance in Dashboard', category: 'dashboard' },
+  { name: 'dashboard.community', description: 'Show Community Classes in Dashboard', category: 'dashboard' },
+  { name: 'dashboard.emailQueue', description: 'Show Email Queue in Dashboard', category: 'dashboard' },
+  { name: 'dashboard.bcbaTimesheets', description: 'Show BCBA Timesheets in Dashboard', category: 'dashboard' },
 ]
 
 async function main() {

@@ -519,6 +519,8 @@ export function RoleForm({ role }: RoleFormProps) {
               { key: 'quickAccess.bcbas', label: 'BCBAs', icon: '🎓', subtext: 'Manage BCBAs' },
               { key: 'quickAccess.insurance', label: 'Insurance', icon: '🛡️', subtext: 'Manage insurance information' },
               { key: 'quickAccess.community', label: 'Community Classes', icon: '🎓', subtext: 'Manage community classes, clients, and invoices' },
+              { key: 'quickAccess.emailQueue', label: 'Email Queue', icon: '📧', subtext: 'Manage queued emails (timesheets/invoices)' },
+              { key: 'quickAccess.bcbaTimesheets', label: 'BCBA Timesheets', icon: '📋', subtext: 'Manage BCBA time tracking and hours' },
             ].map((section) => (
               <div
                 key={section.key}

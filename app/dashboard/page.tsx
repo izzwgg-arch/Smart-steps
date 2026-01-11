@@ -94,7 +94,15 @@ export default async function DashboardPage() {
       href: '/bcba-timesheets',
       icon: ClipboardList,
       color: 'bg-teal-500',
-      permissionKey: 'dashboard.timesheets',
+      permissionKey: 'dashboard.bcbaTimesheets',
+    },
+    {
+      title: 'Email Queue',
+      description: 'Manage queued emails (timesheets/invoices)',
+      href: '/email-queue',
+      icon: Mail,
+      color: 'bg-emerald-500',
+      permissionKey: 'dashboard.emailQueue',
     },
     {
       title: 'Invoices',
@@ -115,14 +123,6 @@ export default async function DashboardPage() {
   ]
 
   const adminCards = [
-    {
-      title: 'Email Queue',
-      description: 'Manage queued timesheets ready to email',
-      href: '/email-queue',
-      icon: Mail,
-      color: 'bg-emerald-500',
-      permissionKey: 'dashboard.emailQueue',
-    },
     {
       title: 'Users',
       description: 'Manage users, roles, and permissions',
@@ -178,6 +178,8 @@ export default async function DashboardPage() {
         'dashboard.bcbas': 'quickAccess.bcbas',
         'dashboard.insurance': 'quickAccess.insurance',
         'dashboard.community': 'quickAccess.community',
+        'dashboard.emailQueue': 'quickAccess.emailQueue',
+        'dashboard.bcbaTimesheets': 'quickAccess.bcbaTimesheets',
       }
       const sectionKey = sectionKeyMap[permissionKey]
       if (sectionKey && dashboardVisibility[sectionKey] !== undefined) {

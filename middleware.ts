@@ -33,6 +33,8 @@ export const config = {
     /*
      * Match all request paths except for the ones starting with:
      * - api/auth (authentication routes)
+     * - api/public (public API routes - NO AUTH REQUIRED)
+     * - public (public pages - NO AUTH REQUIRED)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
@@ -40,8 +42,7 @@ export const config = {
      * - login (to allow login)
      * - forgot-password (to allow password reset)
      * - reset-password (to allow password reset)
-     * - public folder
      */
-    '/((?!api/auth|_next/static|_next/image|favicon.ico|set-new-password|login|forgot-password|reset-password|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api/auth|api/public|public|_next/static|_next/image|favicon.ico|set-new-password|login|forgot-password|reset-password|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

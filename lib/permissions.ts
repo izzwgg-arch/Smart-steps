@@ -116,6 +116,8 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
       'dashboard.bcbas': ['bcbas.view'],
       'dashboard.insurance': ['insurance.view'],
       'dashboard.community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
+      'dashboard.emailQueue': ['emailQueue.view'],
+      'dashboard.bcbaTimesheets': ['bcbaTimesheets.view'],
     }
 
     for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
@@ -304,6 +306,8 @@ export async function canSeeDashboardSection(userId: string, section: string): P
     'bcbas': ['bcbas.view'],
     'insurance': ['insurance.view'],
     'community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
+    'emailQueue': ['emailQueue.view'],
+    'bcbaTimesheets': ['bcbaTimesheets.view'],
   }
 
   const underlyingPerms = underlyingPermissionMap[section]
@@ -364,6 +368,8 @@ export async function canAccessRoute(userId: string, route: string): Promise<boo
     '/bcbas': 'bcbas',
     '/insurance': 'insurance',
     '/community': 'community',
+    '/email-queue': 'emailQueue',
+    '/bcba-timesheets': 'bcbaTimesheets',
   }
 
   const section = routeSectionMap[route]

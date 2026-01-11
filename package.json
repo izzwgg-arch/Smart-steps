@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "postbuild": "node create-prerender.js",
+    "postbuild": "node create-prerender.js && node copy-pdfkit-fonts.js",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
@@ -49,6 +49,7 @@
     "@types/react-datepicker": "^6.2.0",
     "@types/react-dom": "^18.2.18",
     "@types/react-signature-canvas": "^1.0.7",
+    "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.56.0",
     "eslint-config-next": "^14.0.4",
