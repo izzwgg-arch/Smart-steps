@@ -79,68 +79,11 @@ export async function POST(request: NextRequest) {
     const batchId = generateBatchId()
     const batchDate = format(new Date(), 'yyyy-MM-dd')
 
-    // Step 3: Fetch timesheet details for all locked items
-    const timesheetsWithDetails = await Promise.all(
-      lockedItems.map(async (item) => {
-        try {
-          const timesheet = await prisma.timesheet.findFirst({
-            where: {
-              id: item.entityId,
-              deletedAt: null,
-            },
-            include: {
-              client: {
-                select: {
-                  id: true,
-                  name: true,
-                  address: true,
-                  idNumber: true,
-                  dlb: true,
-                  signature: true,
-                },
-              },
-              provider: {
-                select: {
-                  name: true,
-                  phone: true,
-                  signature: true,
-                  dlb: true,
-                },
-              },
-              bcba: { select: { name: true } },
-              entries: {
-                orderBy: { date: 'asc' },
-                select: {
-                  date: true,
-                  startTime: true,
-                  endTime: true,
-                  minutes: true,
-                  notes: true,
-                },
-              },
-            },
-          })
-
-          if (!timesheet) {
-            return null
-          }
-
-          const totalMinutes = timesheet.entries.reduce((sum, entry) => sum + entry.minutes, 0)
-          const totalHours = totalMinutes / 60
-
-          return {
-            queueItem: item,
-            timesheet: {
-              ...timesheet,
-              totalHours,
-            },
-          }
-        } catch (error: any) {
-          console.error(`Error fetching timesheet ${item.entityId}:`, error)
-          return null
-        }
-      })
-    )
+    // Step 3: Create list of timesheet IDs (we'll use generateTimesheetPDFFromId which fetches data internally)
+    const validTimesheets = lockedItems.map((item) => ({
+      queueItem: item,
+      timesheetId: item.entityId,
+    }))
 
     if (validTimesheets.length === 0) {
       // Mark items as FAILED
