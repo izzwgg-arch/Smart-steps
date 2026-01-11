@@ -456,18 +456,16 @@ export function BCBATimesheetsList() {
                       View
                     </button>
                     <button
-                      onClick={async () => {
-                        try {
-                          const url = `/api/bcba-timesheets/${timesheet.id}/pdf`
-                          console.log('[PRINT_BUTTON] Fetching PDF from:', url)
-                          
-                          // Use window.location to ensure cookies are sent (same-origin request)
-                          // Directly open the PDF URL - browser will handle authentication via cookies
-                          window.open(url, '_blank')
-                        } catch (error: any) {
-                          console.error('[PRINT_BUTTON] Error opening PDF:', error)
-                          toast.error(`Failed to open PDF: ${error.message || 'Unknown error'}`)
-                        }
+                      onClick={() => {
+                        const url = `/api/bcba-timesheets/${timesheet.id}/pdf`
+                        // Create a temporary link and trigger download
+                        const link = document.createElement('a')
+                        link.href = url
+                        link.download = `bcba-timesheet-${timesheet.id}.pdf`
+                        link.target = '_blank'
+                        document.body.appendChild(link)
+                        link.click()
+                        document.body.removeChild(link)
                       }}
                       className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >
