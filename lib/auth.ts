@@ -148,6 +148,8 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async jwt({ token, user }) {
+      // Initial login: set token from user object
+      // After password update, user must sign out and log in again to get fresh token
       if (user) {
         token.role = user.role
         token.id = user.id

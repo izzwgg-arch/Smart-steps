@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
+import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 
@@ -58,13 +58,18 @@ export default function SetNewPasswordPage() {
         return
       }
 
-      toast.success('Password set successfully! Redirecting...')
+      toast.success('Password set successfully! Please log in again.')
       
-      // Refresh session and redirect to dashboard
-      // The middleware will allow access now that mustChangePassword is false
-      setTimeout(() => {
-        window.location.href = '/dashboard'
-      }, 1000)
+      // CRITICAL: Sign out the user to invalidate the session token
+      // The JWT token still has mustChangePassword: true, so we must clear it
+      // After sign out, redirect to login page
+      await signOut({ 
+        redirect: false, // We'll handle redirect manually
+        callbackUrl: '/login'
+      })
+      
+      // Redirect to login page with success message
+      router.push('/login?passwordUpdated=true')
     } catch (error) {
       toast.error('An error occurred. Please try again.')
       setLoading(false)

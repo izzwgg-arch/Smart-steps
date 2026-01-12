@@ -58,16 +58,33 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, 10)
 
     // Update password, clear temp password fields, and clear mustChangePassword flag
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
         password: hashedPassword,
         tempPasswordHash: null,
         tempPasswordExpiresAt: null,
-        mustChangePassword: false,
+        mustChangePassword: false, // CRITICAL: Clear the flag
         failedLoginAttempts: 0,
         lockedUntil: null,
       },
+    })
+
+    // Verify the flag is cleared (safety check)
+    if (updatedUser.mustChangePassword !== false) {
+      console.error('[SET_NEW_PASSWORD] ERROR: mustChangePassword flag was not cleared!', {
+        userId: user.id,
+        email: user.email,
+        mustChangePassword: updatedUser.mustChangePassword,
+      })
+      throw new Error('Failed to clear password change requirement flag')
+    }
+
+    console.log('[SET_NEW_PASSWORD] Password updated successfully', {
+      userId: user.id,
+      email: user.email,
+      mustChangePassword: updatedUser.mustChangePassword,
+      timestamp: new Date().toISOString(),
     })
 
     // Log audit
@@ -83,8 +100,11 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // IMPORTANT: Return response that tells frontend to sign out
+    // The session token still has mustChangePassword: true, so we must invalidate it
     return NextResponse.json({
-      message: 'Password set successfully',
+      message: 'Password set successfully. Please log in again.',
+      requiresLogout: true, // Signal to frontend to sign out
     })
   } catch (error) {
     console.error('Failed to set password:', error)
