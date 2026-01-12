@@ -246,25 +246,9 @@ export async function POST(request: NextRequest) {
       batchId,
       lockedItemsCount: lockedItems.length,
     })
-
-    if (recipients.length === 0) {
-      // Mark all as FAILED
-      await prisma.emailQueueItem.updateMany({
-        where: { id: { in: lockedItems.map((item) => item.id) } },
-        data: {
-          status: 'FAILED',
-          errorMessage: 'No email recipients configured',
-          lastError: 'No email recipients configured',
-          attempts: { increment: 1 },
-        },
-      })
-      return NextResponse.json(
-        { error: 'No email recipients configured' },
-        { status: 500 }
-      )
-    }
     
     // Get subject from first item or use default
+    const firstItem = lockedItems[0]
     const emailSubject = firstItem.subject || `Smart Steps ABA – Approved Timesheets Batch (${batchDate})`
 
     // Step 7: Send batch email
