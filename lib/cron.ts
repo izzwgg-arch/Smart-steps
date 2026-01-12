@@ -255,6 +255,8 @@ function initializeScheduledEmailJob() {
 async function processScheduledEmails() {
   const now = new Date()
   
+  console.log(`[CRON] Checking for scheduled emails at ${now.toISOString()}`)
+  
   // Find all QUEUED Community Classes email items that have reached their scheduled send time
   const scheduledItems = await prisma.emailQueueItem.findMany({
     where: {
@@ -267,6 +269,11 @@ async function processScheduledEmails() {
     },
     orderBy: { scheduledSendAt: 'asc' },
     take: 100, // Process up to 100 items per run to avoid overload
+  })
+
+  console.log(`[CRON] Found ${scheduledItems.length} scheduled email(s) ready to send`, {
+    itemIds: scheduledItems.map(item => item.id),
+    scheduledTimes: scheduledItems.map(item => item.scheduledSendAt?.toISOString()),
   })
 
   if (scheduledItems.length === 0) {
