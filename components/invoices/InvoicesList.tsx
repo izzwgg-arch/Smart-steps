@@ -49,6 +49,7 @@ export function InvoicesList() {
   const [useCustomPeriod, setUseCustomPeriod] = useState(false)
   const [generationStatus, setGenerationStatus] = useState<{
     status: string
+    schedule?: string
     lastRun: string | null
     nextRun: string | null
     lastRunResult: any
