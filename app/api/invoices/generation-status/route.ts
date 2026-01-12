@@ -5,6 +5,10 @@ import { prisma } from '@/lib/prisma'
 import { calculateWeeklyBillingPeriod } from '@/lib/billingPeriodUtils'
 import { getNextRunTime } from '@/lib/cron'
 
+// Schedule constants (must match lib/cron.ts)
+const INVOICE_GENERATION_SCHEDULE = '0 7 * * 2'
+const TIMEZONE = 'America/New_York'
+
 /**
  * GET /api/invoices/generation-status
  * Get the status of the last automatic invoice generation run
