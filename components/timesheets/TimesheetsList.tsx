@@ -7,6 +7,7 @@ import { Plus, Download, Search, Printer, Edit, Trash2, Send, Check, X, FileText
 import toast from 'react-hot-toast'
 import { formatDate } from '@/lib/utils'
 import { TimesheetPrintPreview } from './TimesheetPrintPreview'
+import { handlePrintTimesheet } from '@/lib/utils/printTimesheet'
 import { exportToCSV, exportToExcel, formatTimesheetsForExport, formatTimesheetForDetailedExport } from '@/lib/exportUtils'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 import { ConfirmDeleteModal } from '@/components/shared/ConfirmDeleteModal'
@@ -460,136 +461,9 @@ export function TimesheetsList() {
                     </button>
                     <button
                       onClick={async (e) => {
-                        // PHASE 1: Prevent all navigation
                         e.preventDefault()
                         e.stopPropagation()
-                        
-                        // PHASE 2: Log handler invocation with stack trace
-                        console.log('[PRINT_BUTTON] ==== PRINT_CLICK HANDLER INVOKED ====')
-                        console.log('[PRINT_BUTTON] Stack trace:', new Error().stack)
-                        
-                        const url = `/api/timesheets/${timesheet.id}/pdf`
-                        console.log('[PRINT_BUTTON] Fetching PDF from:', url)
-                        
-                        try {
-                          const response = await fetch(url, {
-                            method: 'GET',
-                            credentials: 'include',
-                            headers: {
-                              'Accept': 'application/pdf',
-                            },
-                          })
-                          
-                          console.log('[PRINT_BUTTON] Response status:', response.status)
-                          console.log('[PRINT_BUTTON] Response Content-Type:', response.headers.get('content-type'))
-                          
-                          if (!response.ok) {
-                            const errorText = await response.text()
-                            console.error('[PRINT_BUTTON] Error response:', errorText)
-                            let error
-                            try {
-                              error = JSON.parse(errorText)
-                            } catch {
-                              error = { error: errorText || 'Failed to generate PDF' }
-                            }
-                            toast.error(`${error.error || 'Failed to generate PDF'}`)
-                            return
-                          }
-                          
-                          // Verify Content-Type is PDF
-                          const contentType = response.headers.get('content-type')
-                          if (!contentType || !contentType.includes('application/pdf')) {
-                            const errorText = await response.text()
-                            console.error('[PRINT_BUTTON] Response is not PDF. Content-Type:', contentType, 'Body:', errorText.substring(0, 200))
-                            toast.error('Server returned non-PDF content. Check console for details.')
-                            return
-                          }
-                          
-                          // Get blob and verify it's a PDF
-                          const blob = await response.blob()
-                          console.log('[PRINT_BUTTON] Blob size:', blob.size, 'bytes')
-                          
-                          if (blob.size < 10000) {
-                            console.error('[PRINT_BUTTON] ERROR: PDF blob is too small (<10KB), likely empty or error document')
-                            toast.error('PDF appears to be empty or invalid. Check server logs.')
-                            return
-                          }
-                          
-                          // Read first 4 bytes to verify PDF header
-                          const arrayBuffer = await blob.slice(0, 4).arrayBuffer()
-                          const uint8Array = new Uint8Array(arrayBuffer)
-                          const header = String.fromCharCode(...uint8Array)
-                          console.log('[PRINT_BUTTON] PDF header check:', header, '(expected: %PDF)')
-                          
-                          if (header !== '%PDF') {
-                            console.error('[PRINT_BUTTON] Blob does not start with %PDF! First bytes:', Array.from(uint8Array).map(b => b.toString(16).padStart(2, '0')).join(' '))
-                            toast.error('Invalid PDF received from server. Check console for details.')
-                            return
-                          }
-                          
-                          // PHASE 3: Create blob URL and open with window.open ONLY
-                          const blobUrl = URL.createObjectURL(blob)
-                          console.log('[PRINT_BUTTON] ====== BLOB URL CREATED ======')
-                          console.log('[PRINT_BUTTON] Full blob URL:', blobUrl)
-                          console.log('[PRINT_BUTTON] Blob URL starts with blob:?', blobUrl.startsWith('blob:'))
-                          console.log('[PRINT_BUTTON] Blob size:', blob.size, 'bytes')
-                          console.log('[PRINT_BUTTON] Blob type:', blob.type)
-                          
-                          // Guard: Throw if trying to open non-blob URL
-                          if (!blobUrl.startsWith('blob:')) {
-                            console.error('[PRINT_BUTTON] CRITICAL ERROR: Blob URL does not start with blob:')
-                            throw new Error('PRINT_NAV_GUARD: Attempted to open non-blob URL: ' + blobUrl)
-                          }
-                          
-                          // Log before opening
-                          console.log('[PRINT_BUTTON] About to call window.open with:', blobUrl)
-                          console.log('[PRINT_BUTTON] Current window location:', window.location.href)
-                          
-                          // Open blob URL in new window
-                          const newWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer')
-                          
-                          console.log('[PRINT_BUTTON] window.open returned:', newWindow ? 'Window object' : 'null (popup blocked)')
-                          
-                          if (newWindow) {
-                            // Monitor the new window's location
-                            setTimeout(() => {
-                              try {
-                                const newWindowLocation = newWindow.location.href
-                                console.log('[PRINT_BUTTON] New window location after 1s:', newWindowLocation)
-                                if (!newWindowLocation.startsWith('blob:')) {
-                                  console.error('[PRINT_BUTTON] ERROR: New window navigated to non-blob URL!', newWindowLocation)
-                                }
-                              } catch (e) {
-                                // Cross-origin error is expected for blob URLs
-                                console.log('[PRINT_BUTTON] Cannot access new window location (expected for blob URLs)')
-                              }
-                            }, 1000)
-                          } else {
-                            // Popup blocked - fall back to download
-                            console.log('[PRINT_BUTTON] Popup blocked, falling back to download')
-                            const link = document.createElement('a')
-                            link.href = blobUrl
-                            link.download = `timesheet-${timesheet.id}.pdf`
-                            document.body.appendChild(link)
-                            link.click()
-                            document.body.removeChild(link)
-                            toast.success('PDF downloaded (popup was blocked)')
-                          }
-                          
-                          // Clean up after delay
-                          setTimeout(() => {
-                            console.log('[PRINT_BUTTON] Revoking blob URL:', blobUrl)
-                            URL.revokeObjectURL(blobUrl)
-                          }, 10000)
-                        } catch (error: any) {
-                          console.error('[PRINT_BUTTON] Exception:', error)
-                          if (error.message?.includes('PRINT_NAV_GUARD')) {
-                            console.error('[PRINT_BUTTON] CRITICAL: Navigation guard triggered!', error)
-                            toast.error('CRITICAL: Attempted to navigate to non-blob URL. Check console.')
-                          } else {
-                            toast.error(`Failed to generate PDF: ${error.message || 'Unknown error'}`)
-                          }
-                        }
+                        await handlePrintTimesheet(timesheet.id, 'regular')
                       }}
                       className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
                     >

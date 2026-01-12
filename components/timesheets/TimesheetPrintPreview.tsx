@@ -1,8 +1,10 @@
 'use client'
 
+import React from 'react'
 import { X, Printer } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { format } from 'date-fns'
+import { handlePrintTimesheet } from '@/lib/utils/printTimesheet'
 
 interface Timesheet {
   id: string
@@ -75,14 +77,26 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
     return `${displayHour}:${minutes.padStart(2, '0')} ${ampm}`
   }
 
-  const handlePrint = () => {
-    window.print()
+  const handlePrint = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    try {
+      console.log('[TIMESHEET_PRINT_PREVIEW] Print button clicked', {
+        timesheetId: timesheet.id,
+        isBCBATimesheet,
+        type: isBCBATimesheet ? 'bcba' : 'regular'
+      })
+      e.preventDefault()
+      e.stopPropagation()
+      await handlePrintTimesheet(timesheet.id, isBCBATimesheet ? 'bcba' : 'regular')
+      console.log('[TIMESHEET_PRINT_PREVIEW] Print handler completed successfully')
+    } catch (error: any) {
+      console.error('[TIMESHEET_PRINT_PREVIEW] Error in handlePrint:', error)
+    }
   }
 
   return (
     <>
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 no-print" onClick={onClose}>
-        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto no-print" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto no-print" onClick={(e) => e.stopPropagation()} style={{ pointerEvents: 'auto' }}>
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b no-print">
             <h2 className="text-xl font-bold">Timesheet Print Preview</h2>
@@ -290,16 +304,23 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
             )}
 
             {/* Action Buttons - Hidden when printing */}
-            <div className="mt-8 flex justify-end space-x-3 no-print">
+            <div 
+              className="mt-8 flex justify-end space-x-3 no-print sticky bottom-0 bg-white pt-4 pb-2" 
+              style={{ pointerEvents: 'auto', position: 'relative', zIndex: 9999 }}
+            >
               <button
+                type="button"
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10000 }}
               >
                 Close
               </button>
               <button
+                type="button"
                 onClick={handlePrint}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2 cursor-pointer"
+                style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10000 }}
               >
                 <Printer className="w-4 h-4" />
                 <span>Print</span>
