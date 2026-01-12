@@ -77,13 +77,25 @@ export async function POST(request: NextRequest) {
         return []
       }
 
-      // If scheduled, store the scheduled time and keep status as QUEUED
+      // If scheduled, store the scheduled time and recipients/subject, keep status as QUEUED
       // Otherwise, lock them to SENDING for immediate send
       if (scheduledSendDateTime) {
+        // Get recipients string from customRecipients or env
+        const recipientsStr =
+          customRecipients && Array.isArray(customRecipients) && customRecipients.length > 0
+            ? customRecipients.join(',')
+            : process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
+        
+        const emailSubjectPrefix = process.env.COMMUNITY_EMAIL_SUBJECT_PREFIX || 'KJ Play Center'
+        const batchDate = format(new Date(), 'yyyy-MM-dd')
+        const emailSubject = `${emailSubjectPrefix} – Approved Community Invoices Batch (${batchDate})`
+
         await tx.emailQueueItem.updateMany({
           where: { id: { in: queuedItems.map((item) => item.id) } },
           data: { 
             scheduledSendAt: scheduledSendDateTime,
+            toEmail: recipientsStr,
+            subject: emailSubject,
             // Keep status as QUEUED - will be processed by cron job
           },
         })

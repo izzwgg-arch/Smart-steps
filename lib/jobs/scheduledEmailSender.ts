@@ -128,11 +128,13 @@ export async function sendCommunityEmailBatch(itemIds: string[]) {
     throw new Error('Failed to generate PDFs')
   }
 
-  // Step 5: Get recipients from first item or env
+  // Step 5: Get recipients from first item's stored toEmail or env
   const firstItem = lockedItems[0]
   const recipientsStr =
     firstItem.toEmail || process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
   const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+  
+  console.log(`[SCHEDULED_EMAIL] Using recipients: ${recipients.join(', ')} (from stored toEmail: ${firstItem.toEmail || 'N/A'})`)
 
   if (recipients.length === 0) {
     await prisma.emailQueueItem.updateMany({
