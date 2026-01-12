@@ -51,6 +51,8 @@ export default function CommunityEmailQueuePage() {
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [customEmail, setCustomEmail] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [scheduleSend, setScheduleSend] = useState(false)
+  const [scheduledDateTime, setScheduledDateTime] = useState('')
 
   useEffect(() => {
     if (sessionStatus === 'loading') return
@@ -269,28 +271,56 @@ export default function CommunityEmailQueuePage() {
       return
     }
 
+    // Validate scheduled date-time if scheduling is enabled
+    if (scheduleSend) {
+      if (!scheduledDateTime) {
+        toast.error('Please select a date and time for scheduled send')
+        return
+      }
+      const scheduledDate = new Date(scheduledDateTime)
+      const now = new Date()
+      if (scheduledDate <= now) {
+        toast.error('Scheduled date and time must be in the future')
+        return
+      }
+    }
+
     setShowEmailModal(false)
     setSending(true)
     try {
+      const requestBody: any = {
+        recipients: emails,
+        itemIds: selectedItems.size > 0 ? Array.from(selectedItems) : undefined,
+      }
+      
+      if (scheduleSend && scheduledDateTime) {
+        requestBody.scheduledSendAt = scheduledDateTime
+      }
+
       const res = await fetch('/api/community/email-queue/send-batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipients: emails,
-          itemIds: selectedItems.size > 0 ? Array.from(selectedItems) : undefined,
-        }),
+        body: JSON.stringify(requestBody),
       })
       const data = await res.json()
 
       if (res.ok) {
-        toast.success(
-          `Batch email sent successfully! ${data.sentCount || 0} invoice(s) sent.`
-        )
+        if (scheduleSend) {
+          toast.success(
+            `Email scheduled successfully! ${data.scheduledCount || 0} invoice(s) will be sent at ${new Date(scheduledDateTime).toLocaleString()}.`
+          )
+        } else {
+          toast.success(
+            `Batch email sent successfully! ${data.sentCount || 0} invoice(s) sent.`
+          )
+        }
         fetchQueueItems() // Refresh the list
         setSelectedItems(new Set())
         setCustomEmail('')
+        setScheduleSend(false)
+        setScheduledDateTime('')
       } else {
-        toast.error(data.error || 'Failed to send batch email')
+        toast.error(data.error || 'Failed to send/schedule batch email')
       }
     } catch (error) {
       console.error('Error sending batch email:', error)
@@ -607,11 +637,51 @@ export default function CommunityEmailQueuePage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
                 autoFocus
               />
+              
+              {/* Schedule Send Checkbox */}
+              <div className="mb-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={scheduleSend}
+                    onChange={(e) => {
+                      setScheduleSend(e.target.checked)
+                      if (!e.target.checked) {
+                        setScheduledDateTime('')
+                      }
+                    }}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Schedule Send</span>
+                </label>
+              </div>
+
+              {/* Date-Time Picker (shown when Schedule Send is checked) */}
+              {scheduleSend && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Scheduled Send Date & Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={scheduledDateTime}
+                    onChange={(e) => setScheduledDateTime(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select a future date and time to schedule the email send
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={() => {
                     setShowEmailModal(false)
                     setCustomEmail('')
+                    setScheduleSend(false)
+                    setScheduledDateTime('')
                   }}
                   className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                 >
@@ -619,10 +689,10 @@ export default function CommunityEmailQueuePage() {
                 </button>
                 <button
                   onClick={handleConfirmSendBatch}
-                  disabled={sending}
+                  disabled={sending || (scheduleSend && !scheduledDateTime)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {sending ? 'Sending...' : 'Send Email'}
+                  {sending ? 'Sending...' : scheduleSend ? 'Schedule Email' : 'Send Email'}
                 </button>
               </div>
             </div>

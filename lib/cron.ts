@@ -10,7 +10,12 @@ const TIMEZONE = 'America/New_York'
 // Minute (0), Hour (7 = 7 AM), Day of month (*), Month (*), Day of week (2 = Tuesday)
 const INVOICE_GENERATION_SCHEDULE = '0 7 * * 2'
 
+// Schedule: Every minute to check for scheduled emails
+// Cron expression: * * * * *
+const SCHEDULED_EMAIL_CHECK_SCHEDULE = '* * * * *'
+
 let invoiceGenerationTask: cron.ScheduledTask | null = null
+let scheduledEmailTask: cron.ScheduledTask | null = null
 
 /**
  * Initialize and start all scheduled cron jobs
@@ -20,6 +25,9 @@ export function initializeCronJobs() {
 
   // Initialize invoice generation job
   initializeInvoiceGenerationJob()
+
+  // Initialize scheduled email processing job
+  initializeScheduledEmailJob()
 
   console.log('Cron jobs initialized')
 }
@@ -171,12 +179,117 @@ function getNextRunTime(cronExpression: string, timezone: string): Date {
 /**
  * Stop all cron jobs (useful for graceful shutdown)
  */
+/**
+ * Initialize the scheduled email processing job (runs every minute)
+ * Processes Community Classes email queue items that have reached their scheduled send time
+ */
+function initializeScheduledEmailJob() {
+  if (scheduledEmailTask) {
+    scheduledEmailTask.stop()
+  }
+
+  scheduledEmailTask = cron.schedule(
+    SCHEDULED_EMAIL_CHECK_SCHEDULE,
+    async () => {
+      try {
+        await processScheduledEmails()
+      } catch (error) {
+        console.error('[CRON] Error in scheduled email job:', error)
+      }
+    },
+    {
+      scheduled: true,
+      timezone: TIMEZONE,
+    }
+  )
+
+  console.log(`[CRON] Scheduled email processing job scheduled: ${SCHEDULED_EMAIL_CHECK_SCHEDULE} (${TIMEZONE})`)
+}
+
+/**
+ * Process scheduled emails that have reached their send time
+ * Only processes Community Classes email queue items
+ */
+async function processScheduledEmails() {
+  const now = new Date()
+  
+  // Find all QUEUED Community Classes email items that have reached their scheduled send time
+  const scheduledItems = await prisma.emailQueueItem.findMany({
+    where: {
+      status: 'QUEUED',
+      entityType: 'COMMUNITY_INVOICE',
+      scheduledSendAt: {
+        lte: now, // scheduledSendAt <= now (time has come)
+      },
+      deletedAt: null,
+    },
+    orderBy: { scheduledSendAt: 'asc' },
+    take: 100, // Process up to 100 items per run to avoid overload
+  })
+
+  if (scheduledItems.length === 0) {
+    return // No scheduled emails to process
+  }
+
+  console.log(`[CRON] Processing ${scheduledItems.length} scheduled email(s) for Community Classes`)
+
+  // Group items by scheduledSendAt time (batch items scheduled for the same time)
+  const itemsByTime = new Map<string, typeof scheduledItems>()
+  for (const item of scheduledItems) {
+    if (!item.scheduledSendAt) continue
+    const timeKey = item.scheduledSendAt.toISOString()
+    if (!itemsByTime.has(timeKey)) {
+      itemsByTime.set(timeKey, [])
+    }
+    itemsByTime.get(timeKey)!.push(item)
+  }
+
+  // Process each batch
+  for (const [timeKey, items] of itemsByTime.entries()) {
+    try {
+      // Lock items to SENDING
+      await prisma.emailQueueItem.updateMany({
+        where: { id: { in: items.map((item) => item.id) } },
+        data: { status: 'SENDING' },
+      })
+
+      // Call the send logic directly
+      await sendScheduledCommunityEmails(items.map((item) => item.id))
+    } catch (error) {
+      console.error(`[CRON] Error processing scheduled emails at ${timeKey}:`, error)
+      // Mark failed items
+      await prisma.emailQueueItem.updateMany({
+        where: { id: { in: items.map((item) => item.id) } },
+        data: {
+          status: 'FAILED',
+          errorMessage: error instanceof Error ? error.message : 'Failed to process scheduled email',
+        },
+      })
+    }
+  }
+}
+
+/**
+ * Send scheduled Community Classes emails
+ * This function reuses the logic from the send-batch route
+ */
+async function sendScheduledCommunityEmails(itemIds: string[]) {
+  // Import the send logic dynamically to avoid circular dependencies
+  const { sendCommunityEmailBatch } = await import('./jobs/scheduledEmailSender')
+  await sendCommunityEmailBatch(itemIds)
+}
+
 export function stopCronJobs() {
   console.log('Stopping cron jobs...')
   
   if (invoiceGenerationTask) {
     invoiceGenerationTask.stop()
     invoiceGenerationTask = null
+  }
+
+  if (scheduledEmailTask) {
+    scheduledEmailTask.stop()
+    scheduledEmailTask = null
   }
 
   console.log('Cron jobs stopped')

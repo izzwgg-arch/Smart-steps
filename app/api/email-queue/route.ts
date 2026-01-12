@@ -105,6 +105,10 @@ export async function GET(request: NextRequest) {
               errorMessage: item.errorMessage || 'Timesheet not found or deleted',
               batchId: item.batchId,
               queuedBy: item.queuedBy,
+              toEmail: item.toEmail,
+              subject: item.subject,
+              attempts: item.attempts,
+              lastError: item.lastError,
               timesheet: null,
             }
           }
@@ -122,6 +126,10 @@ export async function GET(request: NextRequest) {
             errorMessage: item.errorMessage,
             batchId: item.batchId,
             queuedBy: item.queuedBy,
+            toEmail: item.toEmail,
+            subject: item.subject,
+            attempts: item.attempts,
+            lastError: item.lastError,
             timesheet: {
               id: timesheet.id,
               client: timesheet.client,
@@ -146,6 +154,10 @@ export async function GET(request: NextRequest) {
             errorMessage: item.errorMessage || `Error loading timesheet: ${error.message || 'Unknown error'}`,
             batchId: item.batchId,
             queuedBy: item.queuedBy,
+            toEmail: item.toEmail,
+            subject: item.subject,
+            attempts: item.attempts,
+            lastError: item.lastError,
             timesheet: null,
           }
         }

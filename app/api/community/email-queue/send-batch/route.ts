@@ -41,8 +41,22 @@ export async function POST(request: NextRequest) {
     const requestBody = await request.json().catch(() => ({}))
     const selectedItemIds = requestBody.itemIds // Optional: array of item IDs to send
     const customRecipients = requestBody.recipients // Array of email addresses from request
+    const scheduledSendAt = requestBody.scheduledSendAt // Optional: ISO datetime string for scheduled send
 
-    // Step 1: Lock selected QUEUED items to SENDING in a transaction
+    // Parse scheduled send time if provided
+    let scheduledSendDateTime: Date | null = null
+    if (scheduledSendAt) {
+      scheduledSendDateTime = new Date(scheduledSendAt)
+      // Validate that scheduled time is in the future
+      if (scheduledSendDateTime <= new Date()) {
+        return NextResponse.json(
+          { error: 'Scheduled send time must be in the future' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Step 1: Lock selected QUEUED items to SENDING in a transaction (or schedule them)
     const lockedItems = await prisma.$transaction(async (tx) => {
       // Find QUEUED items for community invoices (optionally filtered by selectedItemIds, not deleted)
       const where: any = {
@@ -63,17 +77,39 @@ export async function POST(request: NextRequest) {
         return []
       }
 
-      // Lock them to SENDING
-      await tx.emailQueueItem.updateMany({
-        where: { id: { in: queuedItems.map((item) => item.id) } },
-        data: { status: 'SENDING' },
-      })
+      // If scheduled, store the scheduled time and keep status as QUEUED
+      // Otherwise, lock them to SENDING for immediate send
+      if (scheduledSendDateTime) {
+        await tx.emailQueueItem.updateMany({
+          where: { id: { in: queuedItems.map((item) => item.id) } },
+          data: { 
+            scheduledSendAt: scheduledSendDateTime,
+            // Keep status as QUEUED - will be processed by cron job
+          },
+        })
+      } else {
+        // Lock them to SENDING for immediate send
+        await tx.emailQueueItem.updateMany({
+          where: { id: { in: queuedItems.map((item) => item.id) } },
+          data: { status: 'SENDING' },
+        })
+      }
 
       return queuedItems
     })
 
     if (lockedItems.length === 0) {
       return NextResponse.json({ message: 'No items in queue to send' })
+    }
+
+    // If scheduled, return early with success message (emails will be sent by cron job)
+    if (scheduledSendDateTime) {
+      return NextResponse.json({
+        success: true,
+        scheduledCount: lockedItems.length,
+        scheduledSendAt: scheduledSendDateTime.toISOString(),
+        message: `Successfully scheduled ${lockedItems.length} invoice(s) to be sent at ${scheduledSendDateTime.toLocaleString()}`,
+      })
     }
 
     // Step 2: Generate batch ID

@@ -17,6 +17,10 @@ interface QueuedItem {
   status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED'
   errorMessage: string | null
   batchId: string | null
+  toEmail: string | null
+  subject: string | null
+  attempts: number
+  lastError: string | null
   queuedBy: {
     id: string
     username: string
@@ -505,6 +509,9 @@ export default function EmailQueuePage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Recipient
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Error
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -518,14 +525,14 @@ export default function EmailQueuePage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={12} className="px-6 py-12 text-center text-gray-500">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                     <p className="mt-2">Loading queue...</p>
                   </td>
                 </tr>
               ) : queueItems.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={12} className="px-6 py-12 text-center text-gray-500">
                     No items in queue
                   </td>
                 </tr>
@@ -588,8 +595,20 @@ export default function EmailQueuePage() {
                         {item.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-500 max-w-xs truncate" title={item.errorMessage || undefined}>
-                      {item.errorMessage || '—'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 max-w-xs truncate" title={item.toEmail || undefined}>
+                      {item.toEmail ? (
+                        <span className="text-xs">{item.toEmail.split(',').map((email, idx) => (
+                          <span key={idx}>
+                            {email.trim()}
+                            {idx < item.toEmail!.split(',').length - 1 && <br />}
+                          </span>
+                        ))}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-500 max-w-xs truncate" title={item.errorMessage || item.lastError || undefined}>
+                      {item.errorMessage || item.lastError || '—'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono text-xs">
                       {item.batchId || '—'}

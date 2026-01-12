@@ -136,6 +136,12 @@ export async function POST(
       })
 
       // 2. Create email queue item (unique constraint prevents duplicates)
+      // Get default recipients for timesheet approval emails
+      const defaultRecipients = process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
+      const emailSubject = isBCBA 
+        ? `Smart Steps ABA – BCBA Timesheet Approved`
+        : `Smart Steps ABA – Timesheet Approved`
+      
       try {
         await tx.emailQueueItem.create({
           data: {
@@ -143,6 +149,8 @@ export async function POST(
             entityId: timesheetId,
             queuedByUserId: session.user.id,
             status: 'QUEUED',
+            toEmail: defaultRecipients,
+            subject: emailSubject,
           },
         })
       } catch (queueError: any) {

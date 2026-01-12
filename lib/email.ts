@@ -1,6 +1,24 @@
 import nodemailer from 'nodemailer'
 import { createAuditLog } from './audit'
 
+/**
+ * Get default email recipients for timesheet/invoice approval emails
+ * Returns comma-separated string of recipient emails
+ */
+export function getDefaultRecipients(): string {
+  return process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
+}
+
+/**
+ * Parse recipients string into array of email addresses
+ */
+export function parseRecipients(recipientsStr: string | null | undefined): string[] {
+  if (!recipientsStr) {
+    return getDefaultRecipients().split(',').map((email) => email.trim()).filter(Boolean)
+  }
+  return recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+}
+
 // Validate SMTP configuration
 function validateSMTPConfig(): { valid: boolean; error?: string } {
   const host = process.env.SMTP_HOST

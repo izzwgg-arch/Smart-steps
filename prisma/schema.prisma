@@ -491,6 +491,7 @@ model EmailQueueItem {
   subject   String? // Email subject line
   attempts  Int     @default(0) // Number of send attempts
   lastError String? // Last error message (more detailed than errorMessage)
+  scheduledSendAt DateTime? // Scheduled send time (for Community Classes email queue)
 
   queuedBy  User  @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
   deletedBy User? @relation("EmailQueueDeleter", fields: [deletedByUserId], references: [id])
@@ -501,6 +502,7 @@ model EmailQueueItem {
   @@index([batchId])
   @@index([deletedAt])
   @@index([entityType, entityId, deletedAt])
+  @@index([scheduledSendAt, status]) // Index for scheduled email processing
 }
 
 // Community Classes Module Models
