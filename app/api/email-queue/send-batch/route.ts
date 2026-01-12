@@ -152,6 +152,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: 'No valid timesheets found',
+          lastError: 'No valid timesheets found',
+          attempts: { increment: 1 },
         },
       })
       return NextResponse.json(
@@ -217,6 +219,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: 'All PDF generation failed',
+          lastError: 'All PDF generation failed',
+          attempts: { increment: 1 },
         },
       })
       return NextResponse.json(
@@ -230,10 +234,20 @@ export async function POST(request: NextRequest) {
     const bcbaCount = emailItems.filter((item) => item.type === 'BCBA_TIMESHEET').length
     const totalHours = emailItems.reduce((sum, item) => sum + item.totalHours, 0)
 
-    // Step 6: Get email recipients from env
-    const recipientsStr =
-      process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
+    // Step 6: Get email recipients from stored queue items or fallback to env
+    // Use recipients from the first queue item (all items in a batch should have same recipients)
+    const firstItem = lockedItems[0]
+    const recipientsStr = firstItem.toEmail || process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
     const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+
+    console.log('[SEND_BATCH] Recipients debug:', {
+      firstItemToEmail: firstItem.toEmail,
+      envVar: process.env.EMAIL_APPROVAL_RECIPIENTS,
+      recipientsStr,
+      recipients,
+      batchId,
+      lockedItemsCount: lockedItems.length,
+    })
 
     if (recipients.length === 0) {
       // Mark all as FAILED
@@ -242,6 +256,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: 'No email recipients configured',
+          lastError: 'No email recipients configured',
+          attempts: { increment: 1 },
         },
       })
       return NextResponse.json(
@@ -249,12 +265,15 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+    
+    // Get subject from first item or use default
+    const emailSubject = firstItem.subject || `Smart Steps ABA – Approved Timesheets Batch (${batchDate})`
 
     // Step 7: Send batch email
     const emailResult = await sendMailSafe(
       {
         to: recipients,
-        subject: `Smart Steps ABA – Approved Timesheets Batch (${batchDate})`,
+        subject: emailSubject,
         html: getBatchApprovalEmailHtml(regularCount, bcbaCount, totalHours, emailItems, batchDate),
         text: getBatchApprovalEmailText(regularCount, bcbaCount, totalHours, emailItems, batchDate),
         attachments: pdfAttachments,
@@ -280,6 +299,7 @@ export async function POST(request: NextRequest) {
             status: 'SENT',
             sentAt,
             batchId,
+            attempts: { increment: 1 },
           },
         })
 
@@ -352,6 +372,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: emailResult.error?.substring(0, 500) || 'Unknown email error', // Limit length
+          lastError: emailResult.error?.substring(0, 1000) || 'Unknown email error', // More detailed
+          attempts: { increment: 1 },
         },
       })
 
@@ -389,6 +411,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: error.message?.substring(0, 500) || 'Unknown error during batch send',
+          lastError: error.message?.substring(0, 1000) || 'Unknown error during batch send',
+          attempts: { increment: 1 },
         },
       })
     } catch (updateError) {
