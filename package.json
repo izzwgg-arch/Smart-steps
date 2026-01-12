@@ -28,6 +28,7 @@
     "next-auth": "^4.24.5",
     "node-cron": "^3.0.3",
     "nodemailer": "^7.0.0",
+    "playwright": "^1.40.0",
     "pdfkit": "^0.14.0",
     "react": "^18.2.0",
     "react-datepicker": "^4.25.0",

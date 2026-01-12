@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { generateTimesheetPDFFromId } from '@/lib/pdf/timesheetPDFGenerator'
+import { generateTimesheetPDFFromId } from '@/lib/pdf/playwrightTimesheetPDF'
 import { getUserPermissions } from '@/lib/permissions'
 import { randomBytes } from 'crypto'
 
@@ -41,6 +41,7 @@ export async function GET(
     const timesheetId = resolvedParams.id
 
     console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Request received`, {
+      route: 'bcba',
       timesheetId,
       userId: session.user.id,
       userRole: session.user.role,
@@ -77,33 +78,14 @@ export async function GET(
     const rowsCount = timesheetCheck?.entries?.length || 0
     console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Timesheet has ${rowsCount} entries`)
 
-    // PHASE 4: Generate PDF using shared function (same for both regular and BCBA)
+    // Generate PDF using Playwright
     const pdfBuffer = await generateTimesheetPDFFromId(timesheetId, prisma, correlationId)
 
-    // PHASE 4: Verify PDF size and content with HARD FAIL GUARDS
+    // Verify PDF size and content
     const generatedBytes = pdfBuffer.length
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated, bytes=${generatedBytes}, rowsCount=${rowsCount}`)
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated, bytes=${generatedBytes}, entries=${rowsCount}`)
     
-    // Hard fail: If there are rows but PDF is too small
-    if (rowsCount > 0 && generatedBytes < 15000) {
-      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF_TOO_SMALL`, {
-        rowsCount,
-        generatedBytes,
-        expectedMin: 15000,
-      })
-      return NextResponse.json(
-        { 
-          error: 'PDF_TOO_SMALL',
-          message: 'PDF generation failed: PDF is too small for the number of rows',
-          rowsCount,
-          generatedBytes,
-          correlationId 
-        },
-        { status: 500 }
-      )
-    }
-
-    // Hard fail: If no rows (unless empty PDFs are allowed - we do NOT want this)
+    // Hard fail: If no rows
     if (rowsCount === 0) {
       console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: NO_ROWS_TO_PRINT`)
       return NextResponse.json(
@@ -116,18 +98,18 @@ export async function GET(
       )
     }
 
-    // Additional check: Even if rowsCount is 0, PDF should still be >15KB for header/content
-    if (generatedBytes < 15000) {
-      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF is too small (<15KB)`, {
+    // Verify PDF size (must be > 20KB) and header
+    if (generatedBytes < 20000) {
+      console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF_TOO_SMALL`, {
         rowsCount,
         generatedBytes,
+        expectedMin: 20000,
       })
       return NextResponse.json(
         { 
-          error: 'PDF_TOO_SMALL',
+          error: 'PDF_GENERATION_FAILED',
           message: 'PDF generation failed: PDF is too small',
-          rowsCount,
-          generatedBytes,
+          bytes: generatedBytes,
           correlationId 
         },
         { status: 500 }
@@ -136,20 +118,20 @@ export async function GET(
 
     // Verify PDF starts with %PDF
     const pdfHeader = pdfBuffer.slice(0, 4).toString('ascii')
-    const first16Bytes = pdfBuffer.slice(0, 16).toString('hex')
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF header check: "${pdfHeader}" (expected: "%PDF")`)
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} First 16 bytes (hex): ${first16Bytes}`)
-
     if (pdfHeader !== '%PDF') {
       console.error(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} ERROR: PDF does not start with %PDF! First 20 bytes:`, pdfBuffer.slice(0, 20).toString('hex'))
       return NextResponse.json(
-        { error: 'Invalid PDF generated', correlationId },
+        { 
+          error: 'PDF_GENERATION_FAILED',
+          message: 'Invalid PDF generated',
+          bytes: generatedBytes,
+          correlationId 
+        },
         { status: 500 }
       )
     }
 
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated OK, bytes=${pdfBuffer.length} (>10KB)`)
-    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} Returning response: Status=200, Content-Type=application/pdf`)
+    console.log(`[BCBA_TIMESHEET_PDF_ROUTE] ${correlationId} PDF generated OK, bytes=${generatedBytes}, response status=200`)
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
