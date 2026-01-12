@@ -469,21 +469,30 @@ enum CommunityInvoiceStatus {
 }
 
 model EmailQueueItem {
-  id             String               @id @default(cuid())
-  entityType     EmailQueueEntityType // REGULAR | BCBA | COMMUNITY_INVOICE
-  entityId       String // Timesheet ID or CommunityInvoice ID
-  queuedByUserId String
-  queuedAt       DateTime             @default(now())
-  sentAt         DateTime?
-  batchId        String? // Batch ID for grouped sends
-  status         EmailQueueStatus     @default(QUEUED)
-  errorMessage   String? // Sanitized error message
-  deletedAt      DateTime?            // Soft delete timestamp
-  deletedByUserId String?            // User who deleted this item
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id              String               @id @default(cuid())
+  entityType      EmailQueueEntityType // REGULAR | BCBA | COMMUNITY_INVOICE
+  entityId        String // Timesheet ID or CommunityInvoice ID
+  queuedByUserId  String
+  queuedAt        DateTime             @default(now())
+  sentAt          DateTime?
+  batchId         String? // Batch ID for grouped sends
+  status          EmailQueueStatus     @default(QUEUED)
+  errorMessage    String? // Sanitized error message
+  deletedAt       DateTime? // Soft delete timestamp
+  deletedByUserId String? // User who deleted this item
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
-  queuedBy User @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
+  // Email recipient fields
+  toEmail   String? // Primary recipient email (comma-separated for multiple)
+  ccEmails  String? // CC recipients (comma-separated)
+  bccEmails String? // BCC recipients (comma-separated)
+  replyTo   String? // Reply-to email address
+  subject   String? // Email subject line
+  attempts  Int     @default(0) // Number of send attempts
+  lastError String? // Last error message (more detailed than errorMessage)
+
+  queuedBy  User  @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
   deletedBy User? @relation("EmailQueueDeleter", fields: [deletedByUserId], references: [id])
 
   // Note: Removed unique constraint to allow re-queueing after soft delete
