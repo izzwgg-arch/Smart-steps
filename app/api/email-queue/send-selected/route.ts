@@ -92,6 +92,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: 'No valid timesheets found',
+          lastError: 'No valid timesheets found',
+          attempts: { increment: 1 },
         },
       })
       return NextResponse.json({ error: 'No valid timesheets found' }, { status: 400 })
@@ -154,6 +156,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: 'Failed to generate PDFs',
+          lastError: 'Failed to generate PDFs',
+          attempts: { increment: 1 },
         },
       })
       return NextResponse.json({ error: 'Failed to generate PDFs' }, { status: 500 })
@@ -185,11 +189,39 @@ export async function POST(request: NextRequest) {
       contentType: 'application/pdf',
     }))
 
-    // Step 7: Send batch email
+    // Step 7: Get recipients from stored queue items or fallback to env
+    const firstItem = lockedItems[0]
+    const recipientsStr = firstItem.toEmail || process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
+    const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+    
+    console.log('[SEND_SELECTED] Recipients debug:', {
+      firstItemToEmail: firstItem.toEmail,
+      envVar: process.env.EMAIL_APPROVAL_RECIPIENTS,
+      recipientsStr,
+      recipients,
+      batchId,
+    })
+    
+    if (recipients.length === 0) {
+      await prisma.emailQueueItem.updateMany({
+        where: { id: { in: lockedItems.map((item) => item.id) } },
+        data: {
+          status: 'FAILED',
+          errorMessage: 'No email recipients configured',
+          lastError: 'No email recipients configured',
+          attempts: { increment: 1 },
+        },
+      })
+      return NextResponse.json({ error: 'No email recipients configured' }, { status: 500 })
+    }
+    
+    const emailSubject = firstItem.subject || `Smart Steps ABA – Approved Timesheets Batch (${batchDate})`
+
+    // Step 8: Send batch email
     const emailResult = await sendMailSafe(
       {
-        to: process.env.APPROVAL_EMAIL || 'approval@smartstepsabapc.org',
-        subject: `Smart Steps ABA – Approved Timesheets Batch (${batchDate})`,
+        to: recipients,
+        subject: emailSubject,
         html: getBatchApprovalEmailHtml(regularCount, bcbaCount, totalHours, emailItems, batchDate),
         text: getBatchApprovalEmailText(regularCount, bcbaCount, totalHours, emailItems, batchDate),
         attachments: pdfAttachments,
@@ -215,6 +247,7 @@ export async function POST(request: NextRequest) {
             status: 'SENT',
             sentAt,
             batchId,
+            attempts: { increment: 1 },
           },
         })
 
@@ -253,7 +286,9 @@ export async function POST(request: NextRequest) {
           where: { id: { in: lockedItems.map((item) => item.id) } },
           data: {
             status: 'FAILED',
-            errorMessage: emailResult.error || 'Unknown error sending email',
+            errorMessage: emailResult.error?.substring(0, 500) || 'Unknown error sending email',
+            lastError: emailResult.error?.substring(0, 1000) || 'Unknown error sending email',
+            attempts: { increment: 1 },
           },
         })
       })
