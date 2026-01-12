@@ -234,17 +234,15 @@ export async function POST(request: NextRequest) {
     const bcbaCount = emailItems.filter((item) => item.type === 'BCBA_TIMESHEET').length
     const totalHours = emailItems.reduce((sum, item) => sum + item.totalHours, 0)
 
-    // Step 6: Get email recipients from stored queue items or fallback to env
-    // Use recipients from the first queue item (all items in a batch should have same recipients)
-    const firstItem = lockedItems[0]
-    const recipientsStr = firstItem.toEmail || process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
-    const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+    // Step 6: MAIN EMAIL QUEUE - ALWAYS use fixed recipients (locked)
+    // Main Email Queue (Smart Steps) must ALWAYS send to these two fixed emails
+    const MAIN_EMAIL_RECIPIENTS = ['info@productivebilling.com', 'jacobw@apluscenterinc.org']
+    const recipients = MAIN_EMAIL_RECIPIENTS
 
-    console.log('[SEND_BATCH] Recipients debug:', {
-      firstItemToEmail: firstItem.toEmail,
-      envVar: process.env.EMAIL_APPROVAL_RECIPIENTS,
-      recipientsStr,
-      recipients,
+    console.log('[EMAIL_MAIN] Sending batch email', {
+      messageId: `batch-${batchId}`,
+      recipients: recipients.join(', '),
+      source: 'MAIN',
       batchId,
       lockedItemsCount: lockedItems.length,
     })

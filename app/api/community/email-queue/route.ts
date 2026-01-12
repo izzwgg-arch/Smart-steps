@@ -91,18 +91,20 @@ export async function GET(request: NextRequest) {
           })
 
           if (!invoice) {
-            return {
-              id: item.id,
-              entityType: item.entityType,
-              entityId: item.entityId,
-              queuedAt: item.queuedAt.toISOString(),
-              sentAt: item.sentAt?.toISOString() || null,
-              status: item.status,
-              errorMessage: item.errorMessage || 'Invoice not found or deleted',
-              batchId: item.batchId,
-              queuedBy: item.queuedBy,
-              invoice: null,
-            }
+          return {
+            id: item.id,
+            entityType: item.entityType,
+            entityId: item.entityId,
+            queuedAt: item.queuedAt.toISOString(),
+            sentAt: item.sentAt?.toISOString() || null,
+            status: item.status,
+            errorMessage: item.errorMessage || 'Invoice not found or deleted',
+            batchId: item.batchId,
+            toEmail: item.toEmail,
+            scheduledSendAt: item.scheduledSendAt?.toISOString() || null,
+            queuedBy: item.queuedBy,
+            invoice: null,
+          }
           }
 
           return {
@@ -114,6 +116,8 @@ export async function GET(request: NextRequest) {
             status: item.status,
             errorMessage: item.errorMessage,
             batchId: item.batchId,
+            toEmail: item.toEmail,
+            scheduledSendAt: item.scheduledSendAt?.toISOString() || null,
             queuedBy: item.queuedBy,
             invoice: {
               id: invoice.id,
@@ -139,6 +143,8 @@ export async function GET(request: NextRequest) {
             status: item.status,
             errorMessage: item.errorMessage || `Error loading invoice: ${error.message || 'Unknown error'}`,
             batchId: item.batchId,
+            toEmail: item.toEmail,
+            scheduledSendAt: item.scheduledSendAt?.toISOString() || null,
             queuedBy: item.queuedBy,
             invoice: null,
           }

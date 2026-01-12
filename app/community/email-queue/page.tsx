@@ -17,6 +17,8 @@ interface QueuedItem {
   status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED'
   errorMessage: string | null
   batchId: string | null
+  toEmail: string | null // Recipient email(s) for Community Classes
+  scheduledSendAt: string | null // Scheduled send time
   queuedBy: {
     id: string
     username: string
@@ -257,14 +259,24 @@ export default function CommunityEmailQueuePage() {
   }
 
   const handleConfirmSendBatch = async () => {
+    // Validate recipients are required
     if (!customEmail.trim()) {
-      toast.error('Please enter an email address')
+      toast.error('Recipient email address(es) are required')
       return
     }
 
-    // Validate email format (basic)
+    // Normalize recipients: allow comma/semicolon separated; trim; lowercase
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    const emails = customEmail.split(',').map((e) => e.trim()).filter(Boolean)
+    const emails = customEmail
+      .split(/[,;]/) // Split by comma or semicolon
+      .map((e) => e.trim().toLowerCase()) // Trim and lowercase
+      .filter(Boolean)
+    
+    if (emails.length === 0) {
+      toast.error('Please enter at least one valid email address')
+      return
+    }
+
     const invalidEmails = emails.filter((e) => !emailRegex.test(e))
     if (invalidEmails.length > 0) {
       toast.error(`Invalid email address(es): ${invalidEmails.join(', ')}`)
@@ -289,7 +301,7 @@ export default function CommunityEmailQueuePage() {
     setSending(true)
     try {
       const requestBody: any = {
-        recipients: emails,
+        recipients: emails, // User-entered recipients (required for Community)
         itemIds: selectedItems.size > 0 ? Array.from(selectedItems) : undefined,
       }
       
@@ -516,6 +528,9 @@ export default function CommunityEmailQueuePage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Recipient(s)
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Queued At
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -532,13 +547,13 @@ export default function CommunityEmailQueuePage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-8 text-center">
+                  <td colSpan={11} className="px-6 py-8 text-center">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
                   </td>
                 </tr>
               ) : queueItems.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={11} className="px-6 py-8 text-center text-gray-500">
                     No items in the queue
                   </td>
                 </tr>
@@ -592,6 +607,18 @@ export default function CommunityEmailQueuePage() {
                         </span>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 max-w-xs truncate" title={item.toEmail || undefined}>
+                      {item.toEmail ? (
+                        <span className="text-xs">{item.toEmail.split(',').map((email, idx) => (
+                          <span key={idx}>
+                            {email.trim()}
+                            {idx < item.toEmail!.split(',').length - 1 && <br />}
+                          </span>
+                        ))}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatRelativeTime(item.queuedAt)}
                     </td>
@@ -625,16 +652,22 @@ export default function CommunityEmailQueuePage() {
         {showEmailModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Enter Email Address(es)</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">
+                {scheduleSend ? 'Schedule Email Send' : 'Send Email'}
+              </h2>
               <p className="text-sm text-gray-600 mb-4">
-                Enter one or more email addresses separated by commas.
+                Enter one or more recipient email addresses separated by commas or semicolons.
               </p>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Recipient(s) <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={customEmail}
                 onChange={(e) => setCustomEmail(e.target.value)}
                 placeholder="email@example.com, another@example.com"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+                required
                 autoFocus
               />
               
@@ -689,7 +722,7 @@ export default function CommunityEmailQueuePage() {
                 </button>
                 <button
                   onClick={handleConfirmSendBatch}
-                  disabled={sending || (scheduleSend && !scheduledDateTime)}
+                  disabled={sending || !customEmail.trim() || (scheduleSend && !scheduledDateTime)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {sending ? 'Sending...' : scheduleSend ? 'Schedule Email' : 'Send Email'}

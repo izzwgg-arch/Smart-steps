@@ -128,24 +128,51 @@ export async function sendCommunityEmailBatch(itemIds: string[]) {
     throw new Error('Failed to generate PDFs')
   }
 
-  // Step 5: Get recipients from first item's stored toEmail or env
+  // Step 5: COMMUNITY EMAIL QUEUE - Get recipients from stored toEmail (REQUIRED, NO fallback)
   const firstItem = lockedItems[0]
-  const recipientsStr =
-    firstItem.toEmail || process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
-  const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
   
-  console.log(`[SCHEDULED_EMAIL] Using recipients: ${recipients.join(', ')} (from stored toEmail: ${firstItem.toEmail || 'N/A'})`)
+  // For Community Classes: Recipients MUST be stored in toEmail (no fallback to fixed emails)
+  if (!firstItem.toEmail || firstItem.toEmail.trim().length === 0) {
+    console.error('[EMAIL_COMMUNITY] Scheduled email missing recipients', {
+      queueItemId: firstItem.id,
+      entityId: firstItem.entityId,
+      source: 'COMMUNITY',
+    })
+    
+    await prisma.emailQueueItem.updateMany({
+      where: { id: { in: itemIds } },
+      data: {
+        status: 'FAILED',
+        errorMessage: 'MISSING_RECIPIENTS: Recipient email address(es) are required. Please reschedule with recipients.',
+        lastError: 'MISSING_RECIPIENTS: Recipient email address(es) are required. Please reschedule with recipients.',
+      },
+    })
+    throw new Error('MISSING_RECIPIENTS: Recipient email address(es) are required. Please reschedule with recipients.')
+  }
+
+  const recipients = firstItem.toEmail
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email.length > 0)
 
   if (recipients.length === 0) {
     await prisma.emailQueueItem.updateMany({
       where: { id: { in: itemIds } },
       data: {
         status: 'FAILED',
-        errorMessage: 'No email recipients configured',
+        errorMessage: 'MISSING_RECIPIENTS: No valid recipient email addresses found',
+        lastError: 'MISSING_RECIPIENTS: No valid recipient email addresses found',
       },
     })
-    throw new Error('No email recipients configured')
+    throw new Error('MISSING_RECIPIENTS: No valid recipient email addresses found')
   }
+
+  console.log('[EMAIL_COMMUNITY] Processing scheduled email', {
+    queueItemIds: itemIds,
+    recipients: recipients.join(', '),
+    source: 'COMMUNITY',
+    fromStoredToEmail: firstItem.toEmail,
+  })
 
   // Step 6: Build email content
   const totalAmount = emailItems.reduce((sum, item) => sum + item.totalAmount, 0)
@@ -216,7 +243,14 @@ ${emailItems.map(item => `- ${item.clientName} | ${item.className} | ${item.unit
 All invoices are attached as PDF files. Please review and process accordingly.
   `
 
-  // Step 7: Send email
+  // Step 7: Send email (with logging)
+  console.log('[EMAIL_COMMUNITY] Sending scheduled email', {
+    queueItemIds: itemIds,
+    recipients: recipients.join(', '),
+    source: 'COMMUNITY',
+    batchId,
+  })
+
   const emailResult = await sendMailSafe(
     {
       to: recipients,

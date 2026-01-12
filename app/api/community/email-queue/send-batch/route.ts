@@ -40,8 +40,28 @@ export async function POST(request: NextRequest) {
     // Parse request body to get selected item IDs and recipients
     const requestBody = await request.json().catch(() => ({}))
     const selectedItemIds = requestBody.itemIds // Optional: array of item IDs to send
-    const customRecipients = requestBody.recipients // Array of email addresses from request
+    const customRecipients = requestBody.recipients // REQUIRED: Array of email addresses from request (Community must use user-entered recipients)
     const scheduledSendAt = requestBody.scheduledSendAt // Optional: ISO datetime string for scheduled send
+
+    // COMMUNITY EMAIL QUEUE: Recipients are REQUIRED (no fallback to fixed emails)
+    if (!customRecipients || !Array.isArray(customRecipients) || customRecipients.length === 0) {
+      return NextResponse.json(
+        { error: 'RECIPIENT_REQUIRED: Recipient email address(es) are required for Community Classes emails' },
+        { status: 400 }
+      )
+    }
+
+    // Normalize recipients: trim and lowercase
+    const normalizedRecipients = customRecipients
+      .map((email: string) => email.trim().toLowerCase())
+      .filter((email: string) => email.length > 0)
+
+    if (normalizedRecipients.length === 0) {
+      return NextResponse.json(
+        { error: 'RECIPIENT_REQUIRED: At least one valid recipient email address is required' },
+        { status: 400 }
+      )
+    }
 
     // Parse scheduled send time if provided
     let scheduledSendDateTime: Date | null = null
@@ -77,14 +97,11 @@ export async function POST(request: NextRequest) {
         return []
       }
 
-      // If scheduled, store the scheduled time and recipients/subject, keep status as QUEUED
+      // If scheduled, store the scheduled time and user-entered recipients/subject, keep status as QUEUED
       // Otherwise, lock them to SENDING for immediate send
       if (scheduledSendDateTime) {
-        // Get recipients string from customRecipients or env
-        const recipientsStr =
-          customRecipients && Array.isArray(customRecipients) && customRecipients.length > 0
-            ? customRecipients.join(',')
-            : process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
+        // Store user-entered recipients (already validated above)
+        const recipientsStr = normalizedRecipients.join(',')
         
         const emailSubjectPrefix = process.env.COMMUNITY_EMAIL_SUBJECT_PREFIX || 'KJ Play Center'
         const batchDate = format(new Date(), 'yyyy-MM-dd')
@@ -94,7 +111,7 @@ export async function POST(request: NextRequest) {
           where: { id: { in: queuedItems.map((item) => item.id) } },
           data: { 
             scheduledSendAt: scheduledSendDateTime,
-            toEmail: recipientsStr,
+            toEmail: recipientsStr, // Store user-entered recipients (NO fallback)
             subject: emailSubject,
             // Keep status as QUEUED - will be processed by cron job
           },
@@ -258,29 +275,26 @@ export async function POST(request: NextRequest) {
     const totalAmount = emailItems.reduce((sum, item) => sum + item.totalAmount, 0)
     const totalUnits = emailItems.reduce((sum, item) => sum + item.units, 0)
 
-    // Step 6: Get email recipients from request body or env
-    const recipientsStr =
-      customRecipients && Array.isArray(customRecipients) && customRecipients.length > 0
-        ? customRecipients.join(',')
-        : process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
-    const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+    // Step 6: COMMUNITY EMAIL QUEUE - Use user-entered recipients (already validated, no fallback)
+    const recipients = normalizedRecipients
 
-    if (recipients.length === 0) {
-      // Mark all as FAILED
-      await prisma.emailQueueItem.updateMany({
-        where: { id: { in: lockedItems.map((item) => item.id) } },
-        data: {
-          status: 'FAILED',
-          errorMessage: 'No email recipients configured',
-        },
-      })
-      return NextResponse.json(
-        { error: 'No email recipients configured' },
-        { status: 500 }
-      )
-    }
+    // Step 7: Store recipients in queue items for immediate send (for tracking)
+    await prisma.emailQueueItem.updateMany({
+      where: { id: { in: lockedItems.map((item) => item.id) } },
+      data: {
+        toEmail: normalizedRecipients.join(','),
+      },
+    })
 
-    // Step 7: Build email content with KJ Play Center branding
+    console.log('[EMAIL_COMMUNITY] Sending batch email', {
+      queueItemIds: lockedItems.map((item) => item.id),
+      recipients: recipients.join(', '),
+      source: 'COMMUNITY',
+      batchId,
+      lockedItemsCount: lockedItems.length,
+    })
+
+    // Step 8: Build email content with KJ Play Center branding
     // NOTE: To avoid Gmail generic avatar, use a domain-based email address (not gmail.com)
     // Example: invoices@kjplaycenter.com (requires SPF/DKIM/DMARC DNS records)
     // Gmail shows generic avatar when:
@@ -356,7 +370,7 @@ ${emailItems.map(item => `- ${item.clientName} | ${item.className} | ${item.unit
 All invoices are attached as PDF files. Please review and process accordingly.
     `
 
-    // Step 8: Send batch email
+    // Step 9: Send batch email
     const emailResult = await sendMailSafe(
       {
         to: recipients,
@@ -376,7 +390,7 @@ All invoices are attached as PDF files. Please review and process accordingly.
 
     const sentAt = new Date()
 
-    // Step 9: Update database based on result
+    // Step 10: Update database based on result
     if (emailResult.success) {
       // SUCCESS: Mark items SENT, update invoices EMAILED
       await prisma.$transaction(async (tx) => {
