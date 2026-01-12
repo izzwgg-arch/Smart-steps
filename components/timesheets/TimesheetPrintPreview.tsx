@@ -1,10 +1,9 @@
 'use client'
 
 import React from 'react'
-import { X, Printer } from 'lucide-react'
+import { X } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { format } from 'date-fns'
-import { handlePrintTimesheet } from '@/lib/utils/printTimesheet'
 
 interface Timesheet {
   id: string
@@ -75,22 +74,6 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
     // hour === 12 stays as 12 (12:xx PM)
     
     return `${displayHour}:${minutes.padStart(2, '0')} ${ampm}`
-  }
-
-  const handlePrint = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    try {
-      console.log('[TIMESHEET_PRINT_PREVIEW] Print button clicked', {
-        timesheetId: timesheet.id,
-        isBCBATimesheet,
-        type: isBCBATimesheet ? 'bcba' : 'regular'
-      })
-      e.preventDefault()
-      e.stopPropagation()
-      await handlePrintTimesheet(timesheet.id, isBCBATimesheet ? 'bcba' : 'regular')
-      console.log('[TIMESHEET_PRINT_PREVIEW] Print handler completed successfully')
-    } catch (error: any) {
-      console.error('[TIMESHEET_PRINT_PREVIEW] Error in handlePrint:', error)
-    }
   }
 
   return (
@@ -315,15 +298,6 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10000 }}
               >
                 Close
-              </button>
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2 cursor-pointer"
-                style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10000 }}
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print</span>
               </button>
             </div>
           </div>
