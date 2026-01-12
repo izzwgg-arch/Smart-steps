@@ -47,6 +47,13 @@ export function InvoicesList() {
   const [customStartDate, setCustomStartDate] = useState<Date | null>(null)
   const [customEndDate, setCustomEndDate] = useState<Date | null>(null)
   const [useCustomPeriod, setUseCustomPeriod] = useState(false)
+  const [generationStatus, setGenerationStatus] = useState<{
+    status: string
+    lastRun: string | null
+    nextRun: string | null
+    lastRunResult: any
+    scheduleDescription: string
+  } | null>(null)
 
   useEffect(() => {
     fetchInvoices()
@@ -58,6 +65,7 @@ export function InvoicesList() {
           // Load billing period info for admins
           if (data.user.role === 'ADMIN') {
             fetchBillingPeriodInfo()
+            fetchGenerationStatus()
           }
         }
       })
@@ -72,6 +80,18 @@ export function InvoicesList() {
       }
     } catch (error) {
       console.error('Failed to fetch billing period info:', error)
+    }
+  }
+
+  const fetchGenerationStatus = async () => {
+    try {
+      const res = await fetch('/api/invoices/generation-status')
+      if (res.ok) {
+        const data = await res.json()
+        setGenerationStatus(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch generation status:', error)
     }
   }
 
@@ -225,6 +245,70 @@ export function InvoicesList() {
 
   return (
     <div className="px-4 py-6 sm:px-0">
+      {/* Auto-Invoice Generation Status Panel (Admin Only) */}
+      {userRole === 'ADMIN' && generationStatus && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">
+                Last Auto-Invoice Run
+              </h3>
+              {generationStatus.lastRunResult ? (
+                <div className="space-y-1 text-sm text-blue-800">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium">Period:</span>
+                    <span>{generationStatus.lastRunResult.periodLabel || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium">Status:</span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                        generationStatus.lastRunResult.success
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {generationStatus.lastRunResult.success ? 'Success' : 'Failed'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <span>
+                      <span className="font-medium">Created:</span>{' '}
+                      {generationStatus.lastRunResult.invoicesCreated || 0}
+                    </span>
+                    <span>
+                      <span className="font-medium">Skipped:</span>{' '}
+                      {generationStatus.lastRunResult.invoicesSkipped || 0}
+                    </span>
+                    {generationStatus.lastRunResult.errorsCount > 0 && (
+                      <span className="text-red-600">
+                        <span className="font-medium">Errors:</span>{' '}
+                        {generationStatus.lastRunResult.errorsCount}
+                      </span>
+                    )}
+                  </div>
+                  {generationStatus.lastRun && (
+                    <div className="text-xs text-blue-600 mt-2">
+                      Last run: {new Date(generationStatus.lastRun).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-blue-700">
+                  No runs recorded yet. Next scheduled run:{' '}
+                  {generationStatus.nextRun
+                    ? new Date(generationStatus.nextRun).toLocaleString()
+                    : 'Not scheduled'}
+                </div>
+              )}
+              <div className="text-xs text-blue-600 mt-2">
+                Schedule: {generationStatus.scheduleDescription || generationStatus.schedule}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>

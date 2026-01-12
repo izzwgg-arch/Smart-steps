@@ -48,6 +48,7 @@ function initializeInvoiceGenerationJob() {
       console.log(`[CRON] Running automatic invoice generation at ${new Date().toISOString()}`)
       
       try {
+        const billingPeriod = calculateWeeklyBillingPeriod()
         const result = await generateInvoicesForApprovedTimesheets()
         
         if (result.success) {
@@ -60,15 +61,24 @@ function initializeInvoiceGenerationJob() {
           )
         }
 
-        // Update scheduled job record
-        await updateScheduledJobRecord('INVOICE_GENERATION', result)
+        // Update scheduled job record with detailed results including period
+        await updateScheduledJobRecord('INVOICE_GENERATION', {
+          ...result,
+          periodStart: billingPeriod.startDate.toISOString(),
+          periodEnd: billingPeriod.endDate.toISOString(),
+          periodLabel: billingPeriod.periodLabel,
+        })
       } catch (error) {
         console.error('[CRON] Error in invoice generation job:', error)
+        const billingPeriod = calculateWeeklyBillingPeriod()
         await updateScheduledJobRecord('INVOICE_GENERATION', {
           success: false,
           invoicesCreated: 0,
           clientsProcessed: 0,
           errors: [error instanceof Error ? error.message : 'Unknown error'],
+          periodStart: billingPeriod.startDate.toISOString(),
+          periodEnd: billingPeriod.endDate.toISOString(),
+          periodLabel: billingPeriod.periodLabel,
         })
       }
     },
@@ -94,6 +104,9 @@ async function updateScheduledJobRecord(
     invoicesCreated: number
     clientsProcessed: number
     errors: string[]
+    periodStart?: string
+    periodEnd?: string
+    periodLabel?: string
   }
 ) {
   try {
@@ -108,6 +121,21 @@ async function updateScheduledJobRecord(
       },
     })
 
+    // Store detailed run results in metadata JSON
+    const metadata = lastResult
+      ? JSON.stringify({
+          success: lastResult.success,
+          invoicesCreated: lastResult.invoicesCreated,
+          clientsProcessed: lastResult.clientsProcessed,
+          invoicesSkipped: lastResult.clientsProcessed - lastResult.invoicesCreated,
+          errors: lastResult.errors,
+          errorsCount: lastResult.errors.length,
+          periodStart: lastResult.periodStart,
+          periodEnd: lastResult.periodEnd,
+          periodLabel: lastResult.periodLabel,
+        })
+      : null
+
     if (existing) {
       await prisma.scheduledJob.update({
         where: { id: existing.id },
@@ -115,6 +143,7 @@ async function updateScheduledJobRecord(
           lastRun: lastResult ? now : existing.lastRun,
           nextRun,
           updatedAt: now,
+          metadata: metadata || existing.metadata,
         },
       })
     } else {
@@ -125,8 +154,20 @@ async function updateScheduledJobRecord(
           nextRun,
           active: true,
           lastRun: lastResult ? now : undefined,
+          metadata,
         },
       })
+    }
+
+    // Enhanced logging for PM2 output
+    if (lastResult) {
+      const runId = existing?.id || 'new'
+      const period = lastResult.periodLabel || 'unknown'
+      console.log(
+        `[AUTO_INVOICE] runId=${runId} period=${period} ` +
+        `created=${lastResult.invoicesCreated} skipped=${lastResult.clientsProcessed - lastResult.invoicesCreated} ` +
+        `errors=${lastResult.errors.length} success=${lastResult.success}`
+      )
     }
   } catch (error) {
     console.error(`Failed to update scheduled job record for ${jobType}:`, error)
@@ -136,7 +177,7 @@ async function updateScheduledJobRecord(
 /**
  * Calculate the next run time for a cron schedule in the given timezone
  */
-function getNextRunTime(cronExpression: string, timezone: string): Date {
+export function getNextRunTime(cronExpression: string, timezone: string): Date {
   // Parse cron expression: "0 16 * * 5"
   const parts = cronExpression.split(' ')
   const minute = parseInt(parts[0])

@@ -411,6 +411,7 @@ model ScheduledJob {
   lastRun   DateTime?
   nextRun   DateTime
   active    Boolean   @default(true)
+  metadata  String? // JSON: { success, invoicesCreated, clientsProcessed, errors, errorsCount, periodStart, periodEnd }
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
