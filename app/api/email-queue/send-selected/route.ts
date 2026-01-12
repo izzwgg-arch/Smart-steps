@@ -189,32 +189,21 @@ export async function POST(request: NextRequest) {
       contentType: 'application/pdf',
     }))
 
-    // Step 7: Get recipients from stored queue items or fallback to env
-    const firstItem = lockedItems[0]
-    const recipientsStr = firstItem.toEmail || process.env.EMAIL_APPROVAL_RECIPIENTS || 'info@productivebilling.com,jacobw@apluscenterinc.org'
-    const recipients = recipientsStr.split(',').map((email) => email.trim()).filter(Boolean)
+    // Step 7: MAIN EMAIL QUEUE - ALWAYS use fixed recipients (locked)
+    // Main Email Queue (Smart Steps) must ALWAYS send to these two fixed emails
+    const MAIN_EMAIL_RECIPIENTS = ['info@productivebilling.com', 'jacobw@apluscenterinc.org']
+    const recipients = MAIN_EMAIL_RECIPIENTS
     
-    console.log('[SEND_SELECTED] Recipients debug:', {
-      firstItemToEmail: firstItem.toEmail,
-      envVar: process.env.EMAIL_APPROVAL_RECIPIENTS,
-      recipientsStr,
-      recipients,
+    console.log('[EMAIL_MAIN] Sending selected emails', {
+      messageId: `batch-${batchId}`,
+      recipients: recipients.join(', '),
+      source: 'MAIN',
       batchId,
+      selectedCount: lockedItems.length,
     })
     
-    if (recipients.length === 0) {
-      await prisma.emailQueueItem.updateMany({
-        where: { id: { in: lockedItems.map((item) => item.id) } },
-        data: {
-          status: 'FAILED',
-          errorMessage: 'No email recipients configured',
-          lastError: 'No email recipients configured',
-          attempts: { increment: 1 },
-        },
-      })
-      return NextResponse.json({ error: 'No email recipients configured' }, { status: 500 })
-    }
-    
+    // Get subject from first item or use default
+    const firstItem = lockedItems[0]
     const emailSubject = firstItem.subject || `Smart Steps ABA – Approved Timesheets Batch (${batchDate})`
 
     // Step 8: Send batch email
