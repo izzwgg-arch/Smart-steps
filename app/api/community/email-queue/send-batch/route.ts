@@ -64,10 +64,34 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse scheduled send time if provided
+    // IMPORTANT: datetime-local input sends time like "2026-01-14T00:00:00" (no timezone info)
+    // We interpret this as America/New_York time and convert to UTC for storage
     let scheduledSendDateTime: Date | null = null
     if (scheduledSendAt) {
-      scheduledSendDateTime = new Date(scheduledSendAt)
-      // Validate that scheduled time is in the future
+      const { zonedTimeToUtc } = await import('date-fns-tz')
+      const TIMEZONE = 'America/New_York'
+      
+      // Parse the datetime-local string: "2026-01-14T00:00:00"
+      // Extract date and time components
+      const [datePart, timePart = '00:00:00'] = scheduledSendAt.split('T')
+      const [year, month, day] = datePart.split('-').map(Number)
+      const [hour, minute = 0, second = 0] = timePart.split(':').map(Number)
+      
+      // Create a date string in ISO format for America/New_York timezone
+      // We'll construct it as if it's in America/New_York, then convert to UTC
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+      
+      // Interpret this time as America/New_York and convert to UTC
+      // date-fns-tz expects a Date object representing the local time in the target timezone
+      const tempDate = new Date(`${dateStr}-05:00`) // EST/EDT offset approximation
+      scheduledSendDateTime = zonedTimeToUtc(tempDate, TIMEZONE)
+      
+      // More accurate: Create the date components and use date-fns-tz to convert
+      // Actually, let's use a simpler approach: create the date and use the timezone library properly
+      const dateInTimezone = new Date(year, month - 1, day, hour, minute, second)
+      scheduledSendDateTime = zonedTimeToUtc(dateInTimezone, TIMEZONE)
+      
+      // Validate that scheduled time is in the future (compare UTC times)
       if (scheduledSendDateTime <= new Date()) {
         return NextResponse.json(
           { error: 'Scheduled send time must be in the future' },
