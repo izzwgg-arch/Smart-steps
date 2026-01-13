@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
       
       // Step 2: Calculate what UTC time corresponds to this Eastern Time
-      // We'll use a reference date to get the offset
+      // We'll use a reference UTC time to get the offset for Eastern Time
       // Create a UTC date for noon on the target date
       const refUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
       
@@ -97,20 +97,24 @@ export async function POST(request: NextRequest) {
       const { utcToZonedTime } = await import('date-fns-tz')
       const refEastern = utcToZonedTime(refUTC, TIMEZONE)
       
-      // Calculate offset: how many hours difference between UTC and Eastern Time
-      // This gives us: if it's noon UTC, what time is it in Eastern?
+      // Calculate offset: how many hours ahead is UTC compared to Eastern Time
+      // Example: If noon UTC = 7 AM Eastern, then offset = 5 hours
+      // This means Eastern Time is 5 hours BEHIND UTC
       const offsetMs = refUTC.getTime() - refEastern.getTime()
       const offsetHours = offsetMs / (1000 * 60 * 60)
       
       // Step 3: Given Eastern Time components, calculate UTC
-      // Create a UTC date with the Eastern Time components (temporarily)
-      const tempUTC = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
-      
-      // This tempUTC represents "what if these Eastern Time components were UTC"
-      // We need to subtract the offset to get the real UTC time
       // Eastern Time is behind UTC (EST = UTC-5, EDT = UTC-4)
-      // So to convert Eastern -> UTC, we ADD the offset hours
-      scheduledSendDateTime = new Date(tempUTC.getTime() + offsetMs)
+      // So: 7:37 PM Eastern = 7:37 PM + offset = UTC equivalent
+      // 
+      // Create a UTC date using the Eastern Time components
+      // This represents "if these Eastern components were UTC"
+      const tempAsUTC = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+      
+      // Now convert: If tempAsUTC represents Eastern Time components, 
+      // to get real UTC, we ADD the offset (because Eastern is behind UTC)
+      // Example: 7:37 PM Eastern (EST) = 7:37 PM UTC + 5 hours = 12:37 AM UTC
+      scheduledSendDateTime = new Date(tempAsUTC.getTime() + offsetMs)
       
       // Debug logging
       console.log('[SCHEDULED_EMAIL] Parsing scheduled time', {
