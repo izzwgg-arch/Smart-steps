@@ -64,35 +64,70 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse scheduled send time if provided
-    // IMPORTANT: datetime-local input sends time like "2026-01-14T00:00:00" (no timezone info)
+    // IMPORTANT: datetime-local input sends time like "2026-01-12T19:37" (no timezone info)
     // We interpret this as America/New_York time and convert to UTC for storage
     let scheduledSendDateTime: Date | null = null
     if (scheduledSendAt) {
       const { zonedTimeToUtc } = await import('date-fns-tz')
       const TIMEZONE = 'America/New_York'
       
-      // Parse the datetime-local string: "2026-01-14T00:00:00"
+      // Parse the datetime-local string: "2026-01-12T19:37"
       // This represents a date/time WITHOUT timezone - we interpret it as America/New_York time
       const [datePart, timePart = '00:00:00'] = scheduledSendAt.split('T')
       const [year, month, day] = datePart.split('-').map(Number)
       const [hour, minute = 0, second = 0] = timePart.split(':').map(Number)
       
-      // Create a Date object using UTC components
-      // We'll treat these components as America/New_York local time, then convert to UTC
-      // zonedTimeToUtc expects a Date object and treats it as if it's in the target timezone
-      // So we create a Date with UTC components matching the input (no offset)
-      const dateInTargetTimezone = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+      // Create a Date object using the components as if they're in America/New_York
+      // JavaScript Date constructor creates dates in system timezone, but we'll use zonedTimeToUtc
+      // which interprets the Date's components as if they're in the target timezone
+      // Create date components as local time in America/New_York
+      // We create a Date with these components, and zonedTimeToUtc will treat them as America/New_York time
+      const dateWithComponents = new Date(year, month - 1, day, hour, minute, second)
       
       // Convert from America/New_York local time to UTC
-      // zonedTimeToUtc interprets the Date as local time in the specified timezone and converts to UTC
-      scheduledSendDateTime = zonedTimeToUtc(dateInTargetTimezone, TIMEZONE)
+      // zonedTimeToUtc takes a Date object and interprets its components as local time in the specified timezone
+      // Since Date constructor uses system timezone, we need to account for that
+      // Better approach: Create a date string and use timezone-aware parsing
+      // Use zonedTimeToUtc by creating a date that represents the time in the target timezone
+      scheduledSendDateTime = zonedTimeToUtc(dateWithComponents, TIMEZONE)
+      
+      // Debug logging to help troubleshoot timezone issues
+      console.log('[SCHEDULED_EMAIL] Parsing scheduled time', {
+        input: scheduledSendAt,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        dateWithComponents: dateWithComponents.toISOString(),
+        scheduledSendDateTimeUTC: scheduledSendDateTime.toISOString(),
+        timezone: TIMEZONE,
+      })
       
       // Validate that scheduled time is in the future (compare UTC times)
       // Allow at least 30 seconds in the future to account for processing time and timezone differences
-      const minimumTime = new Date(Date.now() + 30000) // 30 seconds from now
+      const nowUTC = new Date()
+      const minimumTime = new Date(nowUTC.getTime() + 30000) // 30 seconds from now
+      
+      console.log('[SCHEDULED_EMAIL] Validation', {
+        scheduledUTC: scheduledSendDateTime.toISOString(),
+        nowUTC: nowUTC.toISOString(),
+        minimumTimeUTC: minimumTime.toISOString(),
+        isFuture: scheduledSendDateTime > minimumTime,
+        diffSeconds: (scheduledSendDateTime.getTime() - minimumTime.getTime()) / 1000,
+      })
+      
       if (scheduledSendDateTime <= minimumTime) {
         return NextResponse.json(
-          { error: 'Scheduled send time must be at least 30 seconds in the future' },
+          { 
+            error: 'Scheduled send time must be at least 30 seconds in the future',
+            details: {
+              scheduled: scheduledSendDateTime.toISOString(),
+              now: nowUTC.toISOString(),
+              minimum: minimumTime.toISOString(),
+            }
+          },
           { status: 400 }
         )
       }
