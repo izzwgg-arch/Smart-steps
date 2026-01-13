@@ -78,31 +78,41 @@ export async function POST(request: NextRequest) {
       const [hour, minute = 0, second = 0] = timePart.split(':').map(Number)
       
       // CORRECT APPROACH:
-      // datetime-local gives us time components WITHOUT timezone (e.g., "2026-01-12T19:37")
+      // datetime-local gives us time components WITHOUT timezone (e.g., "2026-01-12T20:16")
       // We interpret these as America/New_York local time
       // We need to convert to UTC for database storage
       //
-      // SOLUTION: Use zonedTimeToUtc correctly
-      // zonedTimeToUtc(date, timezone) interprets the Date's UTC time as if it were
-      // local time in the target timezone, then converts to UTC
+      // SOLUTION: Create a Date object representing the time in Eastern Time, then convert to UTC
+      // We'll use Intl API to get the offset for Eastern Time at this date, then apply it
       //
-      // Step 1: Create a Date object with UTC components matching the input
-      // This represents "if these components were UTC"
-      const dateWithComponents = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+      // Step 1: Create a Date object with the components (in system timezone)
+      // Then we'll adjust it to represent Eastern Time
+      const dateInSystemTZ = new Date(year, month - 1, day, hour, minute, second)
       
-      // Step 2: Use zonedTimeToUtc to interpret these components as Eastern Time
-      // zonedTimeToUtc will treat the UTC time as if it were Eastern Time local time,
-      // then convert to the actual UTC equivalent
-      // Example: If dateWithComponents is "2026-01-12 19:37:00 UTC",
-      // zonedTimeToUtc interprets this as "2026-01-12 19:37:00 Eastern Time"
-      // and converts to UTC (adding 5 hours for EST = 2026-01-13 00:37:00 UTC)
-      scheduledSendDateTime = zonedTimeToUtc(dateWithComponents, TIMEZONE)
+      // Step 2: Get what this system timezone date represents in Eastern Time
+      const { utcToZonedTime } = await import('date-fns-tz')
+      const dateInEastern = utcToZonedTime(dateInSystemTZ, TIMEZONE)
+      
+      // Step 3: Calculate the offset between system timezone and Eastern Time
+      // This tells us how to adjust the date
+      const systemToEasternOffset = dateInSystemTZ.getTime() - dateInEastern.getTime()
+      
+      // Step 4: Adjust the date to represent Eastern Time correctly
+      // Add the offset to convert from system timezone interpretation to Eastern Time interpretation
+      const adjustedForEastern = new Date(dateInSystemTZ.getTime() + systemToEasternOffset)
+      
+      // Step 5: Convert from Eastern Time to UTC
+      // zonedTimeToUtc interprets the Date as Eastern Time and converts to UTC
+      scheduledSendDateTime = zonedTimeToUtc(adjustedForEastern, TIMEZONE)
       
       // Debug logging
       console.log('[SCHEDULED_EMAIL] Parsing scheduled time', {
         input: scheduledSendAt,
         easternTimeComponents: { year, month, day, hour, minute, second },
-        dateWithComponents: dateWithComponents.toISOString(),
+        dateInSystemTZ: dateInSystemTZ.toISOString(),
+        dateInEastern: dateInEastern.toISOString(),
+        systemToEasternOffsetHours: systemToEasternOffset / (1000 * 60 * 60),
+        adjustedForEastern: adjustedForEastern.toISOString(),
         scheduledUTC: scheduledSendDateTime.toISOString(),
         timezone: TIMEZONE,
       })
