@@ -72,24 +72,20 @@ export async function POST(request: NextRequest) {
       const TIMEZONE = 'America/New_York'
       
       // Parse the datetime-local string: "2026-01-14T00:00:00"
-      // Extract date and time components
+      // This represents a date/time WITHOUT timezone - we interpret it as America/New_York time
       const [datePart, timePart = '00:00:00'] = scheduledSendAt.split('T')
       const [year, month, day] = datePart.split('-').map(Number)
       const [hour, minute = 0, second = 0] = timePart.split(':').map(Number)
       
-      // Create a date string in ISO format for America/New_York timezone
-      // We'll construct it as if it's in America/New_York, then convert to UTC
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+      // Create a Date object using UTC components
+      // We'll treat these components as America/New_York local time, then convert to UTC
+      // zonedTimeToUtc expects a Date object and treats it as if it's in the target timezone
+      // So we create a Date with UTC components matching the input (no offset)
+      const dateInTargetTimezone = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
       
-      // Interpret this time as America/New_York and convert to UTC
-      // date-fns-tz expects a Date object representing the local time in the target timezone
-      const tempDate = new Date(`${dateStr}-05:00`) // EST/EDT offset approximation
-      scheduledSendDateTime = zonedTimeToUtc(tempDate, TIMEZONE)
-      
-      // More accurate: Create the date components and use date-fns-tz to convert
-      // Actually, let's use a simpler approach: create the date and use the timezone library properly
-      const dateInTimezone = new Date(year, month - 1, day, hour, minute, second)
-      scheduledSendDateTime = zonedTimeToUtc(dateInTimezone, TIMEZONE)
+      // Convert from America/New_York local time to UTC
+      // zonedTimeToUtc interprets the Date as local time in the specified timezone and converts to UTC
+      scheduledSendDateTime = zonedTimeToUtc(dateInTargetTimezone, TIMEZONE)
       
       // Validate that scheduled time is in the future (compare UTC times)
       if (scheduledSendDateTime <= new Date()) {
