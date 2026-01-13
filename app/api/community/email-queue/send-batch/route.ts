@@ -82,33 +82,37 @@ export async function POST(request: NextRequest) {
       // We interpret these as America/New_York local time
       // We need to convert to UTC for database storage
       //
-      // The correct way: Use zonedTimeToUtc with a Date created from the components
-      // Since JavaScript Date uses system timezone, we create UTC components first
-      // Then use Intl to calculate the offset for America/New_York at this date
+      // SOLUTION: Use Intl.DateTimeFormat to calculate what UTC time corresponds to
+      // the given Eastern Time components. We'll create a date string and parse it.
       
-      // Get the offset for America/New_York at the target date
-      // Create a sample date in UTC for the target date (noon UTC for reference)
-      const sampleUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+      // Create an ISO date string with the Eastern Time components
+      const easternDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
       
-      // Get what noon UTC is in Eastern Time
+      // Use Intl to create a date string in Eastern Time, then parse it
+      // We'll use a trick: create a date in UTC that represents noon on the target date
+      // Then calculate what that UTC time is in Eastern Time
+      // This gives us the offset
+      const noonUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
       const { utcToZonedTime } = await import('date-fns-tz')
-      const sampleEastern = utcToZonedTime(sampleUTC, TIMEZONE)
+      const noonEastern = utcToZonedTime(noonUTC, TIMEZONE)
       
-      // Calculate offset: how many hours ahead is UTC compared to Eastern Time
-      // This gives us the offset in milliseconds
-      const offsetHours = (sampleUTC.getTime() - sampleEastern.getTime()) / (1000 * 60 * 60)
+      // Calculate offset: difference between UTC noon and Eastern noon
+      // This tells us how many hours ahead UTC is compared to Eastern Time
+      const offsetMs = noonUTC.getTime() - noonEastern.getTime()
+      const offsetHours = offsetMs / (1000 * 60 * 60)
       
-      // Now create UTC date for the target time in Eastern Time
-      // Eastern Time components -> UTC: add the offset
-      const utcTime = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
-      scheduledSendDateTime = new Date(utcTime.getTime() - (offsetHours * 60 * 60 * 1000))
+      // Now: given Eastern Time components, calculate UTC
+      // Create a UTC date with the Eastern Time components
+      const targetUTC = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+      // Adjust by the offset: Eastern Time -> UTC means ADDING the offset
+      scheduledSendDateTime = new Date(targetUTC.getTime() + offsetMs)
       
       // Debug logging
       console.log('[SCHEDULED_EMAIL] Parsing scheduled time', {
         input: scheduledSendAt,
-        easternTime: { year, month, day, hour, minute, second },
+        easternTimeComponents: { year, month, day, hour, minute, second },
         offsetHours,
-        utcTime: utcTime.toISOString(),
+        targetUTC: targetUTC.toISOString(),
         scheduledUTC: scheduledSendDateTime.toISOString(),
         timezone: TIMEZONE,
       })
