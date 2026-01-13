@@ -77,31 +77,39 @@ export async function POST(request: NextRequest) {
       const [year, month, day] = datePart.split('-').map(Number)
       const [hour, minute = 0, second = 0] = timePart.split(':').map(Number)
       
-      // Create a Date object using the components as if they're in America/New_York
-      // JavaScript Date constructor creates dates in system timezone, but we'll use zonedTimeToUtc
-      // which interprets the Date's components as if they're in the target timezone
-      // Create date components as local time in America/New_York
-      // We create a Date with these components, and zonedTimeToUtc will treat them as America/New_York time
-      const dateWithComponents = new Date(year, month - 1, day, hour, minute, second)
+      // CORRECT APPROACH:
+      // datetime-local gives us time components WITHOUT timezone (e.g., "2026-01-12T19:37")
+      // We interpret these as America/New_York local time
+      // We need to convert to UTC for database storage
+      //
+      // The correct way: Use zonedTimeToUtc with a Date created from the components
+      // Since JavaScript Date uses system timezone, we create UTC components first
+      // Then use Intl to calculate the offset for America/New_York at this date
       
-      // Convert from America/New_York local time to UTC
-      // zonedTimeToUtc takes a Date object and interprets its components as local time in the specified timezone
-      // Since Date constructor uses system timezone, we need to account for that
-      // Better approach: Create a date string and use timezone-aware parsing
-      // Use zonedTimeToUtc by creating a date that represents the time in the target timezone
-      scheduledSendDateTime = zonedTimeToUtc(dateWithComponents, TIMEZONE)
+      // Get the offset for America/New_York at the target date
+      // Create a sample date in UTC for the target date (noon UTC for reference)
+      const sampleUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
       
-      // Debug logging to help troubleshoot timezone issues
+      // Get what noon UTC is in Eastern Time
+      const { utcToZonedTime } = await import('date-fns-tz')
+      const sampleEastern = utcToZonedTime(sampleUTC, TIMEZONE)
+      
+      // Calculate offset: how many hours ahead is UTC compared to Eastern Time
+      // This gives us the offset in milliseconds
+      const offsetHours = (sampleUTC.getTime() - sampleEastern.getTime()) / (1000 * 60 * 60)
+      
+      // Now create UTC date for the target time in Eastern Time
+      // Eastern Time components -> UTC: add the offset
+      const utcTime = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+      scheduledSendDateTime = new Date(utcTime.getTime() - (offsetHours * 60 * 60 * 1000))
+      
+      // Debug logging
       console.log('[SCHEDULED_EMAIL] Parsing scheduled time', {
         input: scheduledSendAt,
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        dateWithComponents: dateWithComponents.toISOString(),
-        scheduledSendDateTimeUTC: scheduledSendDateTime.toISOString(),
+        easternTime: { year, month, day, hour, minute, second },
+        offsetHours,
+        utcTime: utcTime.toISOString(),
+        scheduledUTC: scheduledSendDateTime.toISOString(),
         timezone: TIMEZONE,
       })
       
