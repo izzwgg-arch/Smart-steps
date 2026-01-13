@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
         input: scheduledSendAt,
         easternTimeComponents: { year, month, day, hour, minute, second },
         offsetHours,
-        tempUTC: tempUTC.toISOString(),
+        tempAsUTC: tempAsUTC.toISOString(),
         scheduledUTC: scheduledSendDateTime.toISOString(),
         timezone: TIMEZONE,
       })
