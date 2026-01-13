@@ -289,10 +289,14 @@ export default function CommunityEmailQueuePage() {
         toast.error('Please select a date and time for scheduled send')
         return
       }
+      // datetime-local gives us a string like "2026-01-13T14:30" in local time
+      // Create a Date object from it (will be interpreted as local time)
       const scheduledDate = new Date(scheduledDateTime)
       const now = new Date()
-      if (scheduledDate <= now) {
-        toast.error('Scheduled date and time must be in the future')
+      // Allow scheduling at least 1 minute in the future to account for timezone differences
+      const oneMinuteFromNow = new Date(now.getTime() + 60000)
+      if (scheduledDate <= oneMinuteFromNow) {
+        toast.error('Scheduled date and time must be at least 1 minute in the future')
         return
       }
     }
@@ -693,17 +697,26 @@ export default function CommunityEmailQueuePage() {
               {scheduleSend && (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Scheduled Send Date & Time
+                    Scheduled Send Date & Time (Eastern Time)
                   </label>
                   <input
                     type="datetime-local"
                     value={scheduledDateTime}
                     onChange={(e) => setScheduledDateTime(e.target.value)}
-                    min={new Date().toISOString().slice(0, 16)}
+                    min={(() => {
+                      // Get current local time in the format datetime-local expects (YYYY-MM-DDTHH:mm)
+                      const now = new Date()
+                      const year = now.getFullYear()
+                      const month = String(now.getMonth() + 1).padStart(2, '0')
+                      const day = String(now.getDate()).padStart(2, '0')
+                      const hours = String(now.getHours()).padStart(2, '0')
+                      const minutes = String(now.getMinutes()).padStart(2, '0')
+                      return `${year}-${month}-${day}T${hours}:${minutes}`
+                    })()}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Select a future date and time to schedule the email send
+                    Select a date and time in Eastern Time to schedule the email send (minimum: current time)
                   </p>
                 </div>
               )}

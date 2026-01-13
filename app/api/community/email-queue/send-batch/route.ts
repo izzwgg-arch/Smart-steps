@@ -88,9 +88,11 @@ export async function POST(request: NextRequest) {
       scheduledSendDateTime = zonedTimeToUtc(dateInTargetTimezone, TIMEZONE)
       
       // Validate that scheduled time is in the future (compare UTC times)
-      if (scheduledSendDateTime <= new Date()) {
+      // Allow at least 30 seconds in the future to account for processing time and timezone differences
+      const minimumTime = new Date(Date.now() + 30000) // 30 seconds from now
+      if (scheduledSendDateTime <= minimumTime) {
         return NextResponse.json(
-          { error: 'Scheduled send time must be in the future' },
+          { error: 'Scheduled send time must be at least 30 seconds in the future' },
           { status: 400 }
         )
       }
