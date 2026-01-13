@@ -151,6 +151,7 @@ export async function POST(
             status: 'QUEUED',
             toEmail: defaultRecipients,
             subject: emailSubject,
+            context: 'MAIN', // Mark as MAIN email queue
           },
         })
       } catch (queueError: any) {

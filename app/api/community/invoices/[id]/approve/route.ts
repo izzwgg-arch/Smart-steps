@@ -93,6 +93,7 @@ export async function POST(
             entityId: invoiceId,
             queuedByUserId: session.user.id,
             status: 'QUEUED',
+            context: 'COMMUNITY', // Mark as COMMUNITY email queue
           },
         })
       } catch (queueError: any) {

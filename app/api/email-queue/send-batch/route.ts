@@ -61,10 +61,13 @@ export async function POST(request: NextRequest) {
         return []
       }
 
-      // Lock them to SENDING
+      // Lock them to SENDING and ensure context is MAIN
       await tx.emailQueueItem.updateMany({
         where: { id: { in: queuedItems.map((item) => item.id) } },
-        data: { status: 'SENDING' },
+        data: { 
+          status: 'SENDING',
+          context: 'MAIN', // Ensure MAIN context for main email queue
+        },
       })
 
       return queuedItems

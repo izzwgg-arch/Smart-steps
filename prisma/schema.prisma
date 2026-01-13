@@ -107,6 +107,13 @@ model Role {
   canViewCommunityClassesClients    Boolean @default(false)
   canViewCommunityClassesInvoices   Boolean @default(false)
   canViewCommunityClassesEmailQueue Boolean @default(false)
+  
+  // Community Classes Email Queue granular permissions
+  communityEmailQueueView    Boolean @default(false)
+  communityEmailQueueSendNow Boolean @default(false)
+  communityEmailQueueSchedule Boolean @default(false)
+  communityEmailQueueDelete  Boolean @default(false)
+  communityEmailQueueAttachPdf Boolean @default(false)
 
   permissions         RolePermission[]
   dashboardVisibility RoleDashboardVisibility[]
@@ -455,6 +462,11 @@ enum EmailQueueEntityType {
   COMMUNITY_INVOICE
 }
 
+enum EmailQueueContext {
+  MAIN
+  COMMUNITY
+}
+
 enum CommunityClientStatus {
   ACTIVE
   INACTIVE
@@ -493,6 +505,12 @@ model EmailQueueItem {
   attempts  Int     @default(0) // Number of send attempts
   lastError String? // Last error message (more detailed than errorMessage)
   scheduledSendAt DateTime? // Scheduled send time (for Community Classes email queue)
+  
+  // Queue context and attachment fields
+  context         EmailQueueContext? // MAIN | COMMUNITY - distinguishes queue type
+  attachmentKey   String? // Storage key/path for additional PDF attachment
+  attachmentUrl   String? // URL to access additional PDF attachment
+  attachmentFilename String? // Original filename of additional PDF attachment
 
   queuedBy  User  @relation("EmailQueueCreator", fields: [queuedByUserId], references: [id])
   deletedBy User? @relation("EmailQueueDeleter", fields: [deletedByUserId], references: [id])

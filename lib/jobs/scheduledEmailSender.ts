@@ -3,6 +3,11 @@ import { sendMailSafe } from '../email'
 import { generateCommunityInvoicePdf } from '../pdf/communityInvoicePdf'
 import { format } from 'date-fns'
 import { v4 as uuidv4 } from 'uuid'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
+
+const UPLOAD_DIR = join(process.cwd(), 'uploads', 'community-email-attachments')
 
 /**
  * Send scheduled Community Classes email batch
@@ -243,12 +248,46 @@ ${emailItems.map(item => `- ${item.clientName} | ${item.className} | ${item.unit
 All invoices are attached as PDF files. Please review and process accordingly.
   `
 
+  // Step 6.5: Load additional PDF attachment if stored on queue items
+  const allAttachments = [...pdfAttachments]
+  const firstItemWithAttachment = lockedItems.find(item => item.attachmentKey)
+  if (firstItemWithAttachment?.attachmentKey) {
+    try {
+      const attachmentPath = join(UPLOAD_DIR, firstItemWithAttachment.attachmentKey)
+      if (existsSync(attachmentPath)) {
+        const attachmentBuffer = await readFile(attachmentPath)
+        allAttachments.push({
+          filename: firstItemWithAttachment.attachmentFilename || `additional-${firstItemWithAttachment.attachmentKey}.pdf`,
+          content: attachmentBuffer,
+          contentType: 'application/pdf',
+        })
+        console.log('[EMAIL_COMMUNITY] Added additional PDF attachment from scheduled item', {
+          attachmentKey: firstItemWithAttachment.attachmentKey,
+          filename: firstItemWithAttachment.attachmentFilename,
+          size: attachmentBuffer.length,
+        })
+      } else {
+        console.warn('[EMAIL_COMMUNITY] Scheduled attachment file not found', { 
+          attachmentKey: firstItemWithAttachment.attachmentKey, 
+          attachmentPath 
+        })
+      }
+    } catch (error: any) {
+      console.error('[EMAIL_COMMUNITY] Failed to load scheduled attachment', { 
+        attachmentKey: firstItemWithAttachment.attachmentKey, 
+        error: error.message 
+      })
+      // Continue without attachment rather than failing the entire send
+    }
+  }
+
   // Step 7: Send email (with logging)
   console.log('[EMAIL_COMMUNITY] Sending scheduled email', {
     queueItemIds: itemIds,
     recipients: recipients.join(', '),
     source: 'COMMUNITY',
     batchId,
+    hasAdditionalAttachment: !!firstItemWithAttachment?.attachmentKey,
   })
 
   const emailResult = await sendMailSafe(
@@ -258,7 +297,7 @@ All invoices are attached as PDF files. Please review and process accordingly.
       subject: `${emailSubjectPrefix} – Approved Community Invoices Batch (${batchDate})`,
       html: emailHtml,
       text: emailText,
-      attachments: pdfAttachments,
+      attachments: allAttachments,
     },
     {
       action: 'EMAIL_SENT',

@@ -8,6 +8,11 @@ import { logEmailSent, logEmailFailed } from '@/lib/audit'
 import { getUserPermissions } from '@/lib/permissions'
 import { format } from 'date-fns'
 import { v4 as uuidv4 } from 'uuid'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
+
+const UPLOAD_DIR = join(process.cwd(), 'uploads', 'community-email-attachments')
 
 /**
  * SEND BATCH EMAIL FOR COMMUNITY INVOICES
@@ -42,6 +47,8 @@ export async function POST(request: NextRequest) {
     const selectedItemIds = requestBody.itemIds // Optional: array of item IDs to send
     const customRecipients = requestBody.recipients // REQUIRED: Array of email addresses from request (Community must use user-entered recipients)
     const scheduledSendAt = requestBody.scheduledSendAt // Optional: ISO datetime string for scheduled send
+    const attachmentKey = requestBody.attachmentKey // Optional: Key for additional PDF attachment
+    const attachmentFilename = requestBody.attachmentFilename // Optional: Original filename for attachment
 
     // COMMUNITY EMAIL QUEUE: Recipients are REQUIRED (no fallback to fixed emails)
     if (!customRecipients || !Array.isArray(customRecipients) || customRecipients.length === 0) {
@@ -182,14 +189,24 @@ export async function POST(request: NextRequest) {
             scheduledSendAt: scheduledSendDateTime,
             toEmail: recipientsStr, // Store user-entered recipients (NO fallback)
             subject: emailSubject,
+            context: 'COMMUNITY', // Mark as Community queue item
+            attachmentKey: attachmentKey || null, // Store attachment key if provided
+            attachmentFilename: attachmentFilename || null, // Store attachment filename if provided
             // Keep status as QUEUED - will be processed by cron job
           },
         })
       } else {
         // Lock them to SENDING for immediate send
+        // Also store recipients and context for tracking
         await tx.emailQueueItem.updateMany({
           where: { id: { in: queuedItems.map((item) => item.id) } },
-          data: { status: 'SENDING' },
+          data: { 
+            status: 'SENDING',
+            toEmail: normalizedRecipients.join(','), // Store user-entered recipients
+            context: 'COMMUNITY', // Mark as Community queue item
+            attachmentKey: attachmentKey || null, // Store attachment key if provided
+            attachmentFilename: attachmentFilename || null, // Store attachment filename if provided
+          },
         })
       }
 
@@ -345,22 +362,18 @@ export async function POST(request: NextRequest) {
     const totalUnits = emailItems.reduce((sum, item) => sum + item.units, 0)
 
     // Step 6: COMMUNITY EMAIL QUEUE - Use user-entered recipients (already validated, no fallback)
+    // Recipients already stored in transaction above
     const recipients = normalizedRecipients
-
-    // Step 7: Store recipients in queue items for immediate send (for tracking)
-    await prisma.emailQueueItem.updateMany({
-      where: { id: { in: lockedItems.map((item) => item.id) } },
-      data: {
-        toEmail: normalizedRecipients.join(','),
-      },
-    })
 
     console.log('[EMAIL_COMMUNITY] Sending batch email', {
       queueItemIds: lockedItems.map((item) => item.id),
       recipients: recipients.join(', '),
       source: 'COMMUNITY',
+      context: 'COMMUNITY',
       batchId,
       lockedItemsCount: lockedItems.length,
+      hasAttachment: !!attachmentKey,
+      attachmentKey: attachmentKey || null,
     })
 
     // Step 8: Build email content with KJ Play Center branding
@@ -439,6 +452,32 @@ ${emailItems.map(item => `- ${item.clientName} | ${item.className} | ${item.unit
 All invoices are attached as PDF files. Please review and process accordingly.
     `
 
+    // Step 8.5: Load additional PDF attachment if provided
+    const allAttachments = [...pdfAttachments]
+    if (attachmentKey) {
+      try {
+        const attachmentPath = join(UPLOAD_DIR, attachmentKey)
+        if (existsSync(attachmentPath)) {
+          const attachmentBuffer = await readFile(attachmentPath)
+          allAttachments.push({
+            filename: attachmentFilename || `additional-${attachmentKey}.pdf`,
+            content: attachmentBuffer,
+            contentType: 'application/pdf',
+          })
+          console.log('[EMAIL_COMMUNITY] Added additional PDF attachment', {
+            attachmentKey,
+            filename: attachmentFilename,
+            size: attachmentBuffer.length,
+          })
+        } else {
+          console.warn('[EMAIL_COMMUNITY] Attachment file not found', { attachmentKey, attachmentPath })
+        }
+      } catch (error: any) {
+        console.error('[EMAIL_COMMUNITY] Failed to load attachment', { attachmentKey, error: error.message })
+        // Continue without attachment rather than failing the entire send
+      }
+    }
+
     // Step 9: Send batch email
     const emailResult = await sendMailSafe(
       {
@@ -447,7 +486,7 @@ All invoices are attached as PDF files. Please review and process accordingly.
         subject: `${emailSubjectPrefix} – Approved Community Invoices Batch (${batchDate})`,
         html: emailHtml,
         text: emailText,
-        attachments: pdfAttachments,
+        attachments: allAttachments,
       },
       {
         action: 'EMAIL_SENT',

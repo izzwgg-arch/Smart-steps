@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import toast from 'react-hot-toast'
-import { Check, X, Mail, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, X, Mail, Loader2, RefreshCw, Trash2, Paperclip, XCircle } from 'lucide-react'
 import { DashboardNav } from '@/components/DashboardNav'
 import { formatDateTime, formatRelativeTime, formatCurrency } from '@/lib/utils'
 
@@ -55,6 +55,10 @@ export default function CommunityEmailQueuePage() {
   const [deleting, setDeleting] = useState(false)
   const [scheduleSend, setScheduleSend] = useState(false)
   const [scheduledDateTime, setScheduledDateTime] = useState('')
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [attachmentKey, setAttachmentKey] = useState<string | null>(null)
+  const [attachmentFilename, setAttachmentFilename] = useState<string | null>(null)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
 
   useEffect(() => {
     if (sessionStatus === 'loading') return
@@ -258,6 +262,51 @@ export default function CommunityEmailQueuePage() {
     setShowEmailModal(true)
   }
 
+  const handleAttachmentUpload = async (file: File) => {
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are allowed')
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be less than 10MB')
+      return
+    }
+
+    setUploadingAttachment(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/community/email-queue/attachment-upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        setAttachmentFile(file)
+        setAttachmentKey(data.attachmentKey)
+        setAttachmentFilename(data.attachmentFilename)
+        toast.success('PDF attachment uploaded successfully')
+      } else {
+        toast.error(data.error || 'Failed to upload attachment')
+      }
+    } catch (error) {
+      console.error('Error uploading attachment:', error)
+      toast.error('An unexpected error occurred while uploading attachment')
+    } finally {
+      setUploadingAttachment(false)
+    }
+  }
+
+  const handleRemoveAttachment = () => {
+    setAttachmentFile(null)
+    setAttachmentKey(null)
+    setAttachmentFilename(null)
+  }
+
   const handleConfirmSendBatch = async () => {
     // Validate recipients are required
     if (!customEmail.trim()) {
@@ -313,6 +362,12 @@ export default function CommunityEmailQueuePage() {
         requestBody.scheduledSendAt = scheduledDateTime
       }
 
+      // Include attachment if uploaded
+      if (attachmentKey && attachmentFilename) {
+        requestBody.attachmentKey = attachmentKey
+        requestBody.attachmentFilename = attachmentFilename
+      }
+
       const res = await fetch('/api/community/email-queue/send-batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -335,6 +390,9 @@ export default function CommunityEmailQueuePage() {
         setCustomEmail('')
         setScheduleSend(false)
         setScheduledDateTime('')
+        setAttachmentFile(null)
+        setAttachmentKey(null)
+        setAttachmentFilename(null)
       } else {
         toast.error(data.error || 'Failed to send/schedule batch email')
       }
@@ -415,14 +473,53 @@ export default function CommunityEmailQueuePage() {
                   )}
                 </button>
                 {selectedItems.size > 0 && (
-                  <button
-                    onClick={handleSendSelected}
-                    disabled={sending || loading}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
-                  >
-                    <Mail className="w-4 h-4" />
-                    <span>Send Selected ({selectedItems.size})</span>
-                  </button>
+                  <>
+                    <label className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center space-x-2 cursor-pointer disabled:opacity-50">
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        className="hidden"
+                        disabled={uploadingAttachment || sending || loading}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            handleAttachmentUpload(file)
+                          }
+                        }}
+                      />
+                      {uploadingAttachment ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Paperclip className="w-4 h-4" />
+                          <span>Attach PDF</span>
+                        </>
+                      )}
+                    </label>
+                    {attachmentFile && (
+                      <div className="flex items-center space-x-2 px-3 py-2 bg-gray-100 rounded-md">
+                        <span className="text-sm text-gray-700">{attachmentFilename}</span>
+                        <button
+                          onClick={handleRemoveAttachment}
+                          className="text-red-600 hover:text-red-700"
+                          type="button"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      onClick={handleSendSelected}
+                      disabled={sending || loading}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
+                    >
+                      <Mail className="w-4 h-4" />
+                      <span>Send Selected ({selectedItems.size})</span>
+                    </button>
+                  </>
                 )}
               </>
             )}
@@ -476,13 +573,47 @@ export default function CommunityEmailQueuePage() {
             </span>
             <div className="flex items-center gap-2">
               {canSendBatch && (
-                <button
-                  onClick={handleSendSelected}
-                  disabled={sending || loading}
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
-                >
-                  Send Selected
-                </button>
+                <>
+                  <label className="px-3 py-1.5 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 cursor-pointer disabled:opacity-50">
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      disabled={uploadingAttachment || sending || loading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          handleAttachmentUpload(file)
+                        }
+                      }}
+                    />
+                    {uploadingAttachment ? (
+                      <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                    ) : (
+                      <Paperclip className="w-3 h-3 inline mr-1" />
+                    )}
+                    Attach PDF
+                  </label>
+                  {attachmentFile && (
+                    <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 rounded text-xs">
+                      <span className="text-gray-700">{attachmentFilename}</span>
+                      <button
+                        onClick={handleRemoveAttachment}
+                        className="text-red-600 hover:text-red-700"
+                        type="button"
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleSendSelected}
+                    disabled={sending || loading}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
+                  >
+                    Send Selected
+                  </button>
+                </>
               )}
               {canDelete && (
                 <button
