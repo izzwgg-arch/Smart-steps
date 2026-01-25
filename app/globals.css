@@ -55,17 +55,24 @@ h2[style*="color:rgb(0, 0, 0)"],
 h3[style*="color: #000000"],
 h3[style*="color:#000000"],
 h3[style*="color: rgb(0, 0, 0)"],
-h3[style*="color:rgb(0, 0, 0)"],
-p[style*="color: #000000"],
-p[style*="color:#000000"],
-p[style*="color: rgb(0, 0, 0)"],
-p[style*="color:rgb(0, 0, 0)"] {
+h3[style*="color:rgb(0, 0, 0)"] {
   color: #000000 !important;
 }
 
 /* Make paragraphs white on blue background (except in white containers) */
 p:not(.bg-white p):not(.card p):not([class*="bg-white"] p) {
   color: #ffffff !important;
+}
+
+/* Override white paragraph rule for paragraphs with inline black color style - must come after white paragraph rule */
+p[style*="color: #000000"],
+p[style*="color:#000000"],
+p[style*="color: rgb(0, 0, 0)"],
+p[style*="color:rgb(0, 0, 0)"],
+.bg-gray-50 p[style*="color"],
+div[class*="bg-gray"] p[style*="color"],
+div.bg-gray-50 p[style*="color"] {
+  color: #000000 !important;
 }
 
 /* Make all "Back to" links white on blue background */
