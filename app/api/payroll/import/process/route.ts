@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
 
     // Batch insert time logs
     if (timeLogs.length > 0) {
-      await prisma.payrollTimeLog.createMany({
+      await (prisma as any).payrollTimeLog.createMany({
         data: timeLogs,
         skipDuplicates: true,
       })
