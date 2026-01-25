@@ -391,6 +391,37 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             margin: 0 !important;
             size: auto;
           }
+          
+          /* Repeat header and info card on each page */
+          @media print {
+            /* Use thead-like behavior to repeat header on each page */
+            .print-header-wrapper {
+              display: table-header-group !important;
+            }
+            
+            .print-form {
+              display: table !important;
+              width: 100% !important;
+            }
+            
+            .print-form-content {
+              display: table-row-group !important;
+            }
+            
+            /* Ensure header and info card don't break across pages */
+            .modern-form-header,
+            .print-header-wrapper {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              page-break-after: avoid !important;
+              break-after: avoid !important;
+            }
+            
+            .info-card {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+          }
           html,
           body {
             background: white !important;
@@ -736,17 +767,19 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
         </div>
 
         <div className="bg-white shadow rounded-lg p-6 print-form" style={{ boxShadow: 'none' }}>
-          {/* Modern Header with Gradient */}
-          <div className="modern-form-header mb-8">
-            <div className="header-gradient">
-              <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
-              <div className="header-accent-line"></div>
+          {/* Header wrapper that will repeat on each page */}
+          <div className="print-header-wrapper">
+            {/* Modern Header with Gradient */}
+            <div className="modern-form-header mb-8">
+              <div className="header-gradient">
+                <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
+                <div className="header-accent-line"></div>
+              </div>
             </div>
-          </div>
 
-          {/* Header Section */}
-          <div className="mb-8">
-            <div className="info-card">
+            {/* Header Section */}
+            <div className="mb-8">
+              <div className="info-card">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <div className="info-label">Client Name</div>
@@ -802,6 +835,8 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
               </div>
             </div>
           </div>
+          </div>
+          {/* End of print-header-wrapper */}
 
           {/* Regular View - Single Table with all rows */}
           <div className="no-print mt-6">
