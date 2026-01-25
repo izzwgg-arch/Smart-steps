@@ -96,11 +96,18 @@ export async function PUT(
     }
 
     if (email !== undefined) {
-      // Check if email is being changed and if it's already taken
-      if (email !== existingUser.email) {
-        const emailTaken = await prisma.user.findUnique({
-          where: { email },
-        })
+      // Normalize email to lowercase for consistency
+      const normalizedEmail = email.trim().toLowerCase()
+      
+      // Check if email is being changed and if it's already taken (case-insensitive)
+      if (normalizedEmail !== existingUser.email.toLowerCase()) {
+        const emailTakenUsers = await prisma.$queryRaw<Array<{ id: string; email: string; deletedAt: Date | null }>>`
+          SELECT id, email, "deletedAt"
+          FROM "User"
+          WHERE LOWER(email) = LOWER(${normalizedEmail})
+          LIMIT 1
+        `
+        const emailTaken = emailTakenUsers[0] || null
 
         if (emailTaken && !emailTaken.deletedAt) {
           return NextResponse.json(
@@ -108,7 +115,7 @@ export async function PUT(
             { status: 400 }
           )
         }
-        updateData.email = email
+        updateData.email = normalizedEmail
       }
     }
 

@@ -14,6 +14,12 @@ import {
   isSunday,
   isFriday,
   isSaturday,
+  isSaturdayInTimezone,
+  formatDateOnly,
+  getDateInTimezone,
+  getDateObjectInTimezone,
+  formatDateInTimezone,
+  parseDateOnly,
 } from '@/lib/dateUtils'
 import {
   parseTimeToMinutes,
@@ -156,19 +162,48 @@ export function TimesheetForm({
 }: TimesheetFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [startDate, setStartDate] = useState<Date | null>(
-    timesheet ? new Date(timesheet.startDate) : null
-  )
-  const [endDate, setEndDate] = useState<Date | null>(
-    timesheet ? new Date(timesheet.endDate) : null
-  )
+  const [startDate, setStartDate] = useState<Date | null>(() => {
+    try {
+      if (timesheet?.startDate) {
+        // CRITICAL: Always interpret timesheet dates in NY timezone, not user's local timezone
+        const dateStr = getDateInTimezone(timesheet.startDate, 'America/New_York')
+        const date = parseDateOnly(dateStr, 'America/New_York')
+        if (!isNaN(date.getTime())) {
+          return date
+        }
+        console.error('[TIMESHEET] Invalid startDate in timesheet:', timesheet.startDate)
+      }
+      return null
+    } catch (error) {
+      console.error('[TIMESHEET] Error parsing startDate:', error)
+      return null
+    }
+  })
+  const [endDate, setEndDate] = useState<Date | null>(() => {
+    try {
+      if (timesheet?.endDate) {
+        // CRITICAL: Always interpret timesheet dates in NY timezone, not user's local timezone
+        const dateStr = getDateInTimezone(timesheet.endDate, 'America/New_York')
+        const date = parseDateOnly(dateStr, 'America/New_York')
+        if (!isNaN(date.getTime())) {
+          return date
+        }
+        console.error('[TIMESHEET] Invalid endDate in timesheet:', timesheet.endDate)
+      }
+      return null
+    } catch (error) {
+      console.error('[TIMESHEET] Error parsing endDate:', error)
+      return null
+    }
+  })
   const [providerId, setProviderId] = useState(timesheet?.providerId || '')
   const [clientId, setClientId] = useState(timesheet?.clientId || '')
   const [bcbaId, setBcbaId] = useState(timesheet?.bcbaId || '')
   const [insuranceId, setInsuranceId] = useState(timesheet?.insuranceId || '')
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([])
   const [totalHours, setTotalHours] = useState(0)
-  const [timezone, setTimezone] = useState<string>(timesheet?.timezone || 'America/New_York')
+  // Always use America/New_York timezone for all timesheets regardless of user location
+  const [timezone, setTimezone] = useState<string>('America/New_York')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -208,116 +243,252 @@ export function TimesheetForm({
   // Track if we've initialized edit mode to prevent overwriting existing entries
   const hasInitializedRef = useRef(false)
 
-  // Auto-select insurance when client is selected
-  useEffect(() => {
-    if (clientId) {
-      const client = clients.find((c) => c.id === clientId)
-      if (client) {
-        setInsuranceId(client.insurance.id)
-      }
-    }
-  }, [clientId, clients])
+  // Insurance is derived from client - no need to auto-select or store
 
   // Load timesheet data when in edit mode
   useEffect(() => {
     if (timesheet && startDate && endDate && !hasInitializedRef.current) {
-      hasInitializedRef.current = true
-      const days = getDaysInRange(startDate, endDate)
-      // Exclude Saturdays - never render in bottom section (CRITICAL: Filter at data generation level)
-      const daysWithoutSaturday = days.filter((date) => {
-        const dayOfWeek = date.getDay()
-        // Regression test: Assert no Saturdays
-        if (dayOfWeek === 6) {
-          console.error('[TIMESHEET] CRITICAL: Saturday detected in edit mode date generation - this should never happen!', date)
-          return false
+      try {
+        // Validate dates before processing
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          console.error('[TIMESHEET] Invalid dates in edit mode:', { startDate, endDate })
+          toast.error('Invalid date range. Please refresh the page.')
+          return
         }
-        return true
-      })
-      // Final assertion: Verify no Saturdays in final entries
-      const entries: DayEntry[] = daysWithoutSaturday.map((date) => {
-        // Assert no Saturdays in rendered data
-        if (date.getDay() === 6) {
-          console.error('[TIMESHEET] CRITICAL: Saturday found in edit mode entry generation!', date)
-          throw new Error('Saturday detected in timesheet entry generation (edit mode)')
+
+        // Validate timesheet entries exist
+        if (!timesheet.entries || !Array.isArray(timesheet.entries)) {
+          console.error('[TIMESHEET] Invalid timesheet entries:', timesheet.entries)
+          toast.error('Invalid timesheet data. Please refresh the page.')
+          return
         }
-        const dateStr = format(date, 'yyyy-MM-dd')
-        const dayEntries = timesheet.entries.filter((entry) => {
-          const entryDate = format(new Date(entry.date), 'yyyy-MM-dd')
-          return entryDate === dateStr
+
+        // CRITICAL: Filter out any Saturday entries from existing timesheet data
+        const filteredEntries = timesheet.entries.filter((entry) => {
+          try {
+            if (!entry || !entry.date) return false
+            // CRITICAL: Always check dates in NY timezone, not user's local timezone
+            const entryDateObj = getDateObjectInTimezone(entry.date, timezone)
+            if (isNaN(entryDateObj.getTime())) return false
+            if (isSaturday(entryDateObj)) {
+              console.error('[TIMESHEET] Saturday entry found in existing timesheet - removing:', entry)
+              return false
+            }
+            return true
+          } catch (error) {
+            console.error('[TIMESHEET] Error checking entry date:', error, entry)
+            return false
+          }
         })
 
-        const drEntry = dayEntries.find((e) => e.notes === 'DR')
-        const svEntry = dayEntries.find((e) => e.notes === 'SV')
+        // Use filtered entries instead of original
+        const timesheetWithoutSaturdays = { ...timesheet, entries: filteredEntries }
 
-        // Convert 24-hour strings to minutes, then to TimeAMPM
-        const drFromMinutes = drEntry
-          ? parseTimeToMinutes(drEntry.startTime)
-          : null
-        const drToMinutes = drEntry
-          ? parseTimeToMinutes(drEntry.endTime)
-          : null
-        const svFromMinutes = svEntry
-          ? parseTimeToMinutes(svEntry.startTime)
-          : null
-        const svToMinutes = svEntry
-          ? parseTimeToMinutes(svEntry.endTime)
-          : null
-
-        // Convert to TimeAMPM
-        const drFrom = drFromMinutes !== null && drFromMinutes !== INVALID_TIME
-          ? minutesToTimeAMPM(drFromMinutes)
-          : null
-        const drTo = drToMinutes !== null && drToMinutes !== INVALID_TIME
-          ? minutesToTimeAMPM(drToMinutes)
-          : null
-        const svFrom = svFromMinutes !== null && svFromMinutes !== INVALID_TIME
-          ? minutesToTimeAMPM(svFromMinutes)
-          : null
-        const svTo = svToMinutes !== null && svToMinutes !== INVALID_TIME
-          ? minutesToTimeAMPM(svToMinutes)
-          : null
-
-        // Calculate hours
-        const drDuration = calculateDurationMinutes(drFrom, drTo)
-        const svDuration = calculateDurationMinutes(svFrom, svTo)
-
-        // Guard against NaN
-        const drHours = drDuration !== null ? drDuration / 60 : 0
-        const svHours = svDuration !== null ? svDuration / 60 : 0
-
-        return {
-          date,
-          dayName: getDayName(date),
-          drFrom,
-          drTo,
-          drHours,
-          drUse: !!drEntry,
-          drInvoiced: drEntry?.invoiced || false,
-          svFrom,
-          svTo,
-          svHours,
-          svUse: !!svEntry,
-          svInvoiced: svEntry?.invoiced || false,
-          touched: {
-            drFrom: true, // Existing entries are always touched
-            drTo: true,
-            svFrom: true,
-            svTo: true,
-          },
-          errors: {
-            dr: null,
-            sv: null,
-          },
+        hasInitializedRef.current = true
+        
+        let days: Date[] = []
+        try {
+          days = getDaysInRange(startDate, endDate)
+        } catch (error) {
+          console.error('[TIMESHEET] Error getting days in range:', error)
+          toast.error('Error processing date range. Please refresh the page.')
+          hasInitializedRef.current = false
+          return
         }
-      })
-      // Final verification: Assert no Saturdays in final state (edit mode)
-      const hasSaturday = entries.some(entry => entry.date.getDay() === 6)
-      if (hasSaturday) {
-        console.error('[TIMESHEET] CRITICAL: Saturday entries found in final state (edit mode)!', entries.filter(e => e.date.getDay() === 6))
-        throw new Error('Saturday entries detected in timesheet state (edit mode)')
+
+        // Exclude Saturdays - never render in bottom section (CRITICAL: Filter at data generation level)
+        // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+        const daysWithoutSaturday = days.filter((date) => {
+          try {
+            if (!date || isNaN(date.getTime())) return false
+            // Convert date to date string in NY timezone and check if it's Saturday
+            const dateStr = formatDateOnly(date, timezone)
+            if (isSaturdayInTimezone(dateStr, timezone)) {
+              console.error('[TIMESHEET] CRITICAL: Saturday detected in edit mode date generation - this should never happen!', date)
+              return false
+            }
+            return true
+          } catch (error) {
+            console.error('[TIMESHEET] Error filtering date:', error, date)
+            return false
+          }
+        })
+        
+        // Final assertion: Verify no Saturdays in final entries
+        const entries = daysWithoutSaturday
+          .map((date) => {
+            try {
+              // Validate date before processing
+              if (!date || isNaN(date.getTime())) {
+                console.error('[TIMESHEET] Invalid date in entry generation:', date)
+                return null
+              }
+
+              // Assert no Saturdays in rendered data (skip instead of throw)
+              // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+              const checkDateStr = formatDateOnly(date, timezone)
+              if (isSaturdayInTimezone(checkDateStr, timezone)) {
+                console.error('[TIMESHEET] CRITICAL: Saturday found in edit mode entry generation!', date)
+                return null // Skip instead of throwing
+              }
+
+              let dateStr: string
+              try {
+                dateStr = format(date, 'yyyy-MM-dd')
+              } catch (error) {
+                console.error('[TIMESHEET] Error formatting date:', error, date)
+                return null
+              }
+
+              const dayEntries = timesheetWithoutSaturdays.entries.filter((entry) => {
+                try {
+                  if (!entry || !entry.date) return false
+                  // CRITICAL: Always interpret entry dates in NY timezone, not user's local timezone
+                  const entryDate = getDateInTimezone(entry.date, timezone)
+                  return entryDate === dateStr
+                } catch (error) {
+                  console.error('[TIMESHEET] Error parsing entry date:', error, entry)
+                  return false
+                }
+              })
+
+              const drEntry = dayEntries.find((e) => e?.notes === 'DR')
+              const svEntry = dayEntries.find((e) => e?.notes === 'SV')
+
+              // Convert 24-hour strings to minutes, then to TimeAMPM
+              let drFromMinutes: number | null = null
+              let drToMinutes: number | null = null
+              let svFromMinutes: number | null = null
+              let svToMinutes: number | null = null
+
+              try {
+                drFromMinutes = drEntry?.startTime ? parseTimeToMinutes(drEntry.startTime) : null
+                drToMinutes = drEntry?.endTime ? parseTimeToMinutes(drEntry.endTime) : null
+                svFromMinutes = svEntry?.startTime ? parseTimeToMinutes(svEntry.startTime) : null
+                svToMinutes = svEntry?.endTime ? parseTimeToMinutes(svEntry.endTime) : null
+              } catch (error) {
+                console.error('[TIMESHEET] Error parsing times:', error, { drEntry, svEntry })
+              }
+
+              // Convert to TimeAMPM
+              let drFrom: TimeAMPM | null = null
+              let drTo: TimeAMPM | null = null
+              let svFrom: TimeAMPM | null = null
+              let svTo: TimeAMPM | null = null
+
+              try {
+                drFrom = drFromMinutes !== null && drFromMinutes !== INVALID_TIME
+                  ? minutesToTimeAMPM(drFromMinutes)
+                  : null
+                drTo = drToMinutes !== null && drToMinutes !== INVALID_TIME
+                  ? minutesToTimeAMPM(drToMinutes)
+                  : null
+                svFrom = svFromMinutes !== null && svFromMinutes !== INVALID_TIME
+                  ? minutesToTimeAMPM(svFromMinutes)
+                  : null
+                svTo = svToMinutes !== null && svToMinutes !== INVALID_TIME
+                  ? minutesToTimeAMPM(svToMinutes)
+                  : null
+              } catch (error) {
+                console.error('[TIMESHEET] Error converting to TimeAMPM:', error)
+              }
+
+              // Calculate hours
+              let drDuration: number | null = null
+              let svDuration: number | null = null
+
+              try {
+                drDuration = calculateDurationMinutes(drFrom, drTo)
+                svDuration = calculateDurationMinutes(svFrom, svTo)
+              } catch (error) {
+                console.error('[TIMESHEET] Error calculating duration:', error)
+              }
+
+              // Guard against NaN
+              const drHours = drDuration !== null && !isNaN(drDuration) ? drDuration / 60 : 0
+              const svHours = svDuration !== null && !isNaN(svDuration) ? svDuration / 60 : 0
+
+              // Get day name safely
+              let dayName: string = 'Unknown'
+              try {
+                dayName = getDayName(date)
+              } catch (error) {
+                console.error('[TIMESHEET] Error getting day name:', error, date)
+                dayName = format(date, 'EEE') // Fallback to short name
+              }
+
+              return {
+                date,
+                dayName,
+                drFrom,
+                drTo,
+                drHours: isNaN(drHours) ? 0 : drHours,
+                drUse: !!drEntry,
+                drInvoiced: drEntry?.invoiced || false,
+                svFrom,
+                svTo,
+                svHours: isNaN(svHours) ? 0 : svHours,
+                svUse: !!svEntry,
+                svInvoiced: svEntry?.invoiced || false,
+                touched: {
+                  drFrom: true, // Existing entries are always touched
+                  drTo: true,
+                  svFrom: true,
+                  svTo: true,
+                },
+                errors: {
+                  dr: null,
+                  sv: null,
+                },
+              }
+            } catch (error) {
+              console.error('[TIMESHEET] Error processing entry in edit mode:', error, date)
+              return null // Return null instead of crashing
+            }
+          })
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null) // Filter out nulls
+
+        // Final verification: Assert no Saturdays in final state (edit mode)
+        const hasSaturday = entries.some(entry => {
+          try {
+            return entry?.date ? isSaturday(entry.date) : false
+          } catch {
+            return false
+          }
+        })
+        if (hasSaturday) {
+          console.error('[TIMESHEET] CRITICAL: Saturday entries found in final state (edit mode)!', entries.filter(e => {
+            try {
+              // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+              if (!e?.date) return false
+              const entryDateStr = typeof e.date === 'string' ? e.date : formatDateOnly(e.date, timezone)
+              return isSaturdayInTimezone(entryDateStr, timezone)
+            } catch {
+              return false
+            }
+          }))
+          // Filter out Saturdays instead of throwing
+          const filteredEntries = entries.filter(e => {
+            try {
+              // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+              if (!e?.date) return false
+              const entryDateStr = typeof e.date === 'string' ? e.date : formatDateOnly(e.date, timezone)
+              return !isSaturdayInTimezone(entryDateStr, timezone)
+            } catch {
+              return false
+            }
+          })
+          setDayEntries(filteredEntries)
+          calculateTotalHours(filteredEntries)
+        } else {
+          setDayEntries(entries)
+          calculateTotalHours(entries)
+        }
+      } catch (error) {
+        console.error('[TIMESHEET] Error loading timesheet data in edit mode:', error)
+        toast.error('Failed to load timesheet data. Please refresh the page.')
+        hasInitializedRef.current = false // Allow retry
       }
-      setDayEntries(entries)
-      calculateTotalHours(entries)
     }
   }, [timesheet, startDate, endDate])
 
@@ -325,84 +496,172 @@ export function TimesheetForm({
   // This ONLY runs when dates change, not when defaults change
   useEffect(() => {
     if (startDate && endDate && !timesheet) {
-      const days = getDaysInRange(startDate, endDate)
-      // Exclude Saturdays - never render in bottom section (CRITICAL: Filter at data generation level)
-      const daysWithoutSaturday = days.filter((date) => {
-        const dayOfWeek = date.getDay()
-        // Regression test: Assert no Saturdays
-        if (dayOfWeek === 6) {
-          console.error('[TIMESHEET] CRITICAL: Saturday detected in date generation - this should never happen!', date)
-          return false
-        }
-        return true
-      })
-      // Final assertion: Verify no Saturdays in final entries
-      const entries: DayEntry[] = daysWithoutSaturday.map((date) => {
-        // Assert no Saturdays in rendered data
-        if (date.getDay() === 6) {
-          console.error('[TIMESHEET] CRITICAL: Saturday found in entry generation!', date)
-          throw new Error('Saturday detected in timesheet entry generation')
-        }
-        let defaults = defaultTimes.weekdays
-        if (isSunday(date)) {
-          defaults = defaultTimes.sun
-        } else if (isFriday(date)) {
-          defaults = defaultTimes.fri
+      try {
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          console.error('[TIMESHEET] Invalid dates in new timesheet:', { startDate, endDate })
+          return
         }
 
-        const hasValidDrTimes =
-          defaults.drEnabled &&
-          defaults.drFrom !== null &&
-          defaults.drTo !== null
-        const hasValidSvTimes =
-          defaults.svEnabled &&
-          defaults.svFrom !== null &&
-          defaults.svTo !== null
-
-        // Calculate hours using new utility functions
-        const drDuration = hasValidDrTimes
-          ? calculateDurationMinutes(defaults.drFrom, defaults.drTo)
-          : null
-        const svDuration = hasValidSvTimes
-          ? calculateDurationMinutes(defaults.svFrom, defaults.svTo)
-          : null
-
-        const drHours = drDuration !== null ? drDuration / 60 : 0
-        const svHours = svDuration !== null ? svDuration / 60 : 0
-
-        return {
-          date,
-          dayName: getDayName(date),
-          drFrom: hasValidDrTimes ? defaults.drFrom : null,
-          drTo: hasValidDrTimes ? defaults.drTo : null,
-          drHours,
-          drUse: hasValidDrTimes,
-          drInvoiced: false,
-          svFrom: hasValidSvTimes ? defaults.svFrom : null,
-          svTo: hasValidSvTimes ? defaults.svTo : null,
-          svHours,
-          svUse: hasValidSvTimes,
-          svInvoiced: false,
-          touched: {
-            drFrom: false, // New entries start as not touched
-            drTo: false,
-            svFrom: false,
-            svTo: false,
-          },
-          errors: {
-            dr: null,
-            sv: null,
-          },
+        let days: Date[] = []
+        try {
+          days = getDaysInRange(startDate, endDate)
+        } catch (error) {
+          console.error('[TIMESHEET] Error getting days in range:', error)
+          return
         }
-      })
-      // Final verification: Assert no Saturdays in final state
-      const hasSaturday = entries.some(entry => entry.date.getDay() === 6)
-      if (hasSaturday) {
-        console.error('[TIMESHEET] CRITICAL: Saturday entries found in final state!', entries.filter(e => e.date.getDay() === 6))
-        throw new Error('Saturday entries detected in timesheet state')
+
+        // Exclude Saturdays - never render in bottom section (CRITICAL: Filter at data generation level)
+        // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+        const daysWithoutSaturday = days.filter((date) => {
+          try {
+            if (!date || isNaN(date.getTime())) return false
+            // Convert date to date string in NY timezone and check if it's Saturday
+            const dateStr = formatDateOnly(date, timezone)
+            if (isSaturdayInTimezone(dateStr, timezone)) {
+              console.error('[TIMESHEET] CRITICAL: Saturday detected in date generation - this should never happen!', date)
+              return false
+            }
+            return true
+          } catch (error) {
+            console.error('[TIMESHEET] Error filtering date:', error, date)
+            return false
+          }
+        })
+        
+        // Final assertion: Verify no Saturdays in final entries
+        const entries = daysWithoutSaturday
+          .map((date) => {
+            try {
+              // Validate date
+              if (!date || isNaN(date.getTime())) {
+                console.error('[TIMESHEET] Invalid date in entry generation:', date)
+                return null
+              }
+
+              // Assert no Saturdays in rendered data (skip instead of throw)
+              // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+              const dateStr = formatDateOnly(date, timezone)
+              if (isSaturdayInTimezone(dateStr, timezone)) {
+                console.error('[TIMESHEET] CRITICAL: Saturday found in entry generation!', date)
+                return null // Skip instead of throwing
+              }
+              let defaults = defaultTimes.weekdays
+              try {
+                if (isSunday(date)) {
+                  defaults = defaultTimes.sun
+                } else if (isFriday(date)) {
+                  defaults = defaultTimes.fri
+                }
+              } catch (error) {
+                console.error('[TIMESHEET] Error determining day type:', error, date)
+              }
+
+              const hasValidDrTimes =
+                defaults.drEnabled &&
+                defaults.drFrom !== null &&
+                defaults.drTo !== null
+              const hasValidSvTimes =
+                defaults.svEnabled &&
+                defaults.svFrom !== null &&
+                defaults.svTo !== null
+
+              // Calculate hours using new utility functions
+              let drDuration: number | null = null
+              let svDuration: number | null = null
+
+              try {
+                drDuration = hasValidDrTimes
+                  ? calculateDurationMinutes(defaults.drFrom, defaults.drTo)
+                  : null
+                svDuration = hasValidSvTimes
+                  ? calculateDurationMinutes(defaults.svFrom, defaults.svTo)
+                  : null
+              } catch (error) {
+                console.error('[TIMESHEET] Error calculating duration:', error)
+              }
+
+              const drHours = drDuration !== null && !isNaN(drDuration) ? drDuration / 60 : 0
+              const svHours = svDuration !== null && !isNaN(svDuration) ? svDuration / 60 : 0
+
+              // Get day name safely
+              let dayName: string = 'Unknown'
+              try {
+                dayName = getDayName(date)
+              } catch (error) {
+                console.error('[TIMESHEET] Error getting day name:', error, date)
+                try {
+                  dayName = format(date, 'EEE') // Fallback to short name
+                } catch {
+                  dayName = 'Unknown'
+                }
+              }
+
+              return {
+                date,
+                dayName,
+                drFrom: hasValidDrTimes ? defaults.drFrom : null,
+                drTo: hasValidDrTimes ? defaults.drTo : null,
+                drHours: isNaN(drHours) ? 0 : drHours,
+                drUse: hasValidDrTimes,
+                drInvoiced: false,
+                svFrom: hasValidSvTimes ? defaults.svFrom : null,
+                svTo: hasValidSvTimes ? defaults.svTo : null,
+                svHours: isNaN(svHours) ? 0 : svHours,
+                svUse: hasValidSvTimes,
+                svInvoiced: false,
+                touched: {
+                  drFrom: false, // New entries start as not touched
+                  drTo: false,
+                  svFrom: false,
+                  svTo: false,
+                },
+                errors: {
+                  dr: null,
+                  sv: null,
+                },
+              }
+            } catch (error) {
+              console.error('[TIMESHEET] Error processing entry in new timesheet:', error, date)
+              return null // Return null instead of crashing
+            }
+          })
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null) // Filter out nulls
+
+        // Final verification: Assert no Saturdays in final state
+        const hasSaturday = entries.some(entry => {
+          try {
+            return entry?.date?.getDay() === 6
+          } catch {
+            return false
+          }
+        })
+        if (hasSaturday) {
+          console.error('[TIMESHEET] CRITICAL: Saturday entries found in final state!', entries.filter(e => {
+            try {
+              return e?.date?.getDay() === 6
+            } catch {
+              return false
+            }
+          }))
+          // Filter out Saturdays instead of throwing
+          const filteredEntries = entries.filter(e => {
+            try {
+              return e?.date?.getDay() !== 6
+            } catch {
+              return false
+            }
+          })
+          setDayEntries(filteredEntries)
+          calculateTotalHours(filteredEntries)
+        } else {
+          setDayEntries(entries)
+          calculateTotalHours(entries)
+        }
+      } catch (error) {
+        console.error('[TIMESHEET] Error generating days for new timesheet:', error)
+        toast.error('Error generating date entries. Please try again.')
       }
-      setDayEntries(entries)
-      calculateTotalHours(entries)
     }
   }, [startDate, endDate, timesheet]) // REMOVED defaultTimes - no auto-update
 
@@ -478,7 +737,17 @@ export function TimesheetForm({
     }
 
     // Check internal overlaps (within the same timesheet)
-    const internalConflicts = checkInternalOverlaps(dayEntries)
+    let internalConflicts: Array<{ date: Date; type: 'DR' | 'SV'; message: string }> = []
+    try {
+      if (!Array.isArray(dayEntries)) {
+        console.error('[TIMESHEET] dayEntries is not an array in overlap check')
+        return
+      }
+      internalConflicts = checkInternalOverlaps(dayEntries)
+    } catch (error) {
+      console.error('[TIMESHEET] Error checking internal overlaps:', error)
+      // Continue with external check even if internal check fails
+    }
     
     // Map internal conflicts to entry indices
     const conflictMap = new Map<number, { type: 'DR' | 'SV'; message: string; isExternal?: boolean }>()
@@ -499,12 +768,22 @@ export function TimesheetForm({
     // Check external overlaps (against existing saved timesheets)
     const checkExternalOverlaps = async () => {
       try {
+        if (!Array.isArray(dayEntries)) {
+          console.error('[TIMESHEET] dayEntries is not an array in external overlap check')
+          return
+        }
         // Prepare entries for API call
         const entriesForCheck = dayEntries
           .filter(e => {
-            const hasDr = e.drUse && e.drFrom && e.drTo
-            const hasSv = e.svUse && e.svFrom && e.svTo
-            return hasDr || hasSv
+            if (!e || !e.date) return false
+            try {
+              const hasDr = e.drUse && e.drFrom && e.drTo
+              const hasSv = e.svUse && e.svFrom && e.svTo
+              return hasDr || hasSv
+            } catch (error) {
+              console.error('[TIMESHEET] Error filtering entry for overlap check:', error, e)
+              return false
+            }
           })
           .flatMap(e => {
             const result: Array<{
@@ -514,22 +793,28 @@ export function TimesheetForm({
               notes: string | null
             }> = []
             
-            if (e.drUse && e.drFrom && e.drTo) {
-              result.push({
-                date: e.date.toISOString(),
-                startTime: timeAMPMTo24Hour(e.drFrom),
-                endTime: timeAMPMTo24Hour(e.drTo),
-                notes: 'DR',
-              })
-            }
-            
-            if (e.svUse && e.svFrom && e.svTo) {
-              result.push({
-                date: e.date.toISOString(),
-                startTime: timeAMPMTo24Hour(e.svFrom),
-                endTime: timeAMPMTo24Hour(e.svTo),
-                notes: 'SV',
-              })
+            try {
+              if (!e || !e.date) return result
+              
+              if (e.drUse && e.drFrom && e.drTo) {
+                result.push({
+                  date: formatDateOnly(e.date, timezone),
+                  startTime: timeAMPMTo24Hour(e.drFrom),
+                  endTime: timeAMPMTo24Hour(e.drTo),
+                  notes: 'DR',
+                })
+              }
+              
+              if (e.svUse && e.svFrom && e.svTo) {
+                result.push({
+                  date: formatDateOnly(e.date, timezone),
+                  startTime: timeAMPMTo24Hour(e.svFrom),
+                  endTime: timeAMPMTo24Hour(e.svTo),
+                  notes: 'SV',
+                })
+              }
+            } catch (error) {
+              console.error('[TIMESHEET] Error processing entry for overlap check:', error, e)
             }
             
             return result
@@ -560,18 +845,29 @@ export function TimesheetForm({
           if (data.hasOverlaps && Array.isArray(data.conflicts)) {
             // Map external conflicts to entry indices
             for (const conflict of data.conflicts) {
-              const entryIndex = dayEntries.findIndex(e => 
-                format(e.date, 'yyyy-MM-dd') === conflict.date
-              )
-              if (entryIndex >= 0) {
-                const existing = conflictMap.get(entryIndex)
-                if (!existing || !existing.isExternal) {
-                  conflictMap.set(entryIndex, {
-                    type: conflict.entryType === 'SV' ? 'SV' : 'DR',
-                    message: conflict.message || `Overlap detected on ${conflict.date}`,
-                    isExternal: true,
-                  })
+              try {
+                if (!conflict || !conflict.date || !Array.isArray(dayEntries)) continue
+                const entryIndex = dayEntries.findIndex(e => {
+                  try {
+                    if (!e || !e.date) return false
+                    return format(e.date, 'yyyy-MM-dd') === conflict.date
+                  } catch (error) {
+                    console.error('[TIMESHEET] Error comparing dates in external conflict:', error)
+                    return false
+                  }
+                })
+                if (entryIndex >= 0 && entryIndex < dayEntries.length) {
+                  const existing = conflictMap.get(entryIndex)
+                  if (!existing || !existing.isExternal) {
+                    conflictMap.set(entryIndex, {
+                      type: conflict.entryType === 'SV' ? 'SV' : 'DR',
+                      message: conflict.message || `Overlap detected on ${conflict.date}`,
+                      isExternal: true,
+                    })
+                  }
                 }
+              } catch (error) {
+                console.error('[TIMESHEET] Error processing external conflict:', error, conflict)
               }
             }
           }
@@ -587,22 +883,37 @@ export function TimesheetForm({
 
         // Scroll to first conflict if any
         if (conflictsArray.length > 0) {
-          const firstConflictIndex = conflictsArray[0].index
-          const rowElement = conflictRowRefs.current.get(firstConflictIndex)
-          if (rowElement) {
-            setTimeout(() => {
-              rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            }, 100)
+          try {
+            const firstConflictIndex = conflictsArray[0]?.index
+            if (typeof firstConflictIndex === 'number' && firstConflictIndex >= 0) {
+              const rowElement = conflictRowRefs.current.get(firstConflictIndex)
+              if (rowElement) {
+                setTimeout(() => {
+                  try {
+                    rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  } catch (scrollError) {
+                    console.error('[TIMESHEET] Error scrolling to conflict:', scrollError)
+                  }
+                }, 100)
+              }
+            }
+          } catch (error) {
+            console.error('[TIMESHEET] Error handling conflict scroll:', error)
           }
         }
       } catch (error) {
-        console.error('Error checking external overlaps:', error)
+        console.error('[TIMESHEET] Error checking external overlaps:', error)
         // Still show internal conflicts even if external check fails
-        const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
-          index,
-          ...data,
-        }))
-        setOverlapConflicts(conflictsArray)
+        try {
+          const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
+            index,
+            ...data,
+          }))
+          setOverlapConflicts(conflictsArray)
+        } catch (mapError) {
+          console.error('[TIMESHEET] Error mapping conflicts after external check failure:', mapError)
+          setOverlapConflicts([])
+        }
       }
     }
 
@@ -610,12 +921,28 @@ export function TimesheetForm({
   }, [dayEntries, providerId, clientId, timesheet?.id])
 
   const calculateTotalHours = (entries: DayEntry[]) => {
-    const total = entries.reduce((sum, entry) => {
-      const drHours = entry.drUse && entry.drHours > 0 ? entry.drHours : 0
-      const svHours = entry.svUse && entry.svHours > 0 ? entry.svHours : 0
-      return sum + drHours + svHours
-    }, 0)
-    setTotalHours(total)
+    try {
+      if (!Array.isArray(entries)) {
+        console.error('[TIMESHEET] calculateTotalHours: entries is not an array', entries)
+        setTotalHours(0)
+        return
+      }
+      const total = entries.reduce((sum, entry) => {
+        if (!entry) return sum
+        const drHours = entry.drUse && typeof entry.drHours === 'number' && entry.drHours > 0 ? entry.drHours : 0
+        const svHours = entry.svUse && typeof entry.svHours === 'number' && entry.svHours > 0 ? entry.svHours : 0
+        const entryTotal = drHours + svHours
+        if (isNaN(entryTotal)) {
+          console.error('[TIMESHEET] Invalid hours in entry:', entry)
+          return sum
+        }
+        return sum + entryTotal
+      }, 0)
+      setTotalHours(isNaN(total) ? 0 : total)
+    } catch (error) {
+      console.error('[TIMESHEET] Error calculating total hours:', error)
+      setTotalHours(0)
+    }
   }
 
   const updateDefaultTimes = (
@@ -655,7 +982,9 @@ export function TimesheetForm({
 
       // Safety filter: Remove any Saturday entries that might have slipped through
       const filteredEntries = prevEntries.filter((entry) => {
-        if (entry.date.getDay() === 6) {
+        // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+        const entryDateStr = typeof entry.date === 'string' ? entry.date : formatDateOnly(entry.date, timezone)
+        if (isSaturdayInTimezone(entryDateStr, timezone)) {
           console.error('[TIMESHEET] CRITICAL: Saturday entry found in applyDefaultsToDates - removing!', entry)
           return false
         }
@@ -789,7 +1118,16 @@ export function TimesheetForm({
     field: 'drFrom' | 'drTo' | 'svFrom' | 'svTo' | 'drUse' | 'svUse',
     value: TimeAMPM | null | boolean
   ) => {
-    const updated = [...dayEntries]
+    try {
+      if (typeof index !== 'number' || index < 0 || index >= dayEntries.length) {
+        console.error('[TIMESHEET] Invalid index in updateDayEntry:', index, dayEntries.length)
+        return
+      }
+      if (!Array.isArray(dayEntries)) {
+        console.error('[TIMESHEET] dayEntries is not an array in updateDayEntry')
+        return
+      }
+      const updated = [...dayEntries]
 
     if (field === 'drUse' || field === 'svUse') {
       updated[index] = {
@@ -859,17 +1197,21 @@ export function TimesheetForm({
       }
     }
 
-    setDayEntries(updated)
-    calculateTotalHours(updated)
-    setHasUnsavedChanges(true)
-    
-    // Auto-save after 2 seconds of inactivity
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current)
+      setDayEntries(updated)
+      calculateTotalHours(updated)
+      setHasUnsavedChanges(true)
+      
+      // Auto-save after 2 seconds of inactivity
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current)
+      }
+      autoSaveTimeoutRef.current = setTimeout(() => {
+        autoSaveDraft()
+      }, 2000)
+    } catch (error) {
+      console.error('[TIMESHEET] Error updating day entry:', error, { index, field, value })
+      toast.error('Failed to update entry. Please try again.')
     }
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSaveDraft()
-    }, 2000)
   }
 
   // Auto-save draft to localStorage
@@ -881,9 +1223,9 @@ export function TimesheetForm({
         providerId,
         clientId,
         bcbaId,
-        insuranceId,
-        startDate: startDate?.toISOString(),
-        endDate: endDate?.toISOString(),
+        insuranceId: null, // Insurance derived from client
+        startDate: startDate ? formatDateOnly(startDate, timezone) : null,
+        endDate: endDate ? formatDateOnly(endDate, timezone) : null,
         timezone,
         defaultTimes,
         dayEntries: dayEntries.map(entry => ({
@@ -925,7 +1267,7 @@ export function TimesheetForm({
             setInsuranceId(draft.insuranceId || '')
             if (draft.startDate) setStartDate(new Date(draft.startDate))
             if (draft.endDate) setEndDate(new Date(draft.endDate))
-            if (draft.timezone) setTimezone(draft.timezone)
+            // Timezone is always America/New_York - ignore draft timezone
             if (draft.defaultTimes) setDefaultTimes(draft.defaultTimes)
             // Day entries will be regenerated when dates are set
           } else {
@@ -968,8 +1310,15 @@ export function TimesheetForm({
       return
     }
 
-    if (!providerId || !clientId || !bcbaId || !insuranceId) {
+    if (!providerId || !clientId || !bcbaId) {
       toast.error('Please fill all assignment fields')
+      return
+    }
+    
+    // Validate client has insurance
+    const selectedClient = clients.find(c => c.id === clientId)
+    if (!selectedClient || !selectedClient.insurance) {
+      toast.error('Selected client must have insurance assigned')
       return
     }
 
@@ -1010,7 +1359,7 @@ export function TimesheetForm({
           // Guard against invalid times
           if (entry.drFrom === null || entry.drTo === null) {
             toast.error(
-              `Invalid DR times for ${format(entry.date, 'MMM d')}: Please enter both start and end times`
+              `Invalid DR times for ${formatDateInTimezone(entry.date, 'MMM d', timezone)}: Please enter both start and end times`
             )
             return []
           }
@@ -1019,7 +1368,7 @@ export function TimesheetForm({
           const duration = calculateDurationMinutes(entry.drFrom, entry.drTo)
           if (duration === null) {
             toast.error(
-              `Invalid DR time range for ${format(entry.date, 'MMM d')}: ${entry.errors.dr || 'Invalid times'}`
+              `Invalid DR time range for ${formatDateInTimezone(entry.date, 'MMM d', timezone)}: ${entry.errors.dr || 'Invalid times'}`
             )
             return []
           }
@@ -1041,7 +1390,7 @@ export function TimesheetForm({
           // Guard against invalid times
           if (entry.svFrom === null || entry.svTo === null) {
             toast.error(
-              `Invalid SV times for ${format(entry.date, 'MMM d')}: Please enter both start and end times`
+              `Invalid SV times for ${formatDateInTimezone(entry.date, 'MMM d', timezone)}: Please enter both start and end times`
             )
             return []
           }
@@ -1050,7 +1399,7 @@ export function TimesheetForm({
           const duration = calculateDurationMinutes(entry.svFrom, entry.svTo)
           if (duration === null) {
             toast.error(
-              `Invalid SV time range for ${format(entry.date, 'MMM d')}: ${entry.errors.sv || 'Invalid times'}`
+              `Invalid SV time range for ${formatDateInTimezone(entry.date, 'MMM d', timezone)}: ${entry.errors.sv || 'Invalid times'}`
             )
             return []
           }
@@ -1089,9 +1438,9 @@ export function TimesheetForm({
           providerId,
           clientId,
           bcbaId,
-          insuranceId,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
+          insuranceId: null, // Insurance is derived from client.insuranceId
+          startDate: formatDateOnly(startDate, timezone),
+          endDate: formatDateOnly(endDate, timezone),
           timezone,
           entries,
         }),
@@ -1107,9 +1456,23 @@ export function TimesheetForm({
         if (data?.code === 'OVERLAP_CONFLICT' && Array.isArray(data?.conflicts)) {
           const next = (data.conflicts as Array<any>)
             .map((c) => {
-              const idx = dayEntries.findIndex((d) => format(d.date, 'yyyy-MM-dd') === c.date)
-              const type = c.entryType === 'SV' ? 'SV' : 'DR'
-              return idx >= 0 ? { index: idx, type, message: c.message || 'Overlap detected' } : null
+              try {
+                if (!c || !c.date || !Array.isArray(dayEntries)) return null
+                const idx = dayEntries.findIndex((d) => {
+                  try {
+                    if (!d || !d.date) return false
+                    return format(d.date, 'yyyy-MM-dd') === c.date
+                  } catch (error) {
+                    console.error('[TIMESHEET] Error comparing dates in overlap conflict:', error)
+                    return false
+                  }
+                })
+                const type = c.entryType === 'SV' ? 'SV' : 'DR'
+                return idx >= 0 && idx < dayEntries.length ? { index: idx, type, message: c.message || 'Overlap detected' } : null
+              } catch (error) {
+                console.error('[TIMESHEET] Error processing overlap conflict:', error, c)
+                return null
+              }
             })
             .filter(Boolean) as Array<{ index: number; type: 'DR' | 'SV'; message: string }>
 
@@ -1164,7 +1527,7 @@ export function TimesheetForm({
       },
     },
     dayEntries: dayEntries.map((entry) => ({
-      date: format(entry.date, 'yyyy-MM-dd'),
+      date: getDateInTimezone(entry.date, timezone),
       dayName: entry.dayName,
       drFrom: entry.drFrom,
       drTo: entry.drTo,
@@ -1186,7 +1549,7 @@ export function TimesheetForm({
             const endMins = timeAMPMToMinutes(entry.drTo)
             if (startMins !== null && endMins !== null && endMins >= startMins) {
               result.push({
-                date: entry.date.toISOString(),
+                date: formatDateOnly(entry.date, timezone),
                 startTime: timeAMPMTo24Hour(entry.drFrom),
                 endTime: timeAMPMTo24Hour(entry.drTo),
                 minutes: endMins - startMins,
@@ -1199,7 +1562,7 @@ export function TimesheetForm({
             const endMins = timeAMPMToMinutes(entry.svTo)
             if (startMins !== null && endMins !== null && endMins >= startMins) {
               result.push({
-                date: entry.date.toISOString(),
+                date: formatDateOnly(entry.date, timezone),
                 startTime: timeAMPMTo24Hour(entry.svFrom),
                 endTime: timeAMPMTo24Hour(entry.svTo),
                 minutes: endMins - startMins,
@@ -1249,7 +1612,7 @@ export function TimesheetForm({
       <div className="mb-6">
         <Link
           href="/timesheets"
-          className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-4"
+          className="inline-flex items-center text-white hover:text-gray-200 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Timesheets
@@ -1275,7 +1638,29 @@ export function TimesheetForm({
               </label>
               <DatePicker
                 selected={startDate}
-                onChange={(date) => setStartDate(date)}
+                onChange={(date) => {
+                  try {
+                    if (date && !isNaN(new Date(date).getTime())) {
+                      // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                      const dateStr = formatDateOnly(date, timezone)
+                      if (isSaturdayInTimezone(dateStr, timezone)) {
+                        toast.error('Timesheets cannot be created on Saturdays')
+                        return
+                      }
+                      setStartDate(date)
+                    } else if (date === null) {
+                        setStartDate(null)
+                    }
+                  } catch (error) {
+                    console.error('[TIMESHEET] Error setting start date:', error)
+                    toast.error('Invalid date selected')
+                  }
+                }}
+                filterDate={(date) => {
+                  // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                  const dateStr = formatDateOnly(date, timezone)
+                  return !isSaturdayInTimezone(dateStr, timezone)
+                }}
                 dateFormat="MM/dd/yyyy"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 placeholderText="mm/dd/yyyy"
@@ -1288,7 +1673,29 @@ export function TimesheetForm({
               </label>
               <DatePicker
                 selected={endDate}
-                onChange={(date) => setEndDate(date)}
+                onChange={(date) => {
+                  try {
+                    if (date && !isNaN(new Date(date).getTime())) {
+                      // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                      const dateStr = formatDateOnly(date, timezone)
+                      if (isSaturdayInTimezone(dateStr, timezone)) {
+                        toast.error('Timesheets cannot be created on Saturdays')
+                        return
+                      }
+                      setEndDate(date)
+                    } else if (date === null) {
+                      setEndDate(null)
+                    }
+                  } catch (error) {
+                    console.error('[TIMESHEET] Error setting end date:', error)
+                    toast.error('Invalid date selected')
+                  }
+                }}
+                filterDate={(date) => {
+                  // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                  const dateStr = formatDateOnly(date, timezone)
+                  return !isSaturdayInTimezone(dateStr, timezone)
+                }}
                 dateFormat="MM/dd/yyyy"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 placeholderText="mm/dd/yyyy"
@@ -1297,23 +1704,8 @@ export function TimesheetForm({
             </div>
           </div>
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Timezone
-            </label>
-            <select
-              value={timezone}
-              onChange={(e) => {
-                setTimezone(e.target.value)
-                setHasUnsavedChanges(true)
-              }}
-              disabled={timesheet?.status === 'LOCKED'}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="America/New_York">Eastern Time (America/New_York)</option>
-              <option value="America/Chicago">Central Time (America/Chicago)</option>
-              <option value="America/Denver">Mountain Time (America/Denver)</option>
-              <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
-            </select>
+            {/* Timezone is always America/New_York - hidden from UI */}
+            <input type="hidden" value={timezone} />
           </div>
         </div>
 
@@ -1449,11 +1841,14 @@ export function TimesheetForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select provider</option>
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
+                {Array.isArray(providers) && providers.map((provider) => {
+                  if (!provider || !provider.id) return null
+                  return (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name || 'Unnamed Provider'}
+                    </option>
+                  )
+                })}
               </select>
             </div>
             <div>
@@ -1467,11 +1862,14 @@ export function TimesheetForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select client</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
+                {Array.isArray(clients) && clients.map((client) => {
+                  if (!client || !client.id) return null
+                  return (
+                    <option key={client.id} value={client.id}>
+                      {client.name || 'Unnamed Client'}
+                    </option>
+                  )
+                })}
               </select>
             </div>
             <div>
@@ -1485,29 +1883,14 @@ export function TimesheetForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select BCBA</option>
-                {bcbas.map((bcba) => (
-                  <option key={bcba.id} value={bcba.id}>
-                    {bcba.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Insurance <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={insuranceId}
-                onChange={(e) => setInsuranceId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              >
-                <option value="">Select insurance</option>
-                {insurances.map((insurance) => (
-                  <option key={insurance.id} value={insurance.id}>
-                    {insurance.name}
-                  </option>
-                ))}
+                {Array.isArray(bcbas) && bcbas.map((bcba) => {
+                  if (!bcba || !bcba.id) return null
+                  return (
+                    <option key={bcba.id} value={bcba.id}>
+                      {bcba.name || 'Unnamed BCBA'}
+                    </option>
+                  )
+                })}
               </select>
             </div>
           </div>
@@ -1591,7 +1974,7 @@ export function TimesheetForm({
                       className={hasConflict ? 'bg-red-50' : ''}
                     >
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                        {format(entry.date, 'EEE M/d/yyyy')}
+                        {formatDateInTimezone(entry.date, 'EEE M/d/yyyy', timezone)}
                       </td>
                       <td className={`px-2 py-2 border-l ${drConflict ? 'bg-red-100' : ''}`}>
                         <TimeFieldAMPM
@@ -1720,18 +2103,31 @@ export function TimesheetForm({
             </p>
             <ul className="list-disc list-inside space-y-2">
               {overlapConflicts.map((conflict, idx) => {
+                if (!conflict || typeof conflict.index !== 'number' || conflict.index < 0 || conflict.index >= dayEntries.length) {
+                  console.error('[TIMESHEET] Invalid conflict index:', conflict)
+                  return null
+                }
                 const entry = dayEntries[conflict.index]
-                if (!entry) return null
-                return (
-                  <li key={idx} className="text-sm text-red-700">
-                    <strong>{format(entry.date, 'MM/dd/yyyy')}</strong> - {conflict.type}: {conflict.message}
-                    {conflict.isExternal && (
-                      <span className="ml-2 text-xs bg-red-200 px-2 py-0.5 rounded">
-                        (Existing Timesheet)
-                      </span>
-                    )}
-                  </li>
-                )
+                if (!entry || !entry.date) return null
+                try {
+                  return (
+                    <li key={idx} className="text-sm text-red-700">
+                      <strong>{formatDateInTimezone(entry.date, 'MM/dd/yyyy', timezone)}</strong> - {conflict.type}: {conflict.message}
+                      {conflict.isExternal && (
+                        <span className="ml-2 text-xs bg-red-200 px-2 py-0.5 rounded">
+                          (Existing Timesheet)
+                        </span>
+                      )}
+                    </li>
+                  )
+                } catch (error) {
+                  console.error('[TIMESHEET] Error formatting conflict date:', error, entry)
+                  return (
+                    <li key={idx} className="text-sm text-red-700">
+                      <strong>Invalid Date</strong> - {conflict.type}: {conflict.message}
+                    </li>
+                  )
+                }
               })}
             </ul>
           </div>

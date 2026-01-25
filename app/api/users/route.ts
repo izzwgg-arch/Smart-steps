@@ -178,7 +178,10 @@ export async function POST(request: NextRequest) {
     // This prevents login until password is set
     const placeholderPassword = await bcrypt.hash(generateSecureToken(32), 10)
 
-    // Check if user already exists by username or email
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.trim().toLowerCase()
+    
+    // Check if user already exists by username or email (case-insensitive for email)
     const existingUserByUsername = await prisma.user.findUnique({
       where: { username: username.trim() },
     })
@@ -194,12 +197,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const existingUserByEmail = await prisma.user.findUnique({
-      where: { email: email.trim() },
-    })
+    // Check for existing email case-insensitively (including soft-deleted)
+    // Use raw query for case-insensitive check since Prisma unique constraints are case-sensitive
+    const existingUsersByEmail = await prisma.$queryRaw<Array<{ id: string; email: string; deletedAt: Date | null }>>`
+      SELECT id, email, "deletedAt"
+      FROM "User"
+      WHERE LOWER(email) = LOWER(${normalizedEmail})
+      LIMIT 1
+    `
+    const existingUserByEmail = existingUsersByEmail[0] || null
 
     if (existingUserByEmail && !existingUserByEmail.deletedAt) {
-      console.error('[CREATE USER] Email already exists', { email: email.trim() })
+      console.error('[CREATE USER] Email already exists', { email: normalizedEmail, foundEmail: existingUserByEmail.email })
       return NextResponse.json(
         { 
           error: 'DUPLICATE_EMAIL',
@@ -215,7 +224,7 @@ export async function POST(request: NextRequest) {
       user = await prisma.user.create({
         data: {
           username: username.trim(),
-          email: email.trim(),
+          email: normalizedEmail, // Use normalized lowercase email
           password: placeholderPassword, // Placeholder - cannot login with this
           tempPasswordHash: tempPasswordHash, // Actual temp password for first login
           tempPasswordExpiresAt: tempPasswordExpiresAt,

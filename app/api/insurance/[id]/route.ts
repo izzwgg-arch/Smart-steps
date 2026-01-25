@@ -47,7 +47,15 @@ export async function PUT(
     }
 
     const data = await request.json()
-    const { name, ratePerUnit, active } = data
+    const { 
+      name, 
+      ratePerUnit, // Legacy field
+      regularRatePerUnit, 
+      regularUnitMinutes, 
+      bcbaRatePerUnit, 
+      bcbaUnitMinutes, 
+      active 
+    } = data
 
     const existingInsurance = await prisma.insurance.findUnique({
       where: { id: params.id },
@@ -57,8 +65,33 @@ export async function PUT(
       return NextResponse.json({ error: 'Insurance not found' }, { status: 404 })
     }
 
-    // If rate changed, record in history
-    if (ratePerUnit !== undefined && parseFloat(ratePerUnit) !== parseFloat(existingInsurance.ratePerUnit.toString())) {
+    // Determine final values (use provided or keep existing)
+    const finalRegularRate = regularRatePerUnit !== undefined && regularRatePerUnit !== null
+      ? parseFloat(regularRatePerUnit)
+      : (ratePerUnit !== undefined && ratePerUnit !== null 
+          ? parseFloat(ratePerUnit) 
+          : parseFloat(existingInsurance.ratePerUnit.toString()))
+    
+    const finalRegularMins = regularUnitMinutes !== undefined && regularUnitMinutes !== null
+      ? parseInt(regularUnitMinutes)
+      : (existingInsurance.regularUnitMinutes || 15)
+
+    const finalBcbaRate = bcbaRatePerUnit !== undefined && bcbaRatePerUnit !== null
+      ? parseFloat(bcbaRatePerUnit)
+      : (existingInsurance.bcbaRatePerUnit 
+          ? parseFloat(existingInsurance.bcbaRatePerUnit.toString())
+          : finalRegularRate)
+    
+    const finalBcbaMins = bcbaUnitMinutes !== undefined && bcbaUnitMinutes !== null
+      ? parseInt(bcbaUnitMinutes)
+      : (existingInsurance.bcbaUnitMinutes || finalRegularMins)
+
+    // If regular rate changed, record in history
+    const oldRegularRate = existingInsurance.regularRatePerUnit 
+      ? parseFloat(existingInsurance.regularRatePerUnit.toString())
+      : parseFloat(existingInsurance.ratePerUnit.toString())
+    
+    if (finalRegularRate !== oldRegularRate) {
       // End previous rate period
       await prisma.insuranceRateHistory.updateMany({
         where: {
@@ -74,7 +107,7 @@ export async function PUT(
       await prisma.insuranceRateHistory.create({
         data: {
           insuranceId: params.id,
-          ratePerUnit: parseFloat(ratePerUnit),
+          ratePerUnit: finalRegularRate,
           effectiveFrom: new Date(),
         },
       })
@@ -83,9 +116,13 @@ export async function PUT(
     const insurance = await prisma.insurance.update({
       where: { id: params.id },
       data: {
-        name,
-        ratePerUnit: ratePerUnit !== undefined ? parseFloat(ratePerUnit) : existingInsurance.ratePerUnit,
-        active,
+        name: name !== undefined ? name : existingInsurance.name,
+        ratePerUnit: finalRegularRate, // Keep for backward compatibility
+        regularRatePerUnit: finalRegularRate,
+        regularUnitMinutes: finalRegularMins,
+        bcbaRatePerUnit: finalBcbaRate,
+        bcbaUnitMinutes: finalBcbaMins,
+        active: active !== undefined ? active : existingInsurance.active,
       },
     })
 

@@ -13,19 +13,23 @@ import {
   isSunday,
   isFriday,
   isSaturday,
+  formatDateOnly,
+  getDateInTimezone,
+  getDateObjectInTimezone,
+  formatDateInTimezone,
+  parseDateOnly,
 } from '@/lib/dateUtils'
 import {
   parseTimeToMinutes,
   INVALID_TIME,
 } from '@/lib/timeUtils'
-import { TimeFieldAMPM, TimeAMPM, timeAMPMToMinutes, minutesToTimeAMPM, timeAMPMTo24Hour } from './TimeFieldAMPM'
+import { TimeFieldAMPM, TimeAMPM, timeAMPMToMinutes, minutesToTimeAMPM, timeAMPMTo24Hour } from '@/components/timesheets/TimeFieldAMPM'
 import { format } from 'date-fns'
 import {
   calculateDurationMinutes,
   validateTimeRange,
   formatHours,
 } from '@/lib/timesheetUtils'
-import { checkInternalOverlaps } from '@/lib/timesheetOverlapUtils'
 
 interface Provider {
   id: string
@@ -55,6 +59,8 @@ interface Insurance {
   name: string
 }
 
+// BCBA timesheets now use regular Insurance (with BCBA-specific rates)
+
 interface TimesheetEntry {
   id: string
   date: string
@@ -71,7 +77,7 @@ interface Timesheet {
   providerId: string
   clientId: string
   bcbaId: string
-  insuranceId?: string | null
+  insuranceId?: string | null // BCBA timesheets use regular Insurance
   serviceType?: string | null
   sessionData?: string | null
   startDate: string
@@ -86,6 +92,7 @@ interface BCBATimesheetFormProps {
   clients: Client[]
   bcbas: BCBA[]
   insurances?: Insurance[] // Optional, not used for BCBA timesheets
+  // BCBA timesheets use regular Insurance (insurances prop)
   timesheet?: Timesheet
 }
 
@@ -98,6 +105,7 @@ interface DayEntry {
   hours: number
   use: boolean
   invoiced: boolean
+  serviceType?: string | null // Per-row service type
   touched: {
     from: boolean
     to: boolean
@@ -132,32 +140,63 @@ export function BCBATimesheetForm({
   providers,
   clients,
   bcbas,
-  insurances,
+  insurances = [], // BCBA timesheets now use regular Insurance
   timesheet,
 }: BCBATimesheetFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [startDate, setStartDate] = useState<Date | null>(
-    timesheet ? new Date(timesheet.startDate) : null
-  )
-  const [endDate, setEndDate] = useState<Date | null>(
-    timesheet ? new Date(timesheet.endDate) : null
-  )
-  const [providerId, setProviderId] = useState(timesheet?.providerId || '')
+  // BCBA timesheets use regular Insurance (insuranceId) - but insurance is derived from client
+  const [insuranceId, setInsuranceId] = useState(timesheet?.insuranceId || '')
+  const [startDate, setStartDate] = useState<Date | null>(() => {
+    try {
+      if (timesheet?.startDate) {
+        // CRITICAL: Always interpret timesheet dates in NY timezone, not user's local timezone
+        const dateStr = getDateInTimezone(timesheet.startDate, 'America/New_York')
+        const date = parseDateOnly(dateStr, 'America/New_York')
+        if (!isNaN(date.getTime())) {
+          return date
+        }
+        console.error('[BCBA TIMESHEET] Invalid startDate in timesheet:', timesheet.startDate)
+      }
+      return null
+    } catch (error) {
+      console.error('[BCBA TIMESHEET] Error parsing startDate:', error)
+      return null
+    }
+  })
+  const [endDate, setEndDate] = useState<Date | null>(() => {
+    try {
+      if (timesheet?.endDate) {
+        // CRITICAL: Always interpret timesheet dates in NY timezone, not user's local timezone
+        const dateStr = getDateInTimezone(timesheet.endDate, 'America/New_York')
+        const date = parseDateOnly(dateStr, 'America/New_York')
+        if (!isNaN(date.getTime())) {
+          return date
+        }
+        console.error('[BCBA TIMESHEET] Invalid endDate in timesheet:', timesheet.endDate)
+      }
+      return null
+    } catch (error) {
+      console.error('[BCBA TIMESHEET] Error parsing endDate:', error)
+      return null
+    }
+  })
   const [clientId, setClientId] = useState(timesheet?.clientId || '')
   const [bcbaId, setBcbaId] = useState(timesheet?.bcbaId || '')
   const [serviceType, setServiceType] = useState(timesheet?.serviceType || '')
   const [sessionData, setSessionData] = useState(timesheet?.sessionData || '')
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([])
   const [totalHours, setTotalHours] = useState(0)
-  const [timezone, setTimezone] = useState<string>(timesheet?.timezone || 'America/New_York')
-  const [overlapConflicts, setOverlapConflicts] = useState<Array<{ index: number; message: string }>>([])
-  const conflictRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
+  // Always use America/New_York timezone for all timesheets regardless of user location
+  const [timezone, setTimezone] = useState<string>('America/New_York')
   
-  // Get DLB from client or provider
+  // Bulk selection state
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
+  const [bulkServiceType, setBulkServiceType] = useState('')
+  
+  // Get DLB from client
   const selectedClient = clients.find(c => c.id === clientId)
-  const selectedProvider = providers.find(p => p.id === providerId)
-  const dlb = selectedClient?.dlb || selectedProvider?.dlb || ''
+  const dlb = selectedClient?.dlb || ''
 
   const [defaultTimes, setDefaultTimes] = useState<DefaultTimes>({
     sun: {
@@ -182,112 +221,337 @@ export function BCBATimesheetForm({
   // Load timesheet data when in edit mode
   useEffect(() => {
     if (timesheet && startDate && endDate && !hasInitializedRef.current) {
-      hasInitializedRef.current = true
-      const days = getDaysInRange(startDate, endDate)
-      const daysWithoutSaturday = days.filter((date) => {
-        if (date.getDay() === 6) {
-          return false
+      try {
+        // Validate dates before processing
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          console.error('[BCBA TIMESHEET] Invalid dates in edit mode:', { startDate, endDate })
+          toast.error('Invalid date range. Please refresh the page.')
+          return
         }
-        return true
-      })
 
-      const entries: DayEntry[] = daysWithoutSaturday.map((date) => {
-        const dateStr = format(date, 'yyyy-MM-dd')
-        const dayEntries = timesheet.entries.filter((entry) => {
-          const entryDate = format(new Date(entry.date), 'yyyy-MM-dd')
-          return entryDate === dateStr
+        // Validate timesheet entries exist
+        if (!timesheet.entries || !Array.isArray(timesheet.entries)) {
+          console.error('[BCBA TIMESHEET] Invalid timesheet entries:', timesheet.entries)
+          toast.error('Invalid timesheet data. Please refresh the page.')
+          return
+        }
+
+        // CRITICAL: Filter out any Saturday entries from existing timesheet data
+        const filteredEntries = timesheet.entries.filter((entry) => {
+          try {
+            if (!entry || !entry.date) return false
+            // CRITICAL: Always check dates in NY timezone, not user's local timezone
+            const entryDateObj = getDateObjectInTimezone(entry.date, timezone)
+            if (isNaN(entryDateObj.getTime())) return false
+            if (isSaturday(entryDateObj)) {
+              console.error('[BCBA TIMESHEET] Saturday entry found in existing timesheet - removing:', entry)
+              return false
+            }
+            return true
+          } catch (error) {
+            console.error('[BCBA TIMESHEET] Error checking entry date:', error, entry)
+            return false
+          }
         })
 
-        // BCBA timesheets have single entry (no DR/SV distinction)
-        const entry = dayEntries[0]
+        // Use filtered entries instead of original
+        const timesheetWithoutSaturdays = { ...timesheet, entries: filteredEntries }
 
-        const fromMinutes = entry ? parseTimeToMinutes(entry.startTime) : null
-        const toMinutes = entry ? parseTimeToMinutes(entry.endTime) : null
-
-        const from = fromMinutes !== null && fromMinutes !== INVALID_TIME
-          ? minutesToTimeAMPM(fromMinutes)
-          : null
-        const to = toMinutes !== null && toMinutes !== INVALID_TIME
-          ? minutesToTimeAMPM(toMinutes)
-          : null
-
-        const duration = calculateDurationMinutes(from, to)
-        const hours = duration !== null ? duration / 60 : 0
-
-        return {
-          date,
-          dayName: getDayName(date),
-          from,
-          to,
-          hours,
-          use: !!entry,
-          invoiced: entry?.invoiced || false,
-          touched: {
-            from: true,
-            to: true,
-          },
-          errors: {
-            time: null,
-          },
+        hasInitializedRef.current = true
+        
+        let days: Date[] = []
+        try {
+          days = getDaysInRange(startDate, endDate)
+        } catch (error) {
+          console.error('[BCBA TIMESHEET] Error getting days in range:', error)
+          toast.error('Error processing date range. Please refresh the page.')
+          hasInitializedRef.current = false
+          return
         }
-      })
 
-      setDayEntries(entries)
-      calculateTotalHours(entries)
+        // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
+        const daysWithoutSaturday = days.filter((date) => {
+          try {
+            if (!date || isNaN(date.getTime())) return false
+            const dateStr = formatDateOnly(date, timezone)
+            if (isSaturdayInTimezone(dateStr, timezone)) {
+              return false
+            }
+            return true
+          } catch (error) {
+            console.error('[BCBA TIMESHEET] Error filtering date:', error, date)
+            return false
+          }
+        })
+
+        const entries = daysWithoutSaturday
+          .map((date) => {
+            try {
+              // Validate date
+              if (!date || isNaN(date.getTime())) {
+                console.error('[BCBA TIMESHEET] Invalid date in entry generation:', date)
+                return null
+              }
+
+              let dateStr: string
+              try {
+                dateStr = format(date, 'yyyy-MM-dd')
+              } catch (error) {
+                console.error('[BCBA TIMESHEET] Error formatting date:', error, date)
+                return null as any
+              }
+
+              const dayEntries = timesheetWithoutSaturdays.entries.filter((entry) => {
+                try {
+                  if (!entry || !entry.date) return false
+                  // CRITICAL: Always interpret entry dates in NY timezone, not user's local timezone
+                  const entryDate = getDateInTimezone(entry.date, timezone)
+                  // Check if it's Saturday in NY timezone
+                  const entryDateObj = getDateObjectInTimezone(entry.date, timezone)
+                  if (isSaturday(entryDateObj)) {
+                    console.error('[BCBA TIMESHEET] Saturday entry found in existing timesheet - filtering out:', entry)
+                    return false
+                  }
+                  return entryDate === dateStr
+                } catch (error) {
+                  console.error('[BCBA TIMESHEET] Error parsing entry date:', error, entry)
+                  return false
+                }
+              })
+
+              // BCBA timesheets have single entry (no DR/SV distinction)
+              const entry = dayEntries[0]
+
+              let fromMinutes: number | null = null
+              let toMinutes: number | null = null
+
+              try {
+                fromMinutes = entry?.startTime ? parseTimeToMinutes(entry.startTime) : null
+                toMinutes = entry?.endTime ? parseTimeToMinutes(entry.endTime) : null
+              } catch (error) {
+                console.error('[BCBA TIMESHEET] Error parsing times:', error, entry)
+              }
+
+              let from: TimeAMPM | null = null
+              let to: TimeAMPM | null = null
+
+              try {
+                from = fromMinutes !== null && fromMinutes !== INVALID_TIME
+                  ? minutesToTimeAMPM(fromMinutes)
+                  : null
+                to = toMinutes !== null && toMinutes !== INVALID_TIME
+                  ? minutesToTimeAMPM(toMinutes)
+                  : null
+              } catch (error) {
+                console.error('[BCBA TIMESHEET] Error converting to TimeAMPM:', error)
+              }
+
+              let duration: number | null = null
+              try {
+                duration = calculateDurationMinutes(from, to)
+              } catch (error) {
+                console.error('[BCBA TIMESHEET] Error calculating duration:', error)
+              }
+
+              const hours = duration !== null && !isNaN(duration) ? duration / 60 : 0
+
+              // Get day name safely
+              let dayName: string = 'Unknown'
+              try {
+                dayName = getDayName(date)
+              } catch (error) {
+                console.error('[BCBA TIMESHEET] Error getting day name:', error, date)
+                try {
+                  dayName = format(date, 'EEE') // Fallback to short name
+                } catch {
+                  dayName = 'Unknown'
+                }
+              }
+
+              // For BCBA timesheets, service type can be stored in entry.notes
+              // Check if notes contains a service type, otherwise use timesheet-level serviceType
+              let entryServiceType: string | null = null
+              if (entry?.notes) {
+                const serviceTypes = ['Assessment', 'Direct Care', 'Supervision', 'Treatment Planning', 'Parent Training']
+                if (serviceTypes.includes(entry.notes)) {
+                  entryServiceType = entry.notes
+                }
+              }
+              // Fallback to timesheet-level serviceType if entry doesn't have one
+              if (!entryServiceType && timesheet?.serviceType) {
+                entryServiceType = timesheet.serviceType
+              }
+
+              return {
+                date,
+                dayName,
+                from,
+                to,
+                hours: isNaN(hours) ? 0 : hours,
+                use: !!entry,
+                invoiced: entry?.invoiced || false,
+                serviceType: entryServiceType,
+                touched: {
+                  from: true,
+                  to: true,
+                },
+                errors: {
+                  time: null,
+                },
+              }
+            } catch (error) {
+              console.error('[BCBA TIMESHEET] Error processing entry in edit mode:', error, date)
+              return null // Return null instead of crashing
+            }
+          })
+          .filter((entry): entry is DayEntry => {
+            return entry !== null && entry !== undefined
+          }) // Filter out nulls
+
+        setDayEntries(entries)
+        calculateTotalHours(entries)
+      } catch (error) {
+        console.error('[BCBA TIMESHEET] Error loading timesheet data in edit mode:', error)
+        toast.error('Failed to load timesheet data. Please refresh the page.')
+        hasInitializedRef.current = false // Allow retry
+      }
     }
   }, [timesheet, startDate, endDate])
 
   // Generate days when date range changes (for new timesheets only)
   useEffect(() => {
-    if (startDate && endDate && !timesheet) {
-      const days = getDaysInRange(startDate, endDate)
+    // Only run if both dates are set and we're creating a new timesheet
+    if (!startDate || !endDate || timesheet) {
+      return
+    }
+
+    // Validate dates before processing
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error('[BCBA TIMESHEET] Invalid dates in new timesheet:', { startDate, endDate })
+      return
+    }
+
+    // Ensure end date is after start date
+    if (endDate < startDate) {
+      console.warn('[BCBA TIMESHEET] End date is before start date, skipping generation')
+      return
+    }
+
+    try {
+      let days: Date[] = []
+      try {
+        days = getDaysInRange(startDate, endDate)
+      } catch (error) {
+        console.error('[BCBA TIMESHEET] Error getting days in range:', error)
+        return
+      }
+
+      if (!Array.isArray(days) || days.length === 0) {
+        console.warn('[BCBA TIMESHEET] No days in range')
+        setDayEntries([])
+        setTotalHours(0)
+        return
+      }
+
+      // CRITICAL: Check Saturdays in NY timezone, not user's local timezone
       const daysWithoutSaturday = days.filter((date) => {
-        if (date.getDay() === 6) {
+        try {
+          if (!date || isNaN(date.getTime())) return false
+          const dateStr = formatDateOnly(date, timezone)
+          if (isSaturdayInTimezone(dateStr, timezone)) {
+            return false
+          }
+          return true
+        } catch (error) {
+          console.error('[BCBA TIMESHEET] Error filtering date:', error, date)
           return false
         }
-        return true
       })
 
-      const entries: DayEntry[] = daysWithoutSaturday.map((date) => {
-        let defaults = defaultTimes.weekdays
-        if (isSunday(date)) {
-          defaults = defaultTimes.sun
-        } else if (isFriday(date)) {
-          defaults = defaultTimes.fri
-        }
+      const entries = daysWithoutSaturday
+        .map((date) => {
+          try {
+            // Validate date
+            if (!date || isNaN(date.getTime())) {
+              console.error('[BCBA TIMESHEET] Invalid date in entry generation:', date)
+              return null
+            }
 
-        const hasValidTimes =
-          defaults.enabled &&
-          defaults.from !== null &&
-          defaults.to !== null
+            let defaults = defaultTimes.weekdays
+            try {
+              if (isSunday(date)) {
+                defaults = defaultTimes.sun
+              } else if (isFriday(date)) {
+                defaults = defaultTimes.fri
+              }
+            } catch (error) {
+              console.error('[BCBA TIMESHEET] Error determining day type:', error, date)
+            }
 
-        const duration = hasValidTimes
-          ? calculateDurationMinutes(defaults.from, defaults.to)
-          : null
+            const hasValidTimes =
+              defaults.enabled &&
+              defaults.from !== null &&
+              defaults.to !== null
 
-        const hours = duration !== null ? duration / 60 : 0
+            let duration: number | null = null
+            try {
+              duration = hasValidTimes
+                ? calculateDurationMinutes(defaults.from, defaults.to)
+                : null
+            } catch (error) {
+              console.error('[BCBA TIMESHEET] Error calculating duration:', error)
+            }
 
-        return {
-          date,
-          dayName: getDayName(date),
-          from: hasValidTimes ? defaults.from : null,
-          to: hasValidTimes ? defaults.to : null,
-          hours,
-          use: hasValidTimes,
-          invoiced: false,
-          touched: {
-            from: false,
-            to: false,
-          },
-          errors: {
-            time: null,
-          },
-        }
-      })
+            const hours = duration !== null && !isNaN(duration) ? duration / 60 : 0
 
-      setDayEntries(entries)
-      calculateTotalHours(entries)
+            // Get day name safely
+            let dayName: string = 'Unknown'
+            try {
+              dayName = getDayName(date)
+            } catch (error) {
+              console.error('[BCBA TIMESHEET] Error getting day name:', error, date)
+              try {
+                dayName = format(date, 'EEE') // Fallback to short name
+              } catch {
+                dayName = 'Unknown'
+              }
+            }
+
+            return {
+              date,
+              dayName,
+              from: hasValidTimes ? defaults.from : null,
+              to: hasValidTimes ? defaults.to : null,
+              hours: isNaN(hours) ? 0 : hours,
+              use: hasValidTimes,
+              invoiced: false,
+              serviceType: null as string | null,
+              touched: {
+                from: false,
+                to: false,
+              },
+              errors: {
+                time: null,
+              },
+            } as DayEntry
+          } catch (error) {
+            console.error('[BCBA TIMESHEET] Error processing entry in new timesheet:', error, date)
+            return null // Return null instead of crashing
+          }
+          })
+        .filter((entry): entry is DayEntry => {
+          if (entry === null || entry === undefined) return false
+          if (typeof entry !== 'object') return false
+          return 'date' in entry && 'dayName' in entry
+        }) // Filter out nulls
+
+        setDayEntries(entries)
+        calculateTotalHours(entries)
+    } catch (error) {
+      console.error('[BCBA TIMESHEET] Error generating days for new timesheet:', error)
+      toast.error('Error generating date entries. Please try again.')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate, timesheet])
 
   // Auto-update day entries when defaults change
@@ -330,116 +594,110 @@ export function BCBATimesheetForm({
     })
   }, [defaultTimes, startDate, endDate, timesheet])
 
-  // Check for overlaps
-  useEffect(() => {
-    if (dayEntries.length === 0 || !providerId || !clientId) {
-      setOverlapConflicts([])
+  // Overlap checking removed for BCBA timesheets - they allow overlaps
+
+  // Bulk selection handlers
+  const handleRowSelect = (index: number) => {
+    setSelectedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const allIndices = new Set(dayEntries.map((_, index) => index))
+      setSelectedRows(allIndices)
+    } else {
+      setSelectedRows(new Set())
+    }
+  }
+
+  const handleBulkApply = () => {
+    if (selectedRows.size === 0) {
+      toast.error('Please select at least one row')
       return
     }
 
-    // Check internal overlaps
-    const entriesForCheck = dayEntries
-      .filter(e => e.use && e.from && e.to)
-      .map(e => ({
-        date: e.date,
-        startTime: e.from!,
-        endTime: e.to!,
-        type: 'BCBA' as const,
-      }))
+    if (!bulkServiceType) {
+      toast.error('Please select a service type to apply')
+      return
+    }
 
-    // Simplified overlap check for BCBA (single entry type)
-    const conflictMap = new Map<number, { message: string }>()
+    // Apply service type to selected rows only
+    setDayEntries((prevEntries) => {
+      const updated = [...prevEntries]
+      selectedRows.forEach((index) => {
+        if (index >= 0 && index < updated.length) {
+          updated[index] = {
+            ...updated[index],
+            serviceType: bulkServiceType,
+          }
+        }
+      })
+      return updated
+    })
+
+    toast.success(`Applied "${bulkServiceType}" to ${selectedRows.size} selected row(s)`)
     
-    for (let i = 0; i < entriesForCheck.length; i++) {
-      for (let j = i + 1; j < entriesForCheck.length; j++) {
-        const e1 = entriesForCheck[i]
-        const e2 = entriesForCheck[j]
-        
-        if (format(e1.date, 'yyyy-MM-dd') === format(e2.date, 'yyyy-MM-dd')) {
-          const start1 = timeAMPMToMinutes(e1.startTime)
-          const end1 = timeAMPMToMinutes(e1.endTime)
-          const start2 = timeAMPMToMinutes(e2.startTime)
-          const end2 = timeAMPMToMinutes(e2.endTime)
-          
-          if (start1 !== null && end1 !== null && start2 !== null && end2 !== null) {
-            if ((start1 < end2 && end1 > start2)) {
-              const idx = dayEntries.findIndex(d => format(d.date, 'yyyy-MM-dd') === format(e1.date, 'yyyy-MM-dd'))
-              if (idx >= 0) {
-                conflictMap.set(idx, {
-                  message: 'Overlapping time entries on the same day',
-                })
-              }
-            }
-          }
-        }
-      }
+    // Clear selection after applying
+    setSelectedRows(new Set())
+    setBulkServiceType('')
+  }
+
+  const handleClearSelection = () => {
+    setSelectedRows(new Set())
+    setBulkServiceType('')
+  }
+
+  const allRowsSelected = dayEntries.length > 0 && selectedRows.size === dayEntries.length
+  const someRowsSelected = selectedRows.size > 0 && selectedRows.size < dayEntries.length
+
+  // Convert service type to initials
+  const getServiceTypeInitials = (serviceType: string | null | undefined): string => {
+    if (!serviceType) return '-'
+    switch (serviceType) {
+      case 'Assessment':
+        return 'A'
+      case 'Direct Care':
+        return 'DC'
+      case 'Supervision':
+        return 'S'
+      case 'Treatment Planning':
+        return 'TP'
+      case 'Parent Training':
+        return 'PT'
+      default:
+        return '-'
     }
-
-    // Check external overlaps
-    const checkExternalOverlaps = async () => {
-      try {
-        const entriesForCheck = dayEntries
-          .filter(e => e.use && e.from && e.to)
-          .map(e => ({
-            date: e.date.toISOString(),
-            startTime: timeAMPMTo24Hour(e.from!),
-            endTime: timeAMPMTo24Hour(e.to!),
-            notes: null,
-          }))
-
-        if (entriesForCheck.length === 0) {
-          const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
-            index,
-            ...data,
-          }))
-          setOverlapConflicts(conflictsArray)
-          return
-        }
-
-        const res = await fetch('/api/timesheets/check-overlaps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            providerId,
-            clientId,
-            entries: entriesForCheck,
-            excludeTimesheetId: timesheet?.id,
-          }),
-        })
-
-        if (res.ok) {
-          const data = await res.json()
-          if (data.conflicts && Array.isArray(data.conflicts)) {
-            data.conflicts.forEach((conflict: any) => {
-              const idx = dayEntries.findIndex(d => format(d.date, 'yyyy-MM-dd') === conflict.date)
-              if (idx >= 0) {
-                conflictMap.set(idx, {
-                  message: conflict.message || 'Overlap with existing timesheet',
-                })
-              }
-            })
-          }
-        }
-
-        const conflictsArray = Array.from(conflictMap.entries()).map(([index, data]) => ({
-          index,
-          ...data,
-        }))
-        setOverlapConflicts(conflictsArray)
-      } catch (error) {
-        console.error('Error checking overlaps:', error)
-      }
-    }
-
-    checkExternalOverlaps()
-  }, [dayEntries, providerId, clientId, timesheet?.id])
+  }
 
   const calculateTotalHours = (entries: DayEntry[]) => {
-    const total = entries.reduce((sum, entry) => {
-      const hours = entry.use && entry.hours > 0 ? entry.hours : 0
-      return sum + hours
-    }, 0)
-    setTotalHours(total)
+    try {
+      if (!Array.isArray(entries)) {
+        console.error('[BCBA TIMESHEET] calculateTotalHours: entries is not an array', entries)
+        setTotalHours(0)
+        return
+      }
+      const total = entries.reduce((sum, entry) => {
+        if (!entry) return sum
+        const hours = entry.use && typeof entry.hours === 'number' && entry.hours > 0 ? entry.hours : 0
+        if (isNaN(hours)) {
+          console.error('[BCBA TIMESHEET] Invalid hours in entry:', entry)
+          return sum
+        }
+        return sum + hours
+      }, 0)
+      setTotalHours(isNaN(total) ? 0 : total)
+    } catch (error) {
+      console.error('[BCBA TIMESHEET] Error calculating total hours:', error)
+      setTotalHours(0)
+    }
   }
 
   const updateDefaultTimes = (
@@ -555,9 +813,16 @@ export function BCBATimesheetForm({
     field: 'from' | 'to' | 'use',
     value: TimeAMPM | null | boolean
   ) => {
-    if (index < 0 || index >= dayEntries.length) return
-
-    const updated = [...dayEntries]
+    try {
+      if (typeof index !== 'number' || index < 0 || index >= dayEntries.length) {
+        console.error('[BCBA TIMESHEET] Invalid index in updateDayEntry:', index, dayEntries.length)
+        return
+      }
+      if (!Array.isArray(dayEntries)) {
+        console.error('[BCBA TIMESHEET] dayEntries is not an array in updateDayEntry')
+        return
+      }
+      const updated = [...dayEntries]
 
     if (field === 'use') {
       updated[index] = {
@@ -602,8 +867,12 @@ export function BCBATimesheetForm({
       }
     }
 
-    setDayEntries(updated)
-    calculateTotalHours(updated)
+      setDayEntries(updated)
+      calculateTotalHours(updated)
+    } catch (error) {
+      console.error('[BCBA TIMESHEET] Error updating day entry:', error, { index, field, value })
+      toast.error('Failed to update entry. Please try again.')
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -614,13 +883,15 @@ export function BCBATimesheetForm({
       return
     }
 
-    if (!providerId || !clientId || !bcbaId) {
+    if (!clientId || !bcbaId) {
       toast.error('Please fill all required fields')
       return
     }
 
-    if (!serviceType) {
-      toast.error('Please select a Service Type')
+    // Check if at least one entry has a service type
+    const entriesWithServiceType = dayEntries.filter(e => e.use && e.serviceType)
+    if (entriesWithServiceType.length === 0) {
+      toast.error('Please assign a Service Type to at least one entry')
       return
     }
 
@@ -641,12 +912,6 @@ export function BCBATimesheetForm({
       return
     }
 
-    // Check for overlap conflicts
-    if (overlapConflicts.length > 0) {
-      toast.error('Please fix overlap conflicts before submitting')
-      return
-    }
-
     // Check for invoiced entries
     const hasInvoicedEntries = dayEntries.some(entry => entry.use && entry.invoiced)
     if (hasInvoicedEntries) {
@@ -661,7 +926,7 @@ export function BCBATimesheetForm({
       .map((entry) => {
         if (entry.from === null || entry.to === null) {
           toast.error(
-            `Invalid times for ${format(entry.date, 'MMM d')}: Please enter both start and end times`
+            `Invalid times for ${formatDateInTimezone(entry.date, 'MMM d', timezone)}: Please enter both start and end times`
           )
           return null
         }
@@ -669,20 +934,24 @@ export function BCBATimesheetForm({
         const duration = calculateDurationMinutes(entry.from, entry.to)
         if (duration === null) {
           toast.error(
-            `Invalid time range for ${format(entry.date, 'MMM d')}: ${entry.errors.time || 'Invalid times'}`
+            `Invalid time range for ${formatDateInTimezone(entry.date, 'MMM d', timezone)}: ${entry.errors.time || 'Invalid times'}`
           )
           return null
         }
 
         const units = duration / 15
 
+        // For BCBA timesheets, store service type in notes field
+        // This allows per-entry service types without schema changes
+        const notes = entry.serviceType || null
+
         return {
-          date: entry.date.toISOString(),
+          date: formatDateOnly(entry.date, timezone),
           startTime: timeAMPMTo24Hour(entry.from),
           endTime: timeAMPMTo24Hour(entry.to),
           minutes: duration,
           units: units,
-          notes: null,
+          notes: notes,
           invoiced: entry.invoiced,
         }
       })
@@ -703,14 +972,15 @@ export function BCBATimesheetForm({
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          providerId,
+          providerId: '', // BCBA timesheets don't use provider
           clientId,
           bcbaId,
+          insuranceId: null, // Insurance is derived from client.insuranceId
           isBCBA: true,
-          serviceType,
-          sessionData,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
+          serviceType: serviceType || null, // Keep for backward compatibility
+          sessionData: sessionData || null, // Keep for backward compatibility
+          startDate: formatDateOnly(startDate, timezone),
+          endDate: formatDateOnly(endDate, timezone),
           timezone,
           entries,
         }),
@@ -722,25 +992,7 @@ export function BCBATimesheetForm({
         router.refresh()
       } else {
         const data = await res.json()
-        if (data?.code === 'OVERLAP_CONFLICT' && Array.isArray(data?.conflicts)) {
-          const next = (data.conflicts as Array<any>)
-            .map((c) => {
-              const idx = dayEntries.findIndex((d) => format(d.date, 'yyyy-MM-dd') === c.date)
-              return idx >= 0 ? { index: idx, message: c.message || 'Overlap detected' } : null
-            })
-            .filter(Boolean) as Array<{ index: number; message: string }>
-
-          setOverlapConflicts(next)
-          if (next.length > 0) {
-            const rowElement = conflictRowRefs.current.get(next[0].index)
-            if (rowElement) {
-              setTimeout(() => rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
-            }
-          }
-          toast.error('Overlap conflicts detected. Please fix highlighted rows.')
-        } else {
-          toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
-        }
+        toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
       }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
@@ -754,7 +1006,7 @@ export function BCBATimesheetForm({
       <div className="mb-6">
         <Link
           href="/bcba-timesheets"
-          className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-4"
+          className="inline-flex items-center text-sm text-white hover:text-gray-200 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to BCBA Timesheets
@@ -775,12 +1027,47 @@ export function BCBATimesheetForm({
               </label>
               <DatePicker
                 selected={startDate}
-                onChange={(date: Date | null) => setStartDate(date)}
+                onChange={(date: Date | null) => {
+                  try {
+                    if (date) {
+                      // Validate date
+                      if (!(date instanceof Date) || isNaN(date.getTime())) {
+                        console.error('[BCBA TIMESHEET] Invalid date object:', date)
+                        toast.error('Invalid date selected')
+                        return
+                      }
+                      // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                      const dateStr = formatDateOnly(date, timezone)
+                      if (isSaturday(new Date(dateStr))) {
+                        toast.error('Timesheets cannot be created on Saturdays')
+                        return
+                      }
+                      // If end date is set and new start date is after end date, clear end date
+                      if (endDate && date > endDate) {
+                        setEndDate(null)
+                      }
+                      setStartDate(date)
+                    } else {
+                      setStartDate(null)
+                    }
+                  } catch (error: any) {
+                    console.error('[BCBA TIMESHEET] Error setting start date:', error)
+                    toast.error(error?.message || 'Invalid date selected')
+                  }
+                }}
+                filterDate={(date) => {
+                  // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                  const dateStr = formatDateOnly(date, timezone)
+                  return !isSaturdayInTimezone(dateStr, timezone)
+                }}
                 selectsStart
-                startDate={startDate}
-                endDate={endDate}
+                startDate={startDate || undefined}
+                endDate={endDate || undefined}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                dateFormat="MM/dd/yyyy"
+                placeholderText="Select start date"
                 required
+                isClearable
               />
             </div>
             <div>
@@ -789,12 +1076,47 @@ export function BCBATimesheetForm({
               </label>
               <DatePicker
                 selected={endDate}
-                onChange={(date: Date | null) => setEndDate(date)}
+                onChange={(date: Date | null) => {
+                  try {
+                    if (date) {
+                      // Validate date
+                      if (!(date instanceof Date) || isNaN(date.getTime())) {
+                        console.error('[BCBA TIMESHEET] Invalid date object:', date)
+                        toast.error('Invalid date selected')
+                        return
+                      }
+                      // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                      const dateStr = formatDateOnly(date, timezone)
+                      if (isSaturday(new Date(dateStr))) {
+                        toast.error('Timesheets cannot be created on Saturdays')
+                        return
+                      }
+                      // Ensure end date is not before start date
+                      if (startDate && date < startDate) {
+                        toast.error('End date must be after start date')
+                        return
+                      }
+                      setEndDate(date)
+                    } else {
+                      setEndDate(null)
+                    }
+                  } catch (error: any) {
+                    console.error('[BCBA TIMESHEET] Error setting end date:', error)
+                    toast.error(error?.message || 'Invalid date selected')
+                  }
+                }}
+                filterDate={(date) => {
+                  // CRITICAL: Check if Saturday in NY timezone, not user's local timezone
+                  const dateStr = formatDateOnly(date, timezone)
+                  return !isSaturdayInTimezone(dateStr, timezone)
+                }}
                 selectsEnd
                 startDate={startDate}
                 endDate={endDate}
-                minDate={startDate}
+                minDate={startDate || undefined}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                dateFormat="MM/dd/yyyy"
+                placeholderText="Select end date"
                 required
               />
             </div>
@@ -865,24 +1187,6 @@ export function BCBATimesheetForm({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Provider <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={providerId}
-                onChange={(e) => setProviderId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              >
-                <option value="">Select provider</option>
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Client <span className="text-red-500">*</span>
               </label>
               <select
@@ -892,11 +1196,14 @@ export function BCBATimesheetForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select client</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
+                {Array.isArray(clients) && clients.map((client) => {
+                  if (!client || !client.id) return null
+                  return (
+                    <option key={client.id} value={client.id}>
+                      {client.name || 'Unnamed Client'}
+                    </option>
+                  )
+                })}
               </select>
             </div>
             <div>
@@ -910,29 +1217,14 @@ export function BCBATimesheetForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select BCBA</option>
-                {bcbas.map((bcba) => (
-                  <option key={bcba.id} value={bcba.id}>
-                    {bcba.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Service Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={serviceType}
-                onChange={(e) => setServiceType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              >
-                <option value="">Select service type</option>
-                <option value="Assessment">Assessment</option>
-                <option value="Direct Care">Direct Care</option>
-                <option value="Supervision">Supervision</option>
-                <option value="Treatment Planning">Treatment Planning</option>
-                <option value="Parent Training">Parent Training</option>
+                {Array.isArray(bcbas) && bcbas.map((bcba) => {
+                  if (!bcba || !bcba.id) return null
+                  return (
+                    <option key={bcba.id} value={bcba.id}>
+                      {bcba.name || 'Unnamed BCBA'}
+                    </option>
+                  )
+                })}
               </select>
             </div>
             <div>
@@ -961,6 +1253,10 @@ export function BCBATimesheetForm({
                 </div>
               </div>
             )}
+            <div>
+              {/* Timezone is always America/New_York - hidden from UI */}
+              <input type="hidden" value={timezone} />
+            </div>
           </div>
         </div>
 
@@ -986,11 +1282,71 @@ export function BCBATimesheetForm({
                 </div>
               </div>
             </div>
+            
+            {/* Bulk Action Bar */}
+            {selectedRows.size > 0 && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-medium text-blue-900">
+                    {selectedRows.size} row{selectedRows.size !== 1 ? 's' : ''} selected
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearSelection}
+                    className="text-sm text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Service Type
+                    </label>
+                    <select
+                      value={bulkServiceType}
+                      onChange={(e) => setBulkServiceType(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    >
+                      <option value="">Select service type</option>
+                      <option value="Assessment">Assessment</option>
+                      <option value="Direct Care">Direct Care</option>
+                      <option value="Supervision">Supervision</option>
+                      <option value="Treatment Planning">Treatment Planning</option>
+                      <option value="Parent Training">Parent Training</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleBulkApply}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                    >
+                      Apply to Selected
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead>
                   <tr>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-12">
+                      <input
+                        type="checkbox"
+                        checked={allRowsSelected}
+                        ref={(input) => {
+                          if (input) input.indeterminate = someRowsSelected
+                        }}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        className="rounded border-gray-300 text-primary-600"
+                        title="Select all rows"
+                      />
+                    </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">DATE</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">TYPE</th>
                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">FROM</th>
                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">TO</th>
                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">HOURS</th>
@@ -1002,23 +1358,27 @@ export function BCBATimesheetForm({
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {dayEntries.map((entry, index) => {
-                    const conflict = overlapConflicts.find(c => c.index === index)
-                    const hasConflict = !!conflict
-
+                    // BCBA timesheets don't have overlap conflicts
+                    const hasConflict = false
                     return (
                       <tr
                         key={index}
-                        ref={(el) => {
-                          if (el && hasConflict) {
-                            conflictRowRefs.current.set(index, el)
-                          } else {
-                            conflictRowRefs.current.delete(index)
-                          }
-                        }}
-                        className={hasConflict ? 'bg-red-50' : ''}
+                        className={selectedRows.has(index) ? 'bg-blue-50' : ''}
                       >
+                        <td className="px-4 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(index)}
+                            onChange={() => handleRowSelect(index)}
+                            className="rounded border-gray-300 text-primary-600"
+                            disabled={timesheet?.status === 'LOCKED'}
+                          />
+                        </td>
                         <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                          {format(entry.date, 'EEE M/d/yyyy')}
+                          {formatDateInTimezone(entry.date, 'EEE M/d/yyyy', timezone)}
+                        </td>
+                        <td className="px-4 py-2 text-center text-sm font-medium text-gray-700">
+                          {getServiceTypeInitials(entry.serviceType)}
                         </td>
                         <td className={`px-2 py-2 ${hasConflict ? 'bg-red-100' : ''}`}>
                           <TimeFieldAMPM
@@ -1057,11 +1417,6 @@ export function BCBATimesheetForm({
                           {entry.errors.time && (
                             <div className="text-xs text-red-600 mt-1">{entry.errors.time}</div>
                           )}
-                          {hasConflict && (
-                            <div className="text-xs text-red-600 mt-1 font-semibold" title={conflict.message}>
-                              Overlap!
-                            </div>
-                          )}
                         </td>
                         {!timesheet && (
                           <td className="px-2 py-2 text-center">
@@ -1092,30 +1447,6 @@ export function BCBATimesheetForm({
           </div>
         )}
 
-        {/* Overlap Conflict Messages */}
-        {overlapConflicts.length > 0 && (
-          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-red-800 mb-2 flex items-center">
-              <span className="mr-2">⚠️</span>
-              Overlap Conflicts Detected
-            </h3>
-            <p className="text-sm text-red-700 mb-3">
-              Please fix the following conflicts before saving:
-            </p>
-            <ul className="list-disc list-inside space-y-2">
-              {overlapConflicts.map((conflict, idx) => {
-                const entry = dayEntries[conflict.index]
-                if (!entry) return null
-                return (
-                  <li key={idx} className="text-sm text-red-700">
-                    <strong>{format(entry.date, 'MM/dd/yyyy')}</strong> - {conflict.message}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )}
-
         {/* Action Buttons */}
         <div className="flex justify-end space-x-3">
           <Link
@@ -1126,7 +1457,7 @@ export function BCBATimesheetForm({
           </Link>
           <button
             type="submit"
-            disabled={loading || dayEntries.length === 0 || overlapConflicts.length > 0}
+            disabled={loading || dayEntries.length === 0}
             className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (timesheet ? 'Updating...' : 'Creating...') : (timesheet ? 'Update Timesheet' : 'Create Timesheet')}
