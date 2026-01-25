@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create import record
-    const importRecord = await prisma.payrollImport.create({
+    const importRecord = await (prisma as any).payrollImport.create({
       data: {
         fileName: file.name,
         fileHash,
