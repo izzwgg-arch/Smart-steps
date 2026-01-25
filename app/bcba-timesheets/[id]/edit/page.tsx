@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { DashboardNav } from '@/components/DashboardNav'
 import { BCBATimesheetForm } from '@/components/timesheets/BCBATimesheetForm'
+import { TimesheetErrorBoundary } from '@/components/timesheets/TimesheetErrorBoundary'
 import { prisma } from '@/lib/prisma'
 
 export default async function EditBCBATimesheetPage({
@@ -17,18 +18,19 @@ export default async function EditBCBATimesheetPage({
   }
 
   // Fetch timesheet with all relations
-  const timesheet = await prisma.timesheet.findUnique({
+  // Use any cast since Prisma client may not have bcbaInsurance relation yet
+  const timesheet = await (prisma as any).timesheet.findUnique({
     where: { id: params.id },
-    include: {
-      client: true,
-      provider: true,
-      bcba: true,
-      insurance: true,
-      entries: {
-        orderBy: { date: 'asc' },
+      include: {
+        client: true,
+        provider: true,
+        bcba: true,
+        insurance: true, // BCBA timesheets now use regular Insurance
+        entries: {
+          orderBy: { date: 'asc' },
+        },
+        user: true,
       },
-      user: true,
-    },
   })
 
   if (!timesheet || timesheet.deletedAt) {
@@ -46,7 +48,7 @@ export default async function EditBCBATimesheetPage({
   }
 
   // Fetch all options for dropdowns
-  const [providers, clients, bcbas] = await Promise.all([
+  const [providers, clients, bcbas, insurances] = await Promise.all([
     prisma.provider.findMany({
       where: { active: true, deletedAt: null },
       orderBy: { name: 'asc' },
@@ -60,6 +62,10 @@ export default async function EditBCBATimesheetPage({
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
     }),
+    prisma.insurance.findMany({
+      where: { active: true, deletedAt: null },
+      orderBy: { name: 'asc' },
+    }),
   ])
 
   // Transform timesheet to match form interface
@@ -68,13 +74,14 @@ export default async function EditBCBATimesheetPage({
     providerId: timesheet.providerId,
     clientId: timesheet.clientId,
     bcbaId: timesheet.bcbaId,
-    insuranceId: timesheet.insuranceId || null,
+    // Use insuranceId if available, otherwise fallback to bcbaInsuranceId (for migration)
+    insuranceId: timesheet.insuranceId || (timesheet as any).bcbaInsuranceId || null,
     serviceType: timesheet.serviceType || null,
     sessionData: timesheet.sessionData || null,
     startDate: timesheet.startDate.toISOString(),
     endDate: timesheet.endDate.toISOString(),
     status: timesheet.status,
-    entries: timesheet.entries.map((entry) => ({
+    entries: timesheet.entries.map((entry: any) => ({
       id: entry.id,
       date: entry.date.toISOString(),
       startTime: entry.startTime,
@@ -89,13 +96,15 @@ export default async function EditBCBATimesheetPage({
     <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <BCBATimesheetForm
-          providers={providers}
-          clients={clients}
-          bcbas={bcbas}
-          insurances={[]}
-          timesheet={timesheetData}
-        />
+        <TimesheetErrorBoundary>
+          <BCBATimesheetForm
+            providers={providers}
+            clients={clients}
+            bcbas={bcbas}
+            insurances={insurances}
+            timesheet={timesheetData}
+          />
+        </TimesheetErrorBoundary>
       </main>
     </div>
   )

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { canAccessCommunitySection } from '@/lib/permissions'
+import { parseDateOnly } from '@/lib/dateUtils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,7 +93,9 @@ export async function POST(request: NextRequest) {
         units,
         ratePerUnit,
         totalAmount,
-        serviceDate: serviceDate ? new Date(serviceDate) : null,
+        // Parse date as date-only in America/New_York timezone to avoid timezone shifts
+        // This ensures the date entered (e.g., 01/04/2026) is stored and displayed as the same date
+        serviceDate: serviceDate ? parseDateOnly(serviceDate, 'America/New_York') : null,
         notes: notes || null,
         status: 'DRAFT',
         createdByUserId: session.user.id,

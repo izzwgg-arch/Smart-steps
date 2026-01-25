@@ -105,7 +105,10 @@ export function InsuranceList() {
                       {insurance.name}
                     </div>
                     <div className="text-sm text-gray-500">
-                      Rate: ${parseFloat(insurance.ratePerUnit.toString()).toFixed(2)} per unit (15 min)
+                      Regular: ${parseFloat((insurance as any).regularRatePerUnit?.toString() || insurance.ratePerUnit.toString()).toFixed(2)} per {((insurance as any).regularUnitMinutes || 15)} min
+                      {((insurance as any).bcbaRatePerUnit && (insurance as any).bcbaRatePerUnit !== (insurance as any).regularRatePerUnit) && (
+                        <span className="ml-2">| BCBA: ${parseFloat((insurance as any).bcbaRatePerUnit.toString()).toFixed(2)} per {((insurance as any).bcbaUnitMinutes || 15)} min</span>
+                      )}
                     </div>
                   </div>
                 </div>

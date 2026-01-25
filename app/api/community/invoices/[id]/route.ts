@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { canAccessCommunitySection } from '@/lib/permissions'
+import { parseDateOnly } from '@/lib/dateUtils'
 
 export async function GET(
   request: NextRequest,
@@ -80,7 +81,8 @@ export async function PUT(
     // If units changed, recalculate total
     let updateData: any = {
       units: units !== undefined ? parseInt(units) : existingInvoice.units,
-      serviceDate: serviceDate ? new Date(serviceDate) : null,
+      // Parse date as date-only in America/New_York timezone to avoid timezone shifts
+      serviceDate: serviceDate ? parseDateOnly(serviceDate, 'America/New_York') : null,
       notes: notes || null,
     }
 

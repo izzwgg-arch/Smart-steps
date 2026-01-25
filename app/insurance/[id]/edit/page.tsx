@@ -29,11 +29,15 @@ export default async function EditInsurancePage({
     id: insurance.id,
     name: insurance.name,
     ratePerUnit: parseFloat(insurance.ratePerUnit.toString()),
+    regularRatePerUnit: (insurance as any).regularRatePerUnit ? parseFloat((insurance as any).regularRatePerUnit.toString()) : null,
+    regularUnitMinutes: (insurance as any).regularUnitMinutes || null,
+    bcbaRatePerUnit: (insurance as any).bcbaRatePerUnit ? parseFloat((insurance as any).bcbaRatePerUnit.toString()) : null,
+    bcbaUnitMinutes: (insurance as any).bcbaUnitMinutes || null,
     active: insurance.active,
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
         <InsuranceForm insurance={insuranceData} />

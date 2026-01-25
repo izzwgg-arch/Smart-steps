@@ -155,6 +155,7 @@ export function InvoicesList() {
 
   const fetchInvoices = async () => {
     try {
+      setLoading(true)
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '25',
@@ -165,11 +166,30 @@ export function InvoicesList() {
       const res = await fetch(`/api/invoices?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setInvoices(data.invoices)
-        setTotalPages(data.totalPages)
+        console.log('[INVOICES FRONTEND] Received data:', {
+          invoicesCount: data.invoices?.length || 0,
+          total: data.total,
+          totalPages: data.totalPages,
+          firstInvoice: data.invoices?.[0]?.invoiceNumber
+        })
+        if (data.invoices && Array.isArray(data.invoices)) {
+          setInvoices(data.invoices)
+          setTotalPages(data.totalPages || 1)
+        } else {
+          console.error('[INVOICES FRONTEND] Invalid data structure:', data)
+          setInvoices([])
+          setTotalPages(1)
+        }
+      } else {
+        const errorData = await res.json().catch(() => ({}))
+        console.error('[INVOICES FRONTEND] API error:', res.status, errorData)
+        toast.error(errorData.error || 'Failed to load invoices')
+        setInvoices([])
       }
     } catch (error) {
+      console.error('[INVOICES FRONTEND] Fetch error:', error)
       toast.error('Failed to load invoices')
+      setInvoices([])
     } finally {
       setLoading(false)
     }

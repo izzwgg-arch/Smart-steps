@@ -14,6 +14,7 @@ import { ConfirmDeleteModal } from '@/components/shared/ConfirmDeleteModal'
 
 interface Timesheet {
   id: string
+  userId: string
   status: string
   startDate: string
   endDate: string
@@ -29,7 +30,7 @@ interface Timesheet {
   }>
 }
 
-export function BCBATimesheetsList() {
+export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
   const router = useRouter()
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,32 +50,59 @@ export function BCBATimesheetsList() {
   const [canApproveTimesheets, setCanApproveTimesheets] = useState(false)
   const [canRejectTimesheets, setCanRejectTimesheets] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deletingTimesheetId, setDeletingTimesheetId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [selectedTimesheets, setSelectedTimesheets] = useState<Set<string>>(new Set())
+  const [canCreateInvoice, setCanCreateInvoice] = useState(false)
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false)
 
   useEffect(() => {
     fetchTimesheets()
     // Get user role and permissions from session
-    fetch('/api/auth/session').then(res => res.json()).then(data => {
-      if (data?.user?.role) {
-        setUserRole(data.user.role)
-        setIsAdmin(data.user.role === 'ADMIN' || data.user.role === 'SUPER_ADMIN')
+    Promise.all([
+      fetch('/api/auth/session').then(res => res.json()),
+      fetch('/api/user/permissions').then(res => res.json())
+    ]).then(([sessionData, permissionsData]) => {
+      // Set role and admin status
+      const userRole = sessionData?.user?.role || ''
+      const isUserAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'
+      
+      if (userRole) {
+        setUserRole(userRole)
+        setIsAdmin(isUserAdmin)
       }
-    })
-    // Check if user can view all timesheets
-    fetch('/api/user/permissions').then(res => res.json()).then(data => {
-      if (data?.permissions) {
-        const hasViewAll = data.permissions['bcbaTimesheets.viewAll']?.canView === true || data.permissions['timesheets.viewAll']?.canView === true
-        const hasViewSelected = data.permissions['bcbaTimesheets.viewSelectedUsers']?.canView === true || data.permissions['timesheets.viewSelectedUsers']?.canView === true
-        const hasDelete = data.permissions['bcbaTimesheets.delete']?.canDelete === true || data.permissions['timesheets.delete']?.canDelete === true
-        const hasApprove = data.permissions['bcbaTimesheets.approve']?.canApprove === true
-        const hasReject = data.permissions['bcbaTimesheets.reject']?.canApprove === true // Reject uses canApprove
+      if (sessionData?.user?.id) {
+        setCurrentUserId(sessionData.user.id)
+      }
+      
+      // ADMIN and SUPER_ADMIN always have full access
+      if (isUserAdmin) {
+        setCanViewAllTimesheets(true)
+        setCanDeleteTimesheets(true)
+        setCanApproveTimesheets(true)
+        setCanRejectTimesheets(true)
+        setCanCreateInvoice(true) // Admins always can create invoices
+        return
+      }
+      
+      // Check permissions for non-admin users
+      if (permissionsData?.permissions) {
+        const hasViewAll = permissionsData.permissions['bcbaTimesheets.viewAll']?.canView === true || permissionsData.permissions['timesheets.viewAll']?.canView === true
+        const hasViewSelected = permissionsData.permissions['bcbaTimesheets.viewSelectedUsers']?.canView === true || permissionsData.permissions['timesheets.viewSelectedUsers']?.canView === true
+        const hasDelete = permissionsData.permissions['bcbaTimesheets.delete']?.canDelete === true || permissionsData.permissions['timesheets.delete']?.canDelete === true
+        const hasApprove = permissionsData.permissions['bcbaTimesheets.approve']?.canApprove === true
+        const hasReject = permissionsData.permissions['bcbaTimesheets.reject']?.canApprove === true // Reject uses canApprove
+        const hasViewTimesheets = permissionsData.permissions['bcbaTimesheets.view']?.canView === true || permissionsData.permissions['timesheets.view']?.canView === true || hasViewAll || hasViewSelected
+        const hasCreateInvoice = permissionsData.permissions['invoices.create']?.canCreate === true
         setCanViewAllTimesheets(hasViewAll || hasViewSelected)
         setHasViewSelectedUsers(hasViewSelected)
         setCanDeleteTimesheets(hasDelete)
         setCanApproveTimesheets(hasApprove)
         setCanRejectTimesheets(hasReject)
+        // User needs both view timesheets AND create invoice permissions
+        setCanCreateInvoice(hasViewTimesheets && hasCreateInvoice)
         
         // If user can view others, fetch available users
         if (hasViewAll || hasViewSelected) {
@@ -118,6 +146,9 @@ export function BCBATimesheetsList() {
   const fetchTimesheets = async () => {
     try {
       let url = `/api/timesheets?page=${page}&limit=${rowsPerPage}&search=${searchTerm}&isBCBA=true`
+      if (isArchive) {
+        url += `&archived=true`
+      }
       if (selectedUserId) {
         url += `&userId=${selectedUserId}`
       }
@@ -312,6 +343,143 @@ export function BCBATimesheetsList() {
     toast.success('BCBA Timesheets exported to Excel')
   }
 
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedTimesheets(new Set(timesheets.map(ts => ts.id)))
+    } else {
+      setSelectedTimesheets(new Set())
+    }
+  }
+
+  const handleSelectTimesheet = (timesheetId: string, checked: boolean) => {
+    const newSelected = new Set(selectedTimesheets)
+    if (checked) {
+      newSelected.add(timesheetId)
+    } else {
+      newSelected.delete(timesheetId)
+    }
+    setSelectedTimesheets(newSelected)
+  }
+
+  const handleMoveToArchive = async () => {
+    if (selectedTimesheets.size === 0) {
+      toast.error('Please select at least one timesheet')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/bcba-timesheets/batch/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedTimesheets), archived: true }),
+      })
+
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || `Moved ${data.count} BCBA timesheet(s) to archive`)
+        setSelectedTimesheets(new Set())
+        fetchTimesheets()
+      } else {
+        toast.error(data.error || 'Failed to move BCBA timesheets to archive')
+      }
+    } catch (error: any) {
+      toast.error(`Failed to move timesheets: ${error.message}`)
+    }
+  }
+
+  const handleMoveOutOfArchive = async () => {
+    if (selectedTimesheets.size === 0) {
+      toast.error('Please select at least one timesheet')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/bcba-timesheets/batch/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedTimesheets), archived: false }),
+      })
+
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || `Moved ${data.count} BCBA timesheet(s) out of archive`)
+        setSelectedTimesheets(new Set())
+        fetchTimesheets()
+      } else {
+        toast.error(data.error || 'Failed to move BCBA timesheets out of archive')
+      }
+    } catch (error: any) {
+      toast.error(`Failed to move timesheets: ${error.message}`)
+    }
+  }
+
+  const handleGenerateInvoiceFromArchive = async () => {
+    if (selectedTimesheets.size === 0) {
+      toast.error('Please select at least one timesheet')
+      return
+    }
+
+    setIsGeneratingInvoice(true)
+    try {
+      const res = await fetch('/api/bcba-timesheets/batch/generate-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timesheetIds: Array.from(selectedTimesheets) }),
+      })
+
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || 'BCBA invoices generated successfully')
+        setSelectedTimesheets(new Set())
+        fetchTimesheets()
+      } else {
+        toast.error(data.error || 'Failed to generate BCBA invoices')
+      }
+    } catch (error: any) {
+      toast.error(`Failed to generate invoices: ${error.message}`)
+    } finally {
+      setIsGeneratingInvoice(false)
+    }
+  }
+
+  const handleGenerateInvoice = async () => {
+    if (selectedTimesheets.size === 0) {
+      toast.error('Please select at least one timesheet')
+      return
+    }
+
+    setIsGeneratingInvoice(true)
+    try {
+      // Use BCBA batch endpoint for BCBA timesheets
+      const response = await fetch('/api/bcba-timesheets/batch/generate-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timesheetIds: Array.from(selectedTimesheets),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast.success(data.message || 'BCBA invoices generated successfully')
+        setSelectedTimesheets(new Set())
+        fetchTimesheets() // Refresh to show updated status
+      } else {
+        toast.error(data.error || 'Failed to generate BCBA invoices')
+      }
+    } catch (error: any) {
+      console.error('Error generating BCBA invoices:', error)
+      toast.error('An error occurred while generating BCBA invoices')
+    } finally {
+      setIsGeneratingInvoice(false)
+    }
+  }
+
+  const handleClearSelection = () => {
+    setSelectedTimesheets(new Set())
+  }
+
   if (loading) {
     return <div className="text-center py-12">Loading BCBA timesheets...</div>
   }
@@ -321,10 +489,73 @@ export function BCBATimesheetsList() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-gray-900">BCBA Timesheets</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{isArchive ? 'BCBA Timesheet Archive' : 'BCBA Timesheets'}</h1>
           </div>
         </div>
         <div className="flex space-x-3">
+          {/* Batch action buttons - shown when items are selected */}
+          {selectedTimesheets.size > 0 && (
+            <div className="flex space-x-2 border-r pr-3 mr-3">
+              {isArchive ? (
+                <>
+                  <button
+                    onClick={handleMoveOutOfArchive}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
+                  >
+                    <span>Move out of archive ({selectedTimesheets.size})</span>
+                  </button>
+                  <button
+                    onClick={handleGenerateInvoiceFromArchive}
+                    disabled={isGeneratingInvoice || !canCreateInvoice}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>
+                      {isGeneratingInvoice 
+                        ? 'Generating...' 
+                        : `Generate Invoice (${selectedTimesheets.size})`
+                      }
+                    </span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleMoveToArchive}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 flex items-center space-x-2"
+                >
+                  <span>Move to archive ({selectedTimesheets.size})</span>
+                </button>
+              )}
+              <button
+                onClick={handleClearSelection}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+          {!isArchive && (
+            <button
+              onClick={handleGenerateInvoice}
+              disabled={selectedTimesheets.size === 0 || isGeneratingInvoice || !canCreateInvoice}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              title={
+                !canCreateInvoice 
+                  ? 'Requires invoice creation permission' 
+                  : selectedTimesheets.size === 0 
+                    ? 'Please select at least one timesheet' 
+                    : ''
+              }
+            >
+              <FileText className="w-4 h-4" />
+              <span>
+                {isGeneratingInvoice 
+                  ? 'Generating...' 
+                  : `Generate Invoice${selectedTimesheets.size > 0 ? ` (${selectedTimesheets.size} selected)` : ''}`
+                }
+              </span>
+            </button>
+          )}
           <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
@@ -381,11 +612,16 @@ export function BCBATimesheetsList() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                CLIENT
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                <input
+                  type="checkbox"
+                  checked={timesheets.length > 0 && timesheets.every(ts => selectedTimesheets.has(ts.id))}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                PROVIDER
+                CLIENT
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 BCBA
@@ -410,11 +646,16 @@ export function BCBATimesheetsList() {
           <tbody className="bg-white divide-y divide-gray-200">
             {timesheets.map((timesheet) => (
               <tr key={timesheet.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={selectedTimesheets.has(timesheet.id)}
+                    onChange={(e) => handleSelectTimesheet(timesheet.id, e.target.checked)}
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  />
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {timesheet.client.name}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {timesheet.provider.name}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {timesheet.bcba.name}
@@ -508,10 +749,11 @@ export function BCBATimesheetsList() {
                     {timesheet.status === 'DRAFT' && (
                       <Link
                         href={`/bcba-timesheets/${timesheet.id}/edit`}
-                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px] no-underline"
+                        style={{ color: '#374151' }}
                       >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit
+                        <Edit className="w-4 h-4 mr-2" style={{ color: '#374151' }} />
+                        <span style={{ color: '#374151' }}>Edit</span>
                       </Link>
                     )}
                     {timesheet.status === 'DRAFT' && (canApproveTimesheets || isAdmin) && (
@@ -534,7 +776,7 @@ export function BCBATimesheetsList() {
                         )}
                       </>
                     )}
-                    {(canDeleteTimesheets || isAdmin) && (
+                    {((canDeleteTimesheets || isAdmin) || (timesheet.status === 'DRAFT' && currentUserId && timesheet.userId === currentUserId)) && (
                       <button
                         onClick={() => handleDeleteClick(timesheet.id)}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-gray-100 min-h-[44px]"

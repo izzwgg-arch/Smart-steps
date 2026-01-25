@@ -21,7 +21,17 @@ export async function POST(request: NextRequest) {
       clientId,
       entries,
       excludeTimesheetId, // Optional: exclude current timesheet when editing
+      isBCBA, // Optional: if true, skip overlap check
     } = data
+
+    // Skip overlap check for BCBA timesheets - they allow overlaps
+    if (isBCBA === true) {
+      console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
+      return NextResponse.json({
+        hasOverlaps: false,
+        conflicts: [],
+      })
+    }
 
     if (!providerId || !clientId || !entries || !Array.isArray(entries)) {
       return NextResponse.json(

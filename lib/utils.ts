@@ -17,10 +17,13 @@ export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return '—'
   const d = typeof date === 'string' ? new Date(date) : date
   if (isNaN(d.getTime())) return '—'
+  // Always format dates in America/New_York timezone for timesheets
+  // This ensures users in different timezones see the same date
   return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: 'America/New_York',
   }).format(d)
 }
 

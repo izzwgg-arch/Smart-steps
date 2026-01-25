@@ -183,7 +183,14 @@ export async function POST(request: NextRequest) {
         const batchDate = format(new Date(), 'yyyy-MM-dd')
         const emailSubject = `${emailSubjectPrefix} – Approved Community Invoices Batch (${batchDate})`
 
-        await tx.emailQueueItem.updateMany({
+        console.log('[COMMUNITY_EMAIL_SCHEDULE] Scheduling emails', {
+          itemIds: queuedItems.map(item => item.id),
+          scheduledSendAt: scheduledSendDateTime.toISOString(),
+          recipients: recipientsStr,
+          attachmentKey,
+        })
+
+        const updateResult = await tx.emailQueueItem.updateMany({
           where: { id: { in: queuedItems.map((item) => item.id) } },
           data: { 
             scheduledSendAt: scheduledSendDateTime,
@@ -194,6 +201,11 @@ export async function POST(request: NextRequest) {
             attachmentFilename: attachmentFilename || null, // Store attachment filename if provided
             // Keep status as QUEUED - will be processed by cron job
           },
+        })
+
+        console.log('[COMMUNITY_EMAIL_SCHEDULE] Update result', {
+          count: updateResult.count,
+          expectedCount: queuedItems.length,
         })
       } else {
         // Lock them to SENDING for immediate send
@@ -384,9 +396,10 @@ export async function POST(request: NextRequest) {
     //   - OR domain lacks proper authentication (SPF/DKIM/DMARC)
     // Once domain-authenticated, Gmail removes the generic icon automatically
     const emailBrandName = process.env.COMMUNITY_EMAIL_FROM_NAME || 'KJ Play Center'
-    // Use domain-based address (default: invoices@kjplaycenter.com) to avoid Gmail generic avatar
-    const emailFromAddress = process.env.COMMUNITY_EMAIL_FROM_ADDRESS || 'invoices@kjplaycenter.com'
+    // Use billing@kjplaycenter.com for Community Classes emails only
+    const emailFromAddress = process.env.COMMUNITY_EMAIL_FROM || 'billing@kjplaycenter.com'
     const emailFrom = `${emailBrandName} <${emailFromAddress}>`
+    const emailReplyTo = process.env.COMMUNITY_EMAIL_REPLY_TO || emailFromAddress
     const emailSubjectPrefix = process.env.COMMUNITY_EMAIL_SUBJECT_PREFIX || 'KJ Play Center'
     
     // Log the From header for verification
@@ -483,10 +496,12 @@ All invoices are attached as PDF files. Please review and process accordingly.
       {
         to: recipients,
         from: emailFrom,
+        replyTo: emailReplyTo,
         subject: `${emailSubjectPrefix} – Approved Community Invoices Batch (${batchDate})`,
         html: emailHtml,
         text: emailText,
         attachments: allAttachments,
+        useCommunityTransporter: true, // Use community-specific SMTP credentials
       },
       {
         action: 'EMAIL_SENT',

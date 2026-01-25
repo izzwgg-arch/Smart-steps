@@ -1,17 +1,28 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { 
   Home, 
-  LogOut
+  LogOut,
+  ArrowLeft
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 
 export function DashboardNav({ userRole }: { userRole: string }) {
   const pathname = usePathname()
+  const router = useRouter()
   const isActive = pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+  const showBackButton = !isActive && pathname !== '/login' && pathname !== '/'
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.back()
+    } else {
+      router.push('/dashboard')
+    }
+  }
 
   return (
     <nav className="bg-gray-900 text-white">
@@ -22,13 +33,24 @@ export function DashboardNav({ userRole }: { userRole: string }) {
               <span className="text-xl font-bold text-white">Smart Steps</span>
             </Link>
             
+            {showBackButton && (
+              <button
+                onClick={handleBack}
+                className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+            )}
+            
             <Link
               href="/dashboard"
               className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 isActive
-                  ? 'bg-primary-600 text-white'
+                  ? 'text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
+              style={isActive ? { backgroundColor: '#0066cc' } : undefined}
             >
               <Home className="w-4 h-4" />
               <span>Home</span>

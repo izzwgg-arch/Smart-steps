@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 
@@ -69,13 +69,15 @@ export function BCBAsList() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">BCBAs</h1>
         </div>
-        <Link
-          href="/bcbas/new"
-          className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center space-x-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add BCBA</span>
-        </Link>
+        <div className="flex items-center space-x-3">
+          <Link
+            href="/bcbas/new"
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center space-x-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add BCBA</span>
+          </Link>
+        </div>
       </div>
 
       <div className="mb-6">

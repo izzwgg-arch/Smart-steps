@@ -59,6 +59,11 @@ export async function POST(request: NextRequest) {
       canViewCommunityClassesClients,
       canViewCommunityClassesInvoices,
       canViewCommunityClassesEmailQueue,
+      communityEmailQueueView,
+      communityEmailQueueSendNow,
+      communityEmailQueueSchedule,
+      communityEmailQueueAttachPdf,
+      communityEmailQueueDelete,
     } = data
 
     if (!name) {
@@ -111,6 +116,12 @@ export async function POST(request: NextRequest) {
         canViewCommunityClassesClients: canViewCommunityClassesClients || false,
         canViewCommunityClassesInvoices: canViewCommunityClassesInvoices || false,
         canViewCommunityClassesEmailQueue: canViewCommunityClassesEmailQueue || false,
+        // Community Email Queue granular permissions
+        communityEmailQueueView: communityEmailQueueView || false,
+        communityEmailQueueSendNow: communityEmailQueueSendNow || false,
+        communityEmailQueueSchedule: communityEmailQueueSchedule || false,
+        communityEmailQueueAttachPdf: communityEmailQueueAttachPdf || false,
+        communityEmailQueueDelete: communityEmailQueueDelete || false,
         ...(permissionsData.length > 0 && {
           permissions: {
             create: permissionsData

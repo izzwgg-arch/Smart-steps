@@ -3,12 +3,13 @@ import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { DashboardNav } from '@/components/DashboardNav'
 import { TimesheetForm } from '@/components/timesheets/TimesheetForm'
+import { TimesheetErrorBoundary } from '@/components/timesheets/TimesheetErrorBoundary'
 import { prisma } from '@/lib/prisma'
 
 export default async function EditTimesheetPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }> | { id: string }
 }) {
   const session = await getServerSession(authOptions)
 
@@ -16,9 +17,13 @@ export default async function EditTimesheetPage({
     redirect('/login')
   }
 
+  // Handle both sync and async params (Next.js 15 compatibility)
+  const resolvedParams = params instanceof Promise ? await params : params
+  const timesheetId = resolvedParams.id
+
   // Fetch timesheet with all relations
   const timesheet = await prisma.timesheet.findUnique({
-    where: { id: params.id },
+    where: { id: timesheetId },
     include: {
       client: true,
       provider: true,
@@ -88,16 +93,18 @@ export default async function EditTimesheetPage({
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <TimesheetForm
-          providers={providers}
-          clients={clients}
-          bcbas={bcbas}
-          insurances={insurances}
-          timesheet={timesheetData}
-        />
+        <TimesheetErrorBoundary>
+          <TimesheetForm
+            providers={providers}
+            clients={clients}
+            bcbas={bcbas}
+            insurances={insurances}
+            timesheet={timesheetData}
+          />
+        </TimesheetErrorBoundary>
       </main>
     </div>
   )

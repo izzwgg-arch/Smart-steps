@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json()
-    const { name, email, phone } = data
+    const { name, email, phone, signature } = data
 
     if (!name) {
       return NextResponse.json(
@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
         name,
         email: email || null,
         phone: phone || null,
-      },
+        signature: signature || null,
+      } as any,
     })
 
     return NextResponse.json(bcba, { status: 201 })

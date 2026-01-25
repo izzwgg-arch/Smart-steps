@@ -86,6 +86,13 @@ export function RoleForm({ role }: RoleFormProps) {
   const [canViewCommunityClassesInvoices, setCanViewCommunityClassesInvoices] = useState(false)
   const [canViewCommunityClassesEmailQueue, setCanViewCommunityClassesEmailQueue] = useState(false)
   
+  // Community Email Queue granular permissions
+  const [communityEmailQueueView, setCommunityEmailQueueView] = useState(false)
+  const [communityEmailQueueSendNow, setCommunityEmailQueueSendNow] = useState(false)
+  const [communityEmailQueueSchedule, setCommunityEmailQueueSchedule] = useState(false)
+  const [communityEmailQueueDelete, setCommunityEmailQueueDelete] = useState(false)
+  const [communityEmailQueueAttachPdf, setCommunityEmailQueueAttachPdf] = useState(false)
+  
   // Close user selector when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -144,6 +151,12 @@ export function RoleForm({ role }: RoleFormProps) {
             setCanViewCommunityClassesClients(data.canViewCommunityClassesClients || false)
             setCanViewCommunityClassesInvoices(data.canViewCommunityClassesInvoices || false)
             setCanViewCommunityClassesEmailQueue(data.canViewCommunityClassesEmailQueue || false)
+            // Load granular Community Email Queue permissions
+            setCommunityEmailQueueView(data.communityEmailQueueView || false)
+            setCommunityEmailQueueSendNow(data.communityEmailQueueSendNow || false)
+            setCommunityEmailQueueSchedule(data.communityEmailQueueSchedule || false)
+            setCommunityEmailQueueDelete(data.communityEmailQueueDelete || false)
+            setCommunityEmailQueueAttachPdf(data.communityEmailQueueAttachPdf || false)
           }
         })
         .catch(err => console.error('Failed to fetch role permissions:', err))
@@ -396,6 +409,12 @@ export function RoleForm({ role }: RoleFormProps) {
         canViewCommunityClassesClients: canViewCommunityClassesClients,
         canViewCommunityClassesInvoices: canViewCommunityClassesInvoices,
         canViewCommunityClassesEmailQueue: canViewCommunityClassesEmailQueue,
+        // Community Email Queue granular permissions
+        communityEmailQueueView: communityEmailQueueView,
+        communityEmailQueueSendNow: communityEmailQueueSendNow,
+        communityEmailQueueSchedule: communityEmailQueueSchedule,
+        communityEmailQueueDelete: communityEmailQueueDelete,
+        communityEmailQueueAttachPdf: communityEmailQueueAttachPdf,
       }
 
       const res = await fetch(url, {
@@ -438,7 +457,7 @@ export function RoleForm({ role }: RoleFormProps) {
       <div className="mb-6">
         <Link
           href="/roles"
-          className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-4"
+          className="inline-flex items-center text-white hover:text-gray-200 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Roles
@@ -513,6 +532,7 @@ export function RoleForm({ role }: RoleFormProps) {
               { key: 'quickAccess.providers', label: 'Providers', icon: '👥', subtext: 'Manage providers' },
               { key: 'quickAccess.clients', label: 'Clients', icon: '👤', subtext: 'Manage clients' },
               { key: 'quickAccess.timesheets', label: 'Timesheets', icon: '📅', subtext: 'View and manage timesheets' },
+              { key: 'quickAccess.forms', label: 'Forms', icon: '📝', subtext: 'Parent training, ABC data, and visit attestation forms' },
               { key: 'quickAccess.invoices', label: 'Invoices', icon: '📄', subtext: 'View and manage invoices' },
               { key: 'quickAccess.reports', label: 'Reports', icon: '📋', subtext: 'Generate and view reports' },
               { key: 'quickAccess.users', label: 'Users', icon: '👤', subtext: 'Manage users and roles' },
@@ -521,6 +541,7 @@ export function RoleForm({ role }: RoleFormProps) {
               { key: 'quickAccess.community', label: 'Community Classes', icon: '🎓', subtext: 'Manage community classes, clients, and invoices' },
               { key: 'quickAccess.emailQueue', label: 'Email Queue', icon: '📧', subtext: 'Manage queued emails (timesheets/invoices)' },
               { key: 'quickAccess.bcbaTimesheets', label: 'BCBA Timesheets', icon: '📋', subtext: 'Manage BCBA time tracking and hours' },
+              { key: 'quickAccess.payroll', label: 'Payroll Management', icon: '💰', subtext: 'Import time logs, manage employees, and process payroll' },
             ].map((section) => (
               <div
                 key={section.key}
@@ -674,6 +695,73 @@ export function RoleForm({ role }: RoleFormProps) {
                   )}
                   {isDisabled && (
                     <p className="text-xs text-gray-500 mt-1 ml-7">Enable Community Classes first</p>
+                  )}
+                  {section.state && section.key === 'emailQueue' && !isDisabled && (
+                    <div className="mt-4 ml-7 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Email Queue Permissions</h4>
+                      <div className="space-y-2">
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={communityEmailQueueView}
+                            onChange={(e) => setCommunityEmailQueueView(e.target.checked)}
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                          />
+                          <div className="ml-2">
+                            <div className="font-medium text-sm text-gray-900">View Email Queue</div>
+                            <div className="text-xs text-gray-500 mt-0.5">View queued, sent, and failed emails</div>
+                          </div>
+                        </label>
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={communityEmailQueueSendNow}
+                            onChange={(e) => setCommunityEmailQueueSendNow(e.target.checked)}
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                          />
+                          <div className="ml-2">
+                            <div className="font-medium text-sm text-gray-900">Send Now</div>
+                            <div className="text-xs text-gray-500 mt-0.5">Send emails immediately</div>
+                          </div>
+                        </label>
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={communityEmailQueueSchedule}
+                            onChange={(e) => setCommunityEmailQueueSchedule(e.target.checked)}
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                          />
+                          <div className="ml-2">
+                            <div className="font-medium text-sm text-gray-900">Schedule Emails</div>
+                            <div className="text-xs text-gray-500 mt-0.5">Schedule emails for future delivery</div>
+                          </div>
+                        </label>
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={communityEmailQueueAttachPdf}
+                            onChange={(e) => setCommunityEmailQueueAttachPdf(e.target.checked)}
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                          />
+                          <div className="ml-2">
+                            <div className="font-medium text-sm text-gray-900">Attach PDF</div>
+                            <div className="text-xs text-gray-500 mt-0.5">Upload and attach additional PDF files to emails</div>
+                          </div>
+                        </label>
+                        <label className="flex items-start cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={communityEmailQueueDelete}
+                            onChange={(e) => setCommunityEmailQueueDelete(e.target.checked)}
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
+                          />
+                          <div className="ml-2">
+                            <div className="font-medium text-sm text-gray-900">Delete Emails</div>
+                            <div className="text-xs text-gray-500 mt-0.5">Delete queued, sent, or failed emails</div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
                   )}
                 </div>
               )

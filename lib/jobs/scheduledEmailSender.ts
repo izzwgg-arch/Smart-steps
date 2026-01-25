@@ -184,8 +184,10 @@ export async function sendCommunityEmailBatch(itemIds: string[]) {
   const totalUnits = emailItems.reduce((sum, item) => sum + item.units, 0)
 
   const emailBrandName = process.env.COMMUNITY_EMAIL_FROM_NAME || 'KJ Play Center'
-  const emailFromAddress = process.env.COMMUNITY_EMAIL_FROM_ADDRESS || 'invoices@kjplaycenter.com'
+  // Use billing@kjplaycenter.com for Community Classes emails only
+  const emailFromAddress = process.env.COMMUNITY_EMAIL_FROM || 'billing@kjplaycenter.com'
   const emailFrom = `${emailBrandName} <${emailFromAddress}>`
+  const emailReplyTo = process.env.COMMUNITY_EMAIL_REPLY_TO || emailFromAddress
   const emailSubjectPrefix = process.env.COMMUNITY_EMAIL_SUBJECT_PREFIX || 'KJ Play Center'
 
   const emailHtml = `
@@ -294,10 +296,12 @@ All invoices are attached as PDF files. Please review and process accordingly.
     {
       to: recipients,
       from: emailFrom,
+      replyTo: emailReplyTo,
       subject: `${emailSubjectPrefix} – Approved Community Invoices Batch (${batchDate})`,
       html: emailHtml,
       text: emailText,
       attachments: allAttachments,
+      useCommunityTransporter: true, // Use community-specific SMTP credentials
     },
     {
       action: 'EMAIL_SENT',

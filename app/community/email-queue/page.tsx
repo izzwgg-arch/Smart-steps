@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { Check, X, Mail, Loader2, RefreshCw, Trash2, Paperclip, XCircle } from 'lucide-react'
 import { DashboardNav } from '@/components/DashboardNav'
 import { formatDateTime, formatRelativeTime, formatCurrency } from '@/lib/utils'
+import Link from 'next/link'
 
 interface QueuedItem {
   id: string
@@ -49,10 +50,15 @@ export default function CommunityEmailQueuePage() {
   const [canViewQueue, setCanViewQueue] = useState(false)
   const [canSendBatch, setCanSendBatch] = useState(false)
   const [canDelete, setCanDelete] = useState(false)
+  const [canAttachPdf, setCanAttachPdf] = useState(false)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [customEmail, setCustomEmail] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [showResendModal, setShowResendModal] = useState(false)
+  const [resendEmail, setResendEmail] = useState('')
+  const [resendingItemId, setResendingItemId] = useState<string | null>(null)
   const [scheduleSend, setScheduleSend] = useState(false)
   const [scheduledDateTime, setScheduledDateTime] = useState('')
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
@@ -91,6 +97,11 @@ export default function CommunityEmailQueuePage() {
         )
         setCanDelete(
           data.permissions['community.invoices.emailqueue.delete']?.canDelete === true ||
+            session?.user?.role === 'SUPER_ADMIN' ||
+            session?.user?.role === 'ADMIN'
+        )
+        setCanAttachPdf(
+          data.permissions['community.invoices.emailqueue.attachPdf']?.canCreate === true ||
             session?.user?.role === 'SUPER_ADMIN' ||
             session?.user?.role === 'ADMIN'
         )
@@ -211,6 +222,122 @@ export default function CommunityEmailQueuePage() {
       toast.error('An unexpected error occurred')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleResendItem = (itemId: string) => {
+    if (!canSendBatch) {
+      toast.error('You do not have permission to resend emails')
+      return
+    }
+
+    // Find the item to get its current email
+    const item = queueItems.find((i) => i.id === itemId)
+    if (item) {
+      setResendEmail(item.toEmail || '')
+      setResendingItemId(itemId)
+      setShowResendModal(true)
+    }
+  }
+
+  const handleConfirmResend = async () => {
+    if (!resendingItemId) {
+      return
+    }
+
+    if (!resendEmail.trim()) {
+      toast.error('Please enter an email address')
+      return
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const emails = resendEmail.split(',').map((e) => e.trim()).filter(Boolean)
+    const invalidEmails = emails.filter((email) => !emailRegex.test(email))
+    
+    if (invalidEmails.length > 0) {
+      toast.error(`Invalid email address(es): ${invalidEmails.join(', ')}`)
+      return
+    }
+
+    setShowResendModal(false)
+    setResending(true)
+    try {
+      const res = await fetch('/api/community/email-queue/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          itemIds: [resendingItemId],
+          recipients: emails.join(',')
+        }),
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        toast.success('Email resent successfully')
+        fetchQueueItems() // Refresh the list
+        setResendEmail('')
+        setResendingItemId(null)
+      } else {
+        toast.error(data.error || 'Failed to resend email')
+      }
+    } catch (error) {
+      console.error('Error resending email:', error)
+      toast.error('An unexpected error occurred')
+    } finally {
+      setResending(false)
+    }
+  }
+
+  const handleBulkResend = async () => {
+    if (!canSendBatch) {
+      toast.error('You do not have permission to resend emails')
+      return
+    }
+
+    if (selectedItems.size === 0) {
+      toast.error('Please select items to resend')
+      return
+    }
+
+    const selectedFailed = queueItems.filter(
+      (item) => selectedItems.has(item.id) && item.status === 'FAILED'
+    )
+    const selectedNonFailed = queueItems.filter(
+      (item) => selectedItems.has(item.id) && item.status !== 'FAILED'
+    )
+
+    if (selectedNonFailed.length > 0) {
+      toast.error('Only failed items can be resent. Please deselect non-failed items.')
+      return
+    }
+
+    if (selectedFailed.length === 0) {
+      toast.error('No failed items selected to resend')
+      return
+    }
+
+    setResending(true)
+    try {
+      const res = await fetch('/api/community/email-queue/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds: selectedFailed.map((item) => item.id) }),
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        toast.success(`Successfully resent ${data.resentCount || selectedFailed.length} email(s)`)
+        fetchQueueItems() // Refresh the list
+        setSelectedItems(new Set())
+      } else {
+        toast.error(data.error || 'Failed to resend emails')
+      }
+    } catch (error) {
+      console.error('Error resending emails:', error)
+      toast.error('An unexpected error occurred')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -432,11 +559,25 @@ export default function CommunityEmailQueuePage() {
   const sendingCount = queueItems.filter((item) => item.status === 'SENDING').length
   const sentCount = queueItems.filter((item) => item.status === 'SENT').length
   const failedCount = queueItems.filter((item) => item.status === 'FAILED').length
+  const selectedFailedCount = queueItems.filter(
+    (item) => selectedItems.has(item.id) && item.status === 'FAILED'
+  ).length
 
   return (
     <div className="min-h-screen bg-gray-50">
       <DashboardNav userRole={session.user.role} />
       <div className="p-6">
+        <div className="mb-4">
+          <Link
+            href="/community"
+            className="inline-flex items-center text-white hover:text-gray-200"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Community Classes
+          </Link>
+        </div>
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Community Invoice Email Queue</h1>
@@ -472,75 +613,7 @@ export default function CommunityEmailQueuePage() {
                     </>
                   )}
                 </button>
-                {selectedItems.size > 0 && (
-                  <>
-                    <label className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center space-x-2 cursor-pointer disabled:opacity-50">
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        className="hidden"
-                        disabled={uploadingAttachment || sending || loading}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) {
-                            handleAttachmentUpload(file)
-                          }
-                        }}
-                      />
-                      {uploadingAttachment ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Uploading...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Paperclip className="w-4 h-4" />
-                          <span>Attach PDF</span>
-                        </>
-                      )}
-                    </label>
-                    {attachmentFile && (
-                      <div className="flex items-center space-x-2 px-3 py-2 bg-gray-100 rounded-md">
-                        <span className="text-sm text-gray-700">{attachmentFilename}</span>
-                        <button
-                          onClick={handleRemoveAttachment}
-                          className="text-red-600 hover:text-red-700"
-                          type="button"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-                    <button
-                      onClick={handleSendSelected}
-                      disabled={sending || loading}
-                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
-                    >
-                      <Mail className="w-4 h-4" />
-                      <span>Send Selected ({selectedItems.size})</span>
-                    </button>
-                  </>
-                )}
               </>
-            )}
-            {canDelete && selectedItems.size > 0 && (
-              <button
-                onClick={handleBulkDelete}
-                disabled={deleting || loading}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center space-x-2 disabled:opacity-50"
-              >
-                {deleting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Deleting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-4 h-4" />
-                    <span>Delete Selected ({selectedItems.size})</span>
-                  </>
-                )}
-              </button>
             )}
           </div>
         </div>
@@ -574,37 +647,41 @@ export default function CommunityEmailQueuePage() {
             <div className="flex items-center gap-2">
               {canSendBatch && (
                 <>
-                  <label className="px-3 py-1.5 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 cursor-pointer disabled:opacity-50">
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      className="hidden"
-                      disabled={uploadingAttachment || sending || loading}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) {
-                          handleAttachmentUpload(file)
-                        }
-                      }}
-                    />
-                    {uploadingAttachment ? (
-                      <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
-                    ) : (
-                      <Paperclip className="w-3 h-3 inline mr-1" />
-                    )}
-                    Attach PDF
-                  </label>
-                  {attachmentFile && (
-                    <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 rounded text-xs">
-                      <span className="text-gray-700">{attachmentFilename}</span>
-                      <button
-                        onClick={handleRemoveAttachment}
-                        className="text-red-600 hover:text-red-700"
-                        type="button"
-                      >
-                        <XCircle className="w-3 h-3" />
-                      </button>
-                    </div>
+                  {canAttachPdf && (
+                    <>
+                      <label className="px-3 py-1.5 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 cursor-pointer disabled:opacity-50">
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          disabled={uploadingAttachment || sending || loading}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              handleAttachmentUpload(file)
+                            }
+                          }}
+                        />
+                        {uploadingAttachment ? (
+                          <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                        ) : (
+                          <Paperclip className="w-3 h-3 inline mr-1" />
+                        )}
+                        Attach PDF
+                      </label>
+                      {attachmentFile && (
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 rounded text-xs">
+                          <span className="text-gray-700">{attachmentFilename}</span>
+                          <button
+                            onClick={handleRemoveAttachment}
+                            className="text-red-600 hover:text-red-700"
+                            type="button"
+                          >
+                            <XCircle className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                   <button
                     onClick={handleSendSelected}
@@ -614,6 +691,25 @@ export default function CommunityEmailQueuePage() {
                     Send Selected
                   </button>
                 </>
+              )}
+              {canSendBatch && selectedFailedCount > 0 && (
+                <button
+                  onClick={handleBulkResend}
+                  disabled={resending || loading}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-1"
+                >
+                  {resending ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Resending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Resend Selected ({selectedFailedCount})</span>
+                    </>
+                  )}
+                </button>
               )}
               {canDelete && (
                 <button
@@ -764,17 +860,34 @@ export default function CommunityEmailQueuePage() {
                       {item.errorMessage || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {canDelete && (
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          disabled={deleting}
-                          className="text-red-600 hover:text-red-800 flex items-center space-x-1 disabled:opacity-50"
-                          title="Remove from queue"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span>Delete</span>
-                        </button>
-                      )}
+                      <div className="flex items-center space-x-2">
+                        {item.status === 'FAILED' && canSendBatch && (
+                          <button
+                            onClick={() => handleResendItem(item.id)}
+                            disabled={resending}
+                            className="text-blue-600 hover:text-blue-800 flex items-center space-x-1 disabled:opacity-50"
+                            title="Resend failed email"
+                          >
+                            {resending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4" />
+                            )}
+                            <span>Resend</span>
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            disabled={deleting}
+                            className="text-red-600 hover:text-red-800 flex items-center space-x-1 disabled:opacity-50"
+                            title="Remove from queue"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span>Delete</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -782,6 +895,61 @@ export default function CommunityEmailQueuePage() {
             </tbody>
           </table>
         </div>
+
+        {/* Resend Modal */}
+        {showResendModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Resend Email</h3>
+                <div className="mb-4">
+                  <label htmlFor="resend-email" className="block text-sm font-medium text-gray-700 mb-2">
+                    Recipient Email Address(es) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="resend-email"
+                    value={resendEmail}
+                    onChange={(e) => setResendEmail(e.target.value)}
+                    placeholder="email@example.com (comma-separated for multiple)"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Enter email address(es) separated by commas
+                  </p>
+                </div>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowResendModal(false)
+                      setResendEmail('')
+                      setResendingItemId(null)
+                    }}
+                    disabled={resending}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmResend}
+                    disabled={resending || !resendEmail.trim()}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+                  >
+                    {resending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Resending...</span>
+                      </>
+                    ) : (
+                      <span>Resend</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Email Modal */}
         {showEmailModal && (

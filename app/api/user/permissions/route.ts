@@ -11,11 +11,28 @@ export async function GET(request: NextRequest) {
     }
 
     const permissions = await getUserPermissions(session.user.id)
-    return NextResponse.json({ permissions })
-  } catch (error) {
+
+    // Convert to object format for easier frontend access
+    const permissionsObj: Record<string, any> = {}
+    Object.keys(permissions).forEach((name) => {
+      permissionsObj[name] = {
+        canView: permissions[name]?.canView || false,
+        canCreate: permissions[name]?.canCreate || false,
+        canUpdate: permissions[name]?.canUpdate || false,
+        canDelete: permissions[name]?.canDelete || false,
+        canApprove: permissions[name]?.canApprove || false,
+        canExport: permissions[name]?.canExport || false,
+      }
+    })
+
+    return NextResponse.json({
+      permissions: permissionsObj,
+      role: session.user.role,
+    })
+  } catch (error: any) {
     console.error('Error fetching user permissions:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch permissions' },
+      { error: error.message || 'Failed to fetch permissions' },
       { status: 500 }
     )
   }

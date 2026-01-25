@@ -25,7 +25,7 @@ export default async function EditProviderPage({
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#0066cc' }}>
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
         <ProviderForm provider={provider} />

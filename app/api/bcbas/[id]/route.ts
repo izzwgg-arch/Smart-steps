@@ -42,7 +42,7 @@ export async function PUT(
     }
 
     const data = await request.json()
-    const { name, email, phone } = data
+    const { name, email, phone, signature } = data
 
     const bcba = await prisma.bCBA.update({
       where: { id: params.id },
@@ -50,7 +50,8 @@ export async function PUT(
         name,
         email: email || null,
         phone: phone || null,
-      },
+        ...(signature !== undefined && { signature: signature || null }),
+      } as any,
     })
 
     return NextResponse.json(bcba)

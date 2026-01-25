@@ -252,7 +252,7 @@ function initializeScheduledEmailJob() {
  * Process scheduled emails that have reached their send time
  * Only processes Community Classes email queue items
  */
-async function processScheduledEmails() {
+export async function processScheduledEmails() {
   const now = new Date()
   
   console.log(`[CRON] Checking for scheduled emails at ${now.toISOString()}`)

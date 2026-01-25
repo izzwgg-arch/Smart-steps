@@ -57,16 +57,26 @@ export function CommunityInvoicesList() {
       const res = await fetch('/api/user/permissions')
       if (res.ok) {
         const data = await res.json()
-        setCanApprove(data.permissions['community.invoices.approve']?.canApprove === true)
-        setCanReject(data.permissions['community.invoices.reject']?.canApprove === true)
+        console.log('[CommunityInvoices] Permissions data:', data)
+        console.log('[CommunityInvoices] Approve permission:', data.permissions?.['community.invoices.approve'])
+        console.log('[CommunityInvoices] Reject permission:', data.permissions?.['community.invoices.reject'])
+        const approvePerm = data.permissions?.['community.invoices.approve']
+        const rejectPerm = data.permissions?.['community.invoices.reject']
+        setCanApprove(approvePerm?.canApprove === true)
+        setCanReject(rejectPerm?.canApprove === true)
+        console.log('[CommunityInvoices] canApprove:', approvePerm?.canApprove === true, 'canReject:', rejectPerm?.canApprove === true)
+      } else {
+        console.error('[CommunityInvoices] Failed to fetch permissions:', res.status, res.statusText)
       }
       const sessionRes = await fetch('/api/auth/session')
       if (sessionRes.ok) {
         const session = await sessionRes.json()
-        setIsAdmin(session.user?.role === 'ADMIN' || session.user?.role === 'SUPER_ADMIN')
+        const isAdminUser = session.user?.role === 'ADMIN' || session.user?.role === 'SUPER_ADMIN'
+        setIsAdmin(isAdminUser)
+        console.log('[CommunityInvoices] User role:', session.user?.role, 'isAdmin:', isAdminUser)
       }
     } catch (error) {
-      console.error('Failed to fetch permissions:', error)
+      console.error('[CommunityInvoices] Failed to fetch permissions:', error)
     }
   }
 

@@ -6,7 +6,7 @@ interface TimesheetForPDF {
   id: string
   client: { id?: string; name: string; address?: string | null; phone?: string | null; dlb?: string | null; signature?: string | null }
   provider: { name: string; phone?: string | null; signature?: string | null; dlb?: string | null }
-  bcba: { name: string }
+  bcba: { name: string; signature?: string | null }
   startDate: Date | string
   endDate: Date | string
   isBCBA: boolean

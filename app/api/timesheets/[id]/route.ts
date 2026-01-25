@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
 import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
 import { getTimesheetVisibilityScope, getUserPermissions } from '@/lib/permissions'
+import { parseDateOnly } from '@/lib/dateUtils'
 
 export async function GET(
   request: NextRequest,
@@ -99,11 +100,41 @@ export async function PUT(
       )
     }
 
+    // Get timesheet timezone (use existing or new timezone from request)
+    const timesheetTimezone = (timesheetData as any).timezone || timesheet.timezone || 'America/New_York'
+    const { isSaturdayInTimezone } = await import('@/lib/dateUtils')
+
+    // Validate startDate and endDate are not Saturdays (if provided, using timesheet timezone)
+    if ((timesheetData as any).startDate) {
+      if (isSaturdayInTimezone((timesheetData as any).startDate, timesheetTimezone)) {
+        return NextResponse.json(
+          { error: 'Timesheets cannot be created on Saturdays' },
+          { status: 400 }
+        )
+      }
+    }
+    if ((timesheetData as any).endDate) {
+      if (isSaturdayInTimezone((timesheetData as any).endDate, timesheetTimezone)) {
+        return NextResponse.json(
+          { error: 'Timesheets cannot be created on Saturdays' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Validate entry format and times
     for (const entry of entries) {
       if (!entry.date || !entry.startTime || !entry.endTime) {
         return NextResponse.json(
           { error: 'Each entry must have date, startTime, and endTime' },
+          { status: 400 }
+        )
+      }
+
+      // Validate entry date is not Saturday (using timesheet timezone)
+      if (isSaturdayInTimezone(entry.date, timesheetTimezone)) {
+        return NextResponse.json(
+          { error: 'Timesheets cannot be created on Saturdays' },
           { status: 400 }
         )
       }
@@ -149,28 +180,47 @@ export async function PUT(
     }
 
     // Overlap validation (provider OR client OR both), excluding the current timesheet
-    const providerId = timesheetData.providerId || timesheet.providerId
+    const providerId = timesheetData.providerId || timesheet.providerId || ''
     const clientId = timesheetData.clientId || timesheet.clientId
+    const isBCBA = (timesheetData as any).isBCBA !== undefined ? (timesheetData as any).isBCBA : (timesheet as any).isBCBA
+
+    // For BCBA timesheets, use a placeholder provider if needed
+    let finalProviderId = providerId
+    if (isBCBA && !providerId) {
+      const firstProvider = await prisma.provider.findFirst({
+        where: { active: true, deletedAt: null },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true },
+      })
+      if (firstProvider) {
+        finalProviderId = firstProvider.id
+      }
+    }
 
     const [provider, client] = await Promise.all([
-      prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } }),
+      finalProviderId ? prisma.provider.findUnique({ where: { id: finalProviderId }, select: { name: true } }) : Promise.resolve(null),
       prisma.client.findUnique({ where: { id: clientId }, select: { name: true } }),
     ])
 
-    const overlapConflicts = await detectTimesheetOverlaps({
-      providerId,
-      clientId,
-      providerName: provider?.name || 'Unknown Provider',
-      clientName: client?.name || 'Unknown Client',
-      entries,
-      excludeTimesheetId: params.id,
-    })
+    // Skip overlap validation for BCBA timesheets - they allow overlaps
+    if (!isBCBA) {
+      const overlapConflicts = await detectTimesheetOverlaps({
+        providerId: finalProviderId || '',
+        clientId,
+        providerName: provider?.name || '',
+        clientName: client?.name || 'Unknown Client',
+        entries,
+        excludeTimesheetId: params.id,
+      })
 
-    if (overlapConflicts.length > 0) {
-      return NextResponse.json(
-        { error: 'Overlap conflicts detected', code: 'OVERLAP_CONFLICT', conflicts: overlapConflicts },
-        { status: 400 }
-      )
+      if (overlapConflicts.length > 0) {
+        return NextResponse.json(
+          { error: 'Overlap conflicts detected', code: 'OVERLAP_CONFLICT', conflicts: overlapConflicts },
+          { status: 400 }
+        )
+      }
+    } else {
+      console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
     }
 
     // Update timesheet
@@ -182,12 +232,12 @@ export async function PUT(
 
       // Update timesheet
       const updateData: any = {
-        providerId: timesheetData.providerId || timesheet.providerId,
+        providerId: finalProviderId || timesheet.providerId, // Use placeholder for BCBA timesheets
         clientId: timesheetData.clientId || timesheet.clientId,
         bcbaId: timesheetData.bcbaId || timesheet.bcbaId,
-        insuranceId: (timesheetData as any).insuranceId !== undefined ? (timesheetData as any).insuranceId : timesheet.insuranceId,
-        startDate: (timesheetData as any).startDate ? new Date((timesheetData as any).startDate) : timesheet.startDate,
-        endDate: (timesheetData as any).endDate ? new Date((timesheetData as any).endDate) : timesheet.endDate,
+        insuranceId: (timesheetData as any).insuranceId !== undefined ? (timesheetData as any).insuranceId : (timesheet.insuranceId || ((timesheet as any).bcbaInsuranceId || null)), // Fallback to bcbaInsuranceId for migration
+        startDate: (timesheetData as any).startDate ? parseDateOnly((timesheetData as any).startDate, (timesheetData as any).timezone || timesheet.timezone) : timesheet.startDate,
+        endDate: (timesheetData as any).endDate ? parseDateOnly((timesheetData as any).endDate, (timesheetData as any).timezone || timesheet.timezone) : timesheet.endDate,
         timezone: (timesheetData as any).timezone || timesheet.timezone,
         lastEditedBy: session.user.id,
         lastEditedAt: new Date(),
@@ -213,15 +263,15 @@ export async function PUT(
           // Calculate units (1 unit = 15 minutes, no rounding)
           const units = entry.minutes / 15
           
-          return {
-            date: new Date(entry.date),
-            startTime: entry.startTime, // Already validated as HH:mm
-            endTime: entry.endTime, // Already validated as HH:mm
-            minutes: entry.minutes, // Store actual minutes
-            units: units, // Store units (1 unit = 15 minutes)
-            notes: entry.notes || null,
-            invoiced: entry.invoiced || false,
-          }
+            return {
+              date: parseDateOnly(entry.date, (timesheetData as any).timezone || timesheet.timezone),
+              startTime: entry.startTime, // Already validated as HH:mm
+              endTime: entry.endTime, // Already validated as HH:mm
+              minutes: entry.minutes, // Store actual minutes
+              units: units, // Store units (1 unit = 15 minutes)
+              notes: entry.notes || null,
+              invoiced: entry.invoiced || false,
+            }
         }),
       }
 
@@ -260,21 +310,25 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user has delete permission or is admin
-    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
-    const permissions = await getUserPermissions(session.user.id)
-    const canDelete = permissions['timesheets.delete']?.canDelete === true || isAdmin
-    
-    if (!canDelete) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
     const timesheet = await prisma.timesheet.findUnique({
       where: { id: params.id },
     })
 
     if (!timesheet || timesheet.deletedAt) {
       return NextResponse.json({ error: 'Timesheet not found' }, { status: 404 })
+    }
+
+    // Check if user has delete permission or is admin
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
+    const permissions = await getUserPermissions(session.user.id)
+    const canDelete = permissions['timesheets.delete']?.canDelete === true || isAdmin
+    
+    // Allow users to delete their own DRAFT timesheets even without delete permission
+    const isOwnTimesheet = timesheet.userId === session.user.id
+    const canDeleteOwnDraft = isOwnTimesheet && timesheet.status === 'DRAFT'
+    
+    if (!canDelete && !canDeleteOwnDraft) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Check if timesheet is APPROVED - only admins can delete approved timesheets
@@ -286,9 +340,12 @@ export async function DELETE(
     }
 
     // Check timesheet visibility scope for deleting (must be able to view to delete)
-    const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
-    if (!visibilityScope.viewAll && !visibilityScope.allowedUserIds.includes(timesheet.userId)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Skip this check if user is deleting their own timesheet
+    if (!isOwnTimesheet) {
+      const visibilityScope = await getTimesheetVisibilityScope(session.user.id)
+      if (!visibilityScope.viewAll && !visibilityScope.allowedUserIds.includes(timesheet.userId)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     // Delete timesheet entries first (cascade should handle this, but being explicit)

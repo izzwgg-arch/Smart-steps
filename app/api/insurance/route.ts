@@ -33,20 +33,50 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json()
-    const { name, ratePerUnit, active } = data
+    const { 
+      name, 
+      ratePerUnit, // Legacy field
+      regularRatePerUnit, 
+      regularUnitMinutes, 
+      bcbaRatePerUnit, 
+      bcbaUnitMinutes, 
+      active 
+    } = data
 
-    if (!name || ratePerUnit === undefined || ratePerUnit === null) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'Name and rate per unit are required' },
+        { error: 'Name is required' },
         { status: 400 }
       )
     }
+
+    // Use regularRatePerUnit if provided, otherwise fallback to ratePerUnit (legacy)
+    const finalRegularRate = regularRatePerUnit !== undefined && regularRatePerUnit !== null
+      ? parseFloat(regularRatePerUnit)
+      : (ratePerUnit !== undefined && ratePerUnit !== null ? parseFloat(ratePerUnit) : 0)
+    
+    const finalRegularMins = regularUnitMinutes !== undefined && regularUnitMinutes !== null
+      ? parseInt(regularUnitMinutes)
+      : 15
+
+    // Use bcbaRatePerUnit if provided, otherwise fallback to regularRatePerUnit
+    const finalBcbaRate = bcbaRatePerUnit !== undefined && bcbaRatePerUnit !== null
+      ? parseFloat(bcbaRatePerUnit)
+      : finalRegularRate
+    
+    const finalBcbaMins = bcbaUnitMinutes !== undefined && bcbaUnitMinutes !== null
+      ? parseInt(bcbaUnitMinutes)
+      : finalRegularMins
 
     // Create insurance
     const insurance = await prisma.insurance.create({
       data: {
         name,
-        ratePerUnit: parseFloat(ratePerUnit),
+        ratePerUnit: finalRegularRate, // Keep for backward compatibility
+        regularRatePerUnit: finalRegularRate,
+        regularUnitMinutes: finalRegularMins,
+        bcbaRatePerUnit: finalBcbaRate,
+        bcbaUnitMinutes: finalBcbaMins,
         active: active !== undefined ? active : true,
       },
     })
@@ -55,7 +85,7 @@ export async function POST(request: NextRequest) {
     await prisma.insuranceRateHistory.create({
       data: {
         insuranceId: insurance.id,
-        ratePerUnit: parseFloat(ratePerUnit),
+        ratePerUnit: finalRegularRate,
         effectiveFrom: new Date(),
       },
     })

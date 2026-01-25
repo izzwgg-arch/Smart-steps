@@ -59,7 +59,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
   const [loadingRoles, setLoadingRoles] = useState(false)
 
   useEffect(() => {
-    if (role === 'CUSTOM') {
+    // Any non-admin user can be assigned a Role (customRoleId)
+    if (role === 'CUSTOM' || role === 'USER') {
       fetchRoles()
     }
   }, [role])
@@ -110,8 +111,9 @@ export function UserFormEnhanced({ user }: UserFormProps) {
       }
     }
 
-    if (role === 'CUSTOM' && !customRoleId) {
-      toast.error('Please select a custom role')
+    // Require selecting a role for non-admin accounts (USER/CUSTOM) so permissions apply
+    if ((role === 'CUSTOM' || role === 'USER') && !customRoleId) {
+      toast.error('Please select a role')
       return
     }
 
@@ -135,7 +137,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
         activationEnd: activationEnd ? activationEnd.toISOString() : null,
       }
 
-      if (role === 'CUSTOM') {
+      // Allow assigning a role to USER/CUSTOM accounts
+      if (role === 'CUSTOM' || role === 'USER') {
         body.customRoleId = customRoleId
       }
 
@@ -248,7 +251,7 @@ export function UserFormEnhanced({ user }: UserFormProps) {
       <div className="mb-6">
         <Link
           href="/users"
-          className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-4"
+          className="inline-flex items-center text-white hover:text-gray-200 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Users
@@ -337,7 +340,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
             value={role}
             onChange={(e) => {
               setRole(e.target.value as any)
-              if (e.target.value !== 'CUSTOM') {
+              // Keep selected role only for USER/CUSTOM. Clear it for ADMIN/SUPER_ADMIN.
+              if (e.target.value === 'ADMIN' || e.target.value === 'SUPER_ADMIN') {
                 setCustomRoleId('')
               }
             }}
@@ -353,10 +357,10 @@ export function UserFormEnhanced({ user }: UserFormProps) {
           </p>
         </div>
 
-        {role === 'CUSTOM' && (
+        {(role === 'CUSTOM' || role === 'USER') && (
           <div>
             <label htmlFor="customRole" className="block text-sm font-medium text-gray-700 mb-1">
-              Custom Role <span className="text-red-500">*</span>
+              Role <span className="text-red-500">*</span>
             </label>
             {loadingRoles ? (
               <div className="text-sm text-gray-500">Loading roles...</div>
@@ -368,7 +372,7 @@ export function UserFormEnhanced({ user }: UserFormProps) {
                 onChange={(e) => setCustomRoleId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
               >
-                <option value="">Select a custom role</option>
+                <option value="">Select a role</option>
                 {roles.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} {r.description && `- ${r.description}`}

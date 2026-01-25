@@ -48,6 +48,7 @@ export async function generateTimesheetPDFFromId(
         bcba: {
           select: {
             name: true,
+            signature: true,
           },
         },
         entries: {

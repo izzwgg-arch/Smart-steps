@@ -26,6 +26,7 @@ interface TimesheetForHTML {
   }
   bcba: {
     name: string
+    signature?: string | null
   }
   startDate: Date | string
   endDate: Date | string
@@ -71,7 +72,8 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
   const svEntries = timesheet.entries.filter((e) => e.notes === 'SV')
-  const bcbaEntries = timesheet.entries.filter((e) => !e.notes || e.notes === '')
+  // For BCBA timesheets, include ALL entries (they may have service type in notes)
+  const bcbaEntries = isBCBA ? timesheet.entries : timesheet.entries.filter((e) => !e.notes || e.notes === '')
   
   const totalDR = drEntries.reduce((sum, e) => sum + e.minutes / 60, 0)
   const totalSV = svEntries.reduce((sum, e) => sum + e.minutes / 60, 0)
@@ -139,9 +141,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     }
     
     .info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 32px;
+      display: block;
       margin-bottom: 24px;
     }
     
@@ -196,7 +196,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     
     .signatures {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: ${isBCBA ? '1fr' : '1fr 1fr'};
       gap: 32px;
       margin-bottom: 24px;
     }
@@ -219,16 +219,19 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
 </head>
 <body>
   <div class="header">
-    <h1>Smart Steps ABA</h1>
-    ${!isBCBA ? '<div class="subtitle">TIMESHEETS</div>' : ''}
+    <h1>${isBCBA ? 'BCBA Timesheet' : 'Timesheet'} Smart Steps ABA</h1>
   </div>
   
   <div class="info-grid">
+    ${isBCBA ? `
     <div>
       <div class="info-item">
-        <span class="info-label">${isBCBA ? 'Client:' : 'Child:'}</span> ${timesheet.client.name || ''}
+        <span class="info-label">BCBA:</span> ${timesheet.bcba.name}
       </div>
-      ${isBCBA && timesheet.client.address ? `
+      <div class="info-item">
+        <span class="info-label">Client:</span> ${timesheet.client.name || ''}
+      </div>
+      ${timesheet.client.address ? `
       <div class="info-item">
         <span class="info-label">Address:</span> ${timesheet.client.address}
       </div>
@@ -236,34 +239,33 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       <div class="info-item">
         <span class="info-label">Phone:</span> ${timesheet.client.phone || ''}
       </div>
-      ${isBCBA && (timesheet.client.dlb || timesheet.provider.dlb) ? `
+      ${timesheet.sessionData ? `
       <div class="info-item">
-        <span class="info-label">DLB:</span> ${timesheet.client.dlb || timesheet.provider.dlb || ''}
+        <span class="info-label">Session Data / Analysis:</span> ${timesheet.sessionData}
+      </div>
+      ` : ''}
+      ${timesheet.client.dlb ? `
+      <div class="info-item">
+        <span class="info-label">DLB:</span> ${timesheet.client.dlb}
       </div>
       ` : ''}
     </div>
+    ` : `
     <div>
       <div class="info-item">
         <span class="info-label">Provider:</span> ${timesheet.provider.name}
       </div>
       <div class="info-item">
-        <span class="info-label">Phone:</span> ${timesheet.provider.phone || ''}
-      </div>
-      <div class="info-item">
         <span class="info-label">BCBA:</span> ${timesheet.bcba.name}
       </div>
-      ${isBCBA && timesheet.serviceType ? `
       <div class="info-item">
-        <span class="info-label">Service Type:</span>
-        <span class="service-type">${timesheet.serviceType}</span>
+        <span class="info-label">Child:</span> ${timesheet.client.name || ''}
       </div>
-      ` : ''}
-      ${isBCBA && timesheet.sessionData ? `
       <div class="info-item">
-        <span class="info-label">Session Data / Analysis:</span> ${timesheet.sessionData}
+        <span class="info-label">Phone:</span> ${timesheet.client.phone || ''}
       </div>
-      ` : ''}
     </div>
+    `}
   </div>
   
   <div class="period">
@@ -274,6 +276,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     <thead>
       <tr>
         <th>DATE</th>
+        ${isBCBA ? '<th>TYPE</th>' : ''}
         <th>IN</th>
         <th>OUT</th>
         <th>HOURS</th>
@@ -283,9 +286,33 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     <tbody>
       ${sortedEntries.map((entry) => {
         const entryDate = typeof entry.date === 'string' ? new Date(entry.date) : entry.date
+        // Helper function to convert service type to initials
+        const getServiceTypeInitials = (serviceType: string | null | undefined): string => {
+          if (!serviceType) return '-'
+          switch (serviceType) {
+            case 'Assessment': return 'A'
+            case 'Direct Care': return 'DC'
+            case 'Supervision': return 'S'
+            case 'Treatment Planning': return 'TP'
+            case 'Parent Training': return 'PT'
+            default: return '-'
+          }
+        }
+        // For BCBA timesheets, check if notes contains a valid service type
+        let entryServiceType = null
+        if (isBCBA) {
+          const serviceTypes = ['Assessment', 'Direct Care', 'Supervision', 'Treatment Planning', 'Parent Training']
+          if (entry.notes && serviceTypes.includes(entry.notes)) {
+            entryServiceType = entry.notes
+          } else if (timesheet.serviceType) {
+            entryServiceType = timesheet.serviceType
+          }
+        }
+        const serviceTypeInitials = isBCBA ? getServiceTypeInitials(entryServiceType) : ''
         return `
         <tr>
           <td>${format(entryDate, 'EEE M/d/yyyy').toLowerCase()}</td>
+          ${isBCBA ? `<td>${serviceTypeInitials}</td>` : ''}
           <td>${formatTime(entry.startTime)}</td>
           <td>${formatTime(entry.endTime)}</td>
           <td>${(entry.minutes / 60).toFixed(1)}</td>
@@ -308,6 +335,14 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   </div>
   
   <div class="signatures">
+    ${isBCBA ? `
+    <div>
+      <div class="signature-label">BCBA Signature:</div>
+      ${timesheet.bcba.signature
+        ? `<img src="${timesheet.bcba.signature}" alt="BCBA Signature" style="max-height: 80px; max-width: 100%; object-fit: contain; border: 1px solid #ccc;" />`
+        : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'}
+    </div>
+    ` : `
     <div>
       <div class="signature-label">Client Signature:</div>
       ${clientSigImg}
@@ -316,6 +351,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       <div class="signature-label">Provider Signature:</div>
       ${providerSigImg}
     </div>
+    `}
   </div>
   
   ${!isBCBA ? `

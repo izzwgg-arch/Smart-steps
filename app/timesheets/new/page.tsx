@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { DashboardNav } from '@/components/DashboardNav'
 import { TimesheetForm } from '@/components/timesheets/TimesheetForm'
+import { TimesheetErrorBoundary } from '@/components/timesheets/TimesheetErrorBoundary'
 import { prisma } from '@/lib/prisma'
 
 export default async function NewTimesheetPage() {
@@ -36,12 +37,14 @@ export default async function NewTimesheetPage() {
     <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <TimesheetForm
-          providers={providers}
-          clients={clients}
-          bcbas={bcbas}
-          insurances={insurances}
-        />
+        <TimesheetErrorBoundary>
+          <TimesheetForm
+            providers={providers}
+            clients={clients}
+            bcbas={bcbas}
+            insurances={insurances}
+          />
+        </TimesheetErrorBoundary>
       </main>
     </div>
   )

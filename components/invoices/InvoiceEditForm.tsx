@@ -70,7 +70,7 @@ export function InvoiceEditForm({ invoice }: InvoiceEditFormProps) {
       <div className="mb-6">
         <Link
           href={`/invoices/${invoice.id}`}
-          className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-4"
+          className="inline-flex items-center text-white hover:text-gray-200 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Invoice

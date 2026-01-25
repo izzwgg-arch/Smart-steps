@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Mail,
   GraduationCap,
+  DollarSign,
 } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -36,9 +37,9 @@ export default async function DashboardPage() {
     select: { customRoleId: true },
   })
   
-  // Get dashboard section visibility for custom roles
+  // Get dashboard section visibility for users with an assigned role (customRoleId)
   let dashboardVisibility: Record<string, boolean> = {}
-  if (session.user.role === 'CUSTOM' && user?.customRoleId) {
+  if (user?.customRoleId) {
     const roleVisibility = await prisma.roleDashboardVisibility.findMany({
       where: { roleId: user.customRoleId },
     })
@@ -95,6 +96,22 @@ export default async function DashboardPage() {
       icon: ClipboardList,
       color: 'bg-teal-500',
       permissionKey: 'dashboard.bcbaTimesheets',
+    },
+    {
+      title: 'Forms',
+      description: 'Parent training, ABC data, and visit attestation forms',
+      href: '/forms',
+      icon: FileText,
+      color: 'bg-indigo-500',
+      permissionKey: 'dashboard.forms',
+    },
+    {
+      title: 'Payroll Management',
+      description: 'Import time logs, manage employees, and process payroll',
+      href: '/payroll',
+      icon: DollarSign,
+      color: 'bg-yellow-500',
+      permissionKey: 'dashboard.payroll',
     },
     {
       title: 'Email Queue',
@@ -164,8 +181,8 @@ export default async function DashboardPage() {
       return true
     }
 
-    // CUSTOM roles check dashboard visibility settings
-    if (session.user.role === 'CUSTOM') {
+    // Users with an assigned role (customRoleId) can use dashboard visibility settings
+    if (user?.customRoleId) {
       // Map permission keys to dashboard visibility section keys
       const sectionKeyMap: Record<string, string> = {
         'dashboard.analytics': 'quickAccess.analytics',
@@ -180,6 +197,8 @@ export default async function DashboardPage() {
         'dashboard.community': 'quickAccess.community',
         'dashboard.emailQueue': 'quickAccess.emailQueue',
         'dashboard.bcbaTimesheets': 'quickAccess.bcbaTimesheets',
+        'dashboard.forms': 'quickAccess.forms',
+        'dashboard.payroll': 'quickAccess.payroll',
       }
       const sectionKey = sectionKeyMap[permissionKey]
       if (sectionKey && dashboardVisibility[sectionKey] !== undefined) {
@@ -189,7 +208,14 @@ export default async function DashboardPage() {
 
     // USER roles check permissions
     const permission = userPermissions[permissionKey]
-    return permission?.canView === true
+    return (
+      permission?.canView === true ||
+      permission?.canCreate === true ||
+      permission?.canUpdate === true ||
+      permission?.canDelete === true ||
+      permission?.canApprove === true ||
+      permission?.canExport === true
+    )
   }
 
   // Filter cards based on permissions and visibility
@@ -220,7 +246,7 @@ export default async function DashboardPage() {
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           <h1 className="text-3xl font-bold text-primary-600 mb-2">Dashboard</h1>
-          <p className="text-gray-600 mb-8">Welcome to Smart Steps Dashboard</p>
+          <p className="text-white mb-8">Welcome to Smart Steps Dashboard</p>
 
           {/* Quick Access - FIRST SECTION */}
           <div className="mb-8">

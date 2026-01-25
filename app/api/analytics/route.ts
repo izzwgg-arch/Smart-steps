@@ -5,8 +5,10 @@ import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
 import { startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, format } from 'date-fns'
 import { getTimesheetVisibilityScope } from '@/lib/permissions'
+import { startPerfLog } from '@/lib/api-performance'
 
 export async function GET(request: NextRequest) {
+  const perf = startPerfLog('GET /api/analytics')
   try {
     const session = await getServerSession(authOptions)
     if (!session || session.user.role !== 'ADMIN') {
@@ -66,6 +68,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all data in parallel
+    // PERFORMANCE FIX: Limit timesheets query to prevent scanning all records
+    // Analytics only needs aggregated data, not full records
     const [
       timesheets,
       invoices,
@@ -74,16 +78,46 @@ export async function GET(request: NextRequest) {
       allBCBAs,
       allInsurances,
     ] = await Promise.all([
-      // Timesheets with entries
+      // PERFORMANCE FIX: Limit timesheets and use select instead of include
       prisma.timesheet.findMany({
         where: timesheetWhere,
-        include: {
-          entries: true,
-          provider: true,
-          client: true,
-          bcba: true,
-          insurance: true,
+        select: {
+          id: true,
+          createdAt: true,
+          status: true,
+          entries: {
+            select: {
+              units: true,
+              minutes: true,
+            },
+          },
+          provider: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          client: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          bcba: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          insurance: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
+        take: 5000, // PERFORMANCE: Reduced limit
+        orderBy: { createdAt: 'desc' },
       }),
 
       // Invoices with entries, payments, and adjustments
@@ -159,7 +193,7 @@ export async function GET(request: NextRequest) {
     // 9. Summary statistics
     const summary = calculateSummary(timesheets, invoices)
 
-    return NextResponse.json({
+    const result = NextResponse.json({
       summary,
       revenueTrends,
       timesheetTrends,

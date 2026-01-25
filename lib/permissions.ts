@@ -29,6 +29,42 @@ export interface CommunityPermissions {
   }
 }
 
+function hasAnyCapability(
+  perm:
+    | {
+        canView?: boolean
+        canCreate?: boolean
+        canUpdate?: boolean
+        canDelete?: boolean
+        canApprove?: boolean
+        canExport?: boolean
+      }
+    | undefined
+): boolean {
+  if (!perm) return false
+  return (
+    perm.canView === true ||
+    perm.canCreate === true ||
+    perm.canUpdate === true ||
+    perm.canDelete === true ||
+    perm.canApprove === true ||
+    perm.canExport === true
+  )
+}
+
+/**
+ * Helper function to check if user has payroll access (either PAYROLL_MANAGEMENT or specific payroll permission)
+ */
+export function hasPayrollAccess(permissions: UserPermissions, specificPermission?: string): boolean {
+  if (permissions['PAYROLL_MANAGEMENT']?.canView === true) {
+    return true
+  }
+  if (specificPermission && permissions[specificPermission]?.canView === true) {
+    return true
+  }
+  return false
+}
+
 export async function getUserPermissions(userId: string): Promise<UserPermissions> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -64,6 +100,47 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
         canExport: true,
       }
     })
+    // SUPER_ADMIN has all Community Email Queue permissions
+    permissions['community.invoices.emailqueue.view'] = {
+      canView: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canApprove: true,
+      canExport: true,
+    }
+    permissions['community.invoices.emailqueue.send'] = {
+      canView: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canApprove: true,
+      canExport: true,
+    }
+    permissions['community.invoices.emailqueue.schedule'] = {
+      canView: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canApprove: true,
+      canExport: true,
+    }
+    permissions['community.invoices.emailqueue.attachPdf'] = {
+      canView: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canApprove: true,
+      canExport: true,
+    }
+    permissions['community.invoices.emailqueue.delete'] = {
+      canView: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canApprove: true,
+      canExport: true,
+    }
     return permissions
   }
 
@@ -88,11 +165,74 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
         canExport: true,
       }
     })
+    // ADMIN automatically has all payroll permissions
+    const payrollPerms = [
+      'PAYROLL_VIEW',
+      'PAYROLL_MANAGE_EMPLOYEES',
+      'PAYROLL_IMPORT_EDIT',
+      'PAYROLL_RUN_CREATE',
+      'PAYROLL_PAYMENTS_EDIT',
+      'PAYROLL_ANALYTICS_VIEW',
+      'PAYROLL_REPORTS_EXPORT',
+      'dashboard.payroll',
+    ]
+    payrollPerms.forEach(permName => {
+      permissions[permName] = {
+        canView: true,
+        canCreate: true,
+        canUpdate: true,
+        canDelete: false,
+        canApprove: true,
+        canExport: true,
+      }
+    })
+    // ADMIN has all Community Email Queue permissions
+    permissions['community.invoices.emailqueue.view'] = {
+      canView: true,
+      canCreate: false,
+      canUpdate: false,
+      canDelete: false,
+      canApprove: false,
+      canExport: false,
+    }
+    permissions['community.invoices.emailqueue.send'] = {
+      canView: false,
+      canCreate: true,
+      canUpdate: false,
+      canDelete: false,
+      canApprove: false,
+      canExport: false,
+    }
+    permissions['community.invoices.emailqueue.schedule'] = {
+      canView: false,
+      canCreate: true,
+      canUpdate: false,
+      canDelete: false,
+      canApprove: false,
+      canExport: false,
+    }
+    permissions['community.invoices.emailqueue.attachPdf'] = {
+      canView: false,
+      canCreate: true,
+      canUpdate: false,
+      canDelete: false,
+      canApprove: false,
+      canExport: false,
+    }
+    permissions['community.invoices.emailqueue.delete'] = {
+      canView: false,
+      canCreate: false,
+      canUpdate: false,
+      canDelete: true,
+      canApprove: false,
+      canExport: false,
+    }
     return permissions
   }
 
-  // CUSTOM role uses role permissions
-  if (user.role === 'CUSTOM' && user.customRole) {
+  // If a user has a customRole assigned, use it (even if user.role isn't CUSTOM).
+  // This prevents misconfigured accounts from losing access even though a role was assigned.
+  if (user.customRole) {
     user.customRole.permissions.forEach(rp => {
       permissions[rp.permission.name] = {
         canView: rp.canView,
@@ -104,12 +244,87 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
       }
     })
 
+    // Add granular Community Email Queue permissions from Role model
+    if (user.customRole.communityEmailQueueView) {
+      permissions['community.invoices.emailqueue.view'] = {
+        canView: true,
+        canCreate: false,
+        canUpdate: false,
+        canDelete: false,
+        canApprove: false,
+        canExport: false,
+      }
+    }
+    if (user.customRole.communityEmailQueueSendNow) {
+      permissions['community.invoices.emailqueue.send'] = {
+        canView: false,
+        canCreate: true,
+        canUpdate: false,
+        canDelete: false,
+        canApprove: false,
+        canExport: false,
+      }
+    }
+    if (user.customRole.communityEmailQueueSchedule) {
+      permissions['community.invoices.emailqueue.schedule'] = {
+        canView: false,
+        canCreate: true,
+        canUpdate: false,
+        canDelete: false,
+        canApprove: false,
+        canExport: false,
+      }
+    }
+    if (user.customRole.communityEmailQueueAttachPdf) {
+      permissions['community.invoices.emailqueue.attachPdf'] = {
+        canView: false,
+        canCreate: true,
+        canUpdate: false,
+        canDelete: false,
+        canApprove: false,
+        canExport: false,
+      }
+    }
+    if (user.customRole.communityEmailQueueDelete) {
+      permissions['community.invoices.emailqueue.delete'] = {
+        canView: false,
+        canCreate: false,
+        canUpdate: false,
+        canDelete: true,
+        canApprove: false,
+        canExport: false,
+      }
+    }
+
     // For CUSTOM roles, also grant dashboard permissions based on underlying permissions
     const dashboardPermissionMap: Record<string, string[]> = {
-      'dashboard.timesheets': ['timesheets.view', 'timesheets.create', 'timesheets.update'],
+      'dashboard.timesheets': [
+        'timesheets.view',
+        'timesheets.create',
+        'timesheets.update',
+        'timesheets.delete',
+        'timesheets.submit',
+        'timesheets.approve',
+        'timesheets.reject',
+        'timesheets.export',
+        'timesheets.viewAll',
+        'timesheets.viewSelectedUsers',
+      ],
       'dashboard.invoices': ['invoices.view'],
-      'dashboard.providers': ['providers.view'],
-      'dashboard.clients': ['clients.view'],
+      'dashboard.providers': [
+        'providers.view',
+        'providers.create',
+        'providers.update',
+        'providers.delete',
+        'providers.export',
+      ],
+      'dashboard.clients': [
+        'clients.view',
+        'clients.create',
+        'clients.update',
+        'clients.delete',
+        'clients.export',
+      ],
       'dashboard.reports': ['reports.view'],
       'dashboard.analytics': ['analytics.view'],
       'dashboard.users': ['users.view'],
@@ -118,12 +333,13 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
       'dashboard.community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
       'dashboard.emailQueue': ['emailQueue.view'],
       'dashboard.bcbaTimesheets': ['bcbaTimesheets.view'],
+      'dashboard.payroll': ['payroll.view'],
     }
 
     for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
       // Only add if not already set explicitly
       if (!permissions[dashboardPerm]) {
-        const hasUnderlying = underlyingPerms.some(up => permissions[up]?.canView === true)
+        const hasUnderlying = underlyingPerms.some(up => hasAnyCapability(permissions[up]))
         if (hasUnderlying) {
           permissions[dashboardPerm] = {
             canView: true,
@@ -168,20 +384,44 @@ export async function getUserPermissions(userId: string): Promise<UserPermission
   // For USER roles, grant dashboard permissions based on underlying permissions
   // If user has timesheets.view, grant dashboard.timesheets
   const dashboardPermissionMap: Record<string, string[]> = {
-    'dashboard.timesheets': ['timesheets.view', 'timesheets.create', 'timesheets.update'],
+    'dashboard.timesheets': [
+      'timesheets.view',
+      'timesheets.create',
+      'timesheets.update',
+      'timesheets.delete',
+      'timesheets.submit',
+      'timesheets.approve',
+      'timesheets.reject',
+      'timesheets.export',
+      'timesheets.viewAll',
+      'timesheets.viewSelectedUsers',
+    ],
     'dashboard.invoices': ['invoices.view'],
-    'dashboard.providers': ['providers.view'],
-    'dashboard.clients': ['clients.view'],
+    'dashboard.providers': [
+      'providers.view',
+      'providers.create',
+      'providers.update',
+      'providers.delete',
+      'providers.export',
+    ],
+    'dashboard.clients': [
+      'clients.view',
+      'clients.create',
+      'clients.update',
+      'clients.delete',
+      'clients.export',
+    ],
     'dashboard.reports': ['reports.view'],
     'dashboard.analytics': ['analytics.view'],
     'dashboard.users': ['users.view'],
     'dashboard.bcbas': ['bcbas.view'],
     'dashboard.insurance': ['insurance.view'],
     'dashboard.community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
+    'dashboard.payroll': ['payroll.view'],
   }
 
   for (const [dashboardPerm, underlyingPerms] of Object.entries(dashboardPermissionMap)) {
-    const hasUnderlying = underlyingPerms.some(up => permissions[up]?.canView === true)
+    const hasUnderlying = underlyingPerms.some(up => hasAnyCapability(permissions[up]))
     if (hasUnderlying) {
       permissions[dashboardPerm] = {
         canView: true,
@@ -290,16 +530,39 @@ export async function canSeeDashboardSection(userId: string, section: string): P
   }
 
   // Check explicit dashboard permission first
-  if (permissions[permissionName]?.canView === true) {
+  if (hasAnyCapability(permissions[permissionName])) {
     return true
   }
 
   // Fallback: Check underlying permissions if dashboard permission doesn't exist
   const underlyingPermissionMap: Record<string, string[]> = {
-    'timesheets': ['timesheets.view', 'timesheets.create', 'timesheets.update'],
+    'timesheets': [
+      'timesheets.view',
+      'timesheets.create',
+      'timesheets.update',
+      'timesheets.delete',
+      'timesheets.submit',
+      'timesheets.approve',
+      'timesheets.reject',
+      'timesheets.export',
+      'timesheets.viewAll',
+      'timesheets.viewSelectedUsers',
+    ],
     'invoices': ['invoices.view'],
-    'providers': ['providers.view'],
-    'clients': ['clients.view'],
+    'providers': [
+      'providers.view',
+      'providers.create',
+      'providers.update',
+      'providers.delete',
+      'providers.export',
+    ],
+    'clients': [
+      'clients.view',
+      'clients.create',
+      'clients.update',
+      'clients.delete',
+      'clients.export',
+    ],
     'reports': ['reports.view'],
     'analytics': ['analytics.view'],
     'users': ['users.view'],
@@ -308,11 +571,12 @@ export async function canSeeDashboardSection(userId: string, section: string): P
     'community': ['community.view', 'community.classes.view', 'community.clients.view', 'community.invoices.view'],
     'emailQueue': ['emailQueue.view'],
     'bcbaTimesheets': ['bcbaTimesheets.view'],
+    'payroll': ['payroll.view'],
   }
 
   const underlyingPerms = underlyingPermissionMap[section]
   if (underlyingPerms) {
-    return underlyingPerms.some(up => permissions[up]?.canView === true)
+    return underlyingPerms.some(up => hasAnyCapability(permissions[up]))
   }
 
   return false
@@ -323,6 +587,25 @@ export async function canSeeDashboardSection(userId: string, section: string): P
  * Returns true if user has access, false otherwise
  */
 export async function canAccessRoute(userId: string, route: string): Promise<boolean> {
+  // Handle archive routes
+  if (route === '/reports/timesheet-archive' || route.startsWith('/reports/timesheet-archive/')) {
+    const permissions = await getUserPermissions(userId)
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    return permissions['reports.timesheetArchive.view']?.canView === true ||
+           user?.role === 'ADMIN' ||
+           user?.role === 'SUPER_ADMIN'
+  }
+  if (route === '/reports/bcba-timesheet-archive' || route.startsWith('/reports/bcba-timesheet-archive/')) {
+    const permissions = await getUserPermissions(userId)
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    return permissions['reports.bcbaTimesheetArchive.view']?.canView === true ||
+           user?.role === 'ADMIN' ||
+           user?.role === 'SUPER_ADMIN'
+  }
+  
+  // BCBA Insurance route removed - BCBA timesheets now use regular Insurance
+  // Route check removed (will 404 if accessed)
+  
   // Handle Community Classes subsection routes
   if (route.startsWith('/community/')) {
     const { getCommunityPermissions } = await import('@/lib/permissions')
@@ -370,6 +653,7 @@ export async function canAccessRoute(userId: string, route: string): Promise<boo
     '/community': 'community',
     '/email-queue': 'emailQueue',
     '/bcba-timesheets': 'bcbaTimesheets',
+    '/payroll': 'payroll',
   }
 
   const section = routeSectionMap[route]

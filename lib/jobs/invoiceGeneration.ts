@@ -378,8 +378,22 @@ async function generateInvoiceForClient(
       })
     }
 
-    // Timesheet locking removed - invoice tracking is handled via invoiceEntries
-    // Timesheets remain in their current status (APPROVED/EMAILED)
+    // Mark all timesheets as invoiced (set invoicedAt and invoiceId)
+    // Only update timesheets that are not deleted
+    const timesheetIds = timesheets.map(ts => ts.id)
+    if (timesheetIds.length > 0) {
+      await tx.timesheet.updateMany({
+        where: {
+          id: { in: timesheetIds },
+          deletedAt: null, // Only update non-deleted timesheets
+          invoicedAt: null, // Only update timesheets that aren't already invoiced
+        },
+        data: {
+          invoicedAt: new Date(),
+          invoiceId: invoice.id,
+        },
+      })
+    }
 
     console.log(
       `[INVOICE GENERATION] Generated invoice ${invoiceNumber} for client ${clientId} ` +

@@ -133,11 +133,21 @@ export async function PUT(
 
     if (role !== undefined) {
       updateData.role = role
-      if (role === 'CUSTOM' && data.customRoleId) {
-        updateData.customRoleId = data.customRoleId
-      } else if (role !== 'CUSTOM') {
+    }
+
+    // Allow assigning a Role (customRoleId) to USER/CUSTOM accounts.
+    // This fixes non-admin access where users are not marked as CUSTOM but still have a role assigned.
+    if (data.customRoleId !== undefined) {
+      // Only non-admin roles can have a custom role.
+      const effectiveRole = (role !== undefined ? role : existingUser.role) as string
+      if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
         updateData.customRoleId = null
+      } else {
+        updateData.customRoleId = data.customRoleId || null
       }
+    } else if (role !== undefined && (role === 'ADMIN' || role === 'SUPER_ADMIN')) {
+      // If promoting to admin, clear any custom role to avoid confusion
+      updateData.customRoleId = null
     }
 
     if (active !== undefined) {

@@ -48,8 +48,13 @@ export async function GET(request: NextRequest) {
     // Users can only see invoices (read-only) unless admin
     // This is enforced at UI level, but we can add DB level if needed
 
+    // Debug: Log the where clause
+    console.log('[INVOICES GET] Query params:', { page, limit, search, status, clientId, insuranceId })
+    console.log('[INVOICES GET] Where clause:', JSON.stringify(where, null, 2))
+
+    // Use (prisma as any) to handle Prisma client recognition issues
     const [invoices, total] = await Promise.all([
-      prisma.invoice.findMany({
+      (prisma as any).invoice.findMany({
         where,
         include: {
           client: {
@@ -66,8 +71,18 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.invoice.count({ where }),
+      (prisma as any).invoice.count({ where }),
     ])
+
+    console.log('[INVOICES GET] Found', invoices.length, 'invoices (total:', total, ')')
+    if (invoices.length > 0) {
+      console.log('[INVOICES GET] Sample invoice:', {
+        id: invoices[0].id,
+        invoiceNumber: invoices[0].invoiceNumber,
+        createdAt: invoices[0].createdAt,
+        deletedAt: invoices[0].deletedAt,
+      })
+    }
 
     return NextResponse.json({
       invoices,
@@ -77,9 +92,12 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(total / limit),
     })
   } catch (error) {
-    console.error('Error fetching invoices:', error)
+    console.error('[INVOICES GET] Error fetching invoices:', error)
+    if (error instanceof Error) {
+      console.error('[INVOICES GET] Error details:', error.message, error.stack)
+    }
     return NextResponse.json(
-      { error: 'Failed to fetch invoices' },
+      { error: 'Failed to fetch invoices', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     )
   }
@@ -228,15 +246,19 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Lock timesheets
-      await tx.timesheet.updateMany({
-        where: {
-          id: { in: timesheets.map((t) => t.id) },
-        },
-        data: {
-          // Status remains APPROVED - invoice tracking is handled via invoiceEntries
-        },
-      })
+      // Mark all timesheets as invoiced (set invoiceId)
+      // Only update timesheets that are not deleted
+      const timesheetIds = timesheets.map((t) => t.id)
+      if (timesheetIds.length > 0) {
+        // Use raw SQL since Prisma client may not have invoiceId field yet
+        await tx.$executeRawUnsafe(`
+          UPDATE "Timesheet"
+          SET "invoiceId" = $1
+          WHERE id = ANY($2::text[])
+            AND "deletedAt" IS NULL
+            AND ("invoiceId" IS NULL OR "invoiceId" = '')
+        `, newInvoice.id, timesheetIds)
+      }
 
       return newInvoice
     })

@@ -74,7 +74,7 @@ export function CommunityClassForm({ classItem }: CommunityClassFormProps) {
       <div className="mb-6">
         <Link
           href="/community/classes"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          className="inline-flex items-center text-sm text-white hover:text-gray-200 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to Community Classes

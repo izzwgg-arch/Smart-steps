@@ -38,6 +38,43 @@ body > *:not(.bg-white):not(input):not(textarea):not(select):not(.card) {
   color: #ffffff;
 }
 
+/* Make all headers and subheaders white on blue background */
+h1, h2, h3, h4, h5, h6 {
+  color: #ffffff !important;
+}
+
+/* Make paragraphs white on blue background (except in white containers) */
+p:not(.bg-white p):not(.card p):not([class*="bg-white"] p) {
+  color: #ffffff !important;
+}
+
+/* Make all "Back to" links white on blue background */
+a[href*="/clients"],
+a[href*="/providers"],
+a[href*="/timesheets"],
+a[href*="/bcba-timesheets"],
+a[href*="/invoices"],
+a[href*="/bcbas"],
+a[href*="/insurance"],
+a[href*="/users"],
+a[href*="/roles"],
+a[href*="/community"] {
+  color: #ffffff !important;
+}
+
+a[href*="/clients"]:hover,
+a[href*="/providers"]:hover,
+a[href*="/timesheets"]:hover,
+a[href*="/bcba-timesheets"]:hover,
+a[href*="/invoices"]:hover,
+a[href*="/bcbas"]:hover,
+a[href*="/insurance"]:hover,
+a[href*="/users"]:hover,
+a[href*="/roles"]:hover,
+a[href*="/community"]:hover {
+  color: #e5e7eb !important; /* gray-200 */
+}
+
 /* Keep form inputs and cards with white backgrounds for readability */
 input,
 textarea,
@@ -64,7 +101,7 @@ select,
   color: rgb(13, 148, 136) !important;
 }
 
-/* Headers in white containers should be dark */
+/* Headers in white containers should be dark (override the white header rule above) */
 .bg-white h1,
 .bg-white h2,
 .bg-white h3,
@@ -76,7 +113,13 @@ select,
 .card h3,
 .card h4,
 .card h5,
-.card h6 {
+.card h6,
+[class*="bg-white"] h1,
+[class*="bg-white"] h2,
+[class*="bg-white"] h3,
+[class*="bg-white"] h4,
+[class*="bg-white"] h5,
+[class*="bg-white"] h6 {
   color: #1f2937 !important;
 }
 
@@ -100,6 +143,12 @@ select,
   /* Show only the print preview content */
   .print-preview-content,
   .print-preview-content * {
+    visibility: visible !important;
+  }
+  
+  /* Show form content for printing */
+  .print-form,
+  .print-form * {
     visibility: visible !important;
   }
   

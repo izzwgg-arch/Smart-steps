@@ -79,6 +79,8 @@ const permissions = [
   { name: 'reports.view', description: 'View reports', category: 'reports' },
   { name: 'reports.generate', description: 'Generate reports', category: 'reports' },
   { name: 'reports.export', description: 'Export reports', category: 'reports' },
+  { name: 'reports.timesheetArchive.view', description: 'View regular timesheet archive', category: 'reports' },
+  { name: 'reports.bcbaTimesheetArchive.view', description: 'View BCBA timesheet archive', category: 'reports' },
   
   // Analytics
   { name: 'analytics.view', description: 'View analytics', category: 'analytics' },
@@ -124,6 +126,23 @@ const permissions = [
   { name: 'dashboard.community', description: 'Show Community Classes in Dashboard', category: 'dashboard' },
   { name: 'dashboard.emailQueue', description: 'Show Email Queue in Dashboard', category: 'dashboard' },
   { name: 'dashboard.bcbaTimesheets', description: 'Show BCBA Timesheets in Dashboard', category: 'dashboard' },
+  { name: 'dashboard.forms', description: 'Show Forms in Dashboard', category: 'dashboard' },
+  
+  // Forms
+  { name: 'FORMS_VIEW', description: 'View forms', category: 'forms' },
+  { name: 'FORMS_EDIT', description: 'Edit forms', category: 'forms' },
+  
+  // Payroll Management
+  { name: 'PAYROLL_VIEW', description: 'View payroll management', category: 'payroll' },
+  { name: 'PAYROLL_MANAGE_EMPLOYEES', description: 'Manage employee directory and pay rates', category: 'payroll' },
+  { name: 'PAYROLL_IMPORT_EDIT', description: 'Import and edit time logs', category: 'payroll' },
+  { name: 'PAYROLL_RUN_CREATE', description: 'Create and manage payroll runs', category: 'payroll' },
+  { name: 'PAYROLL_PAYMENTS_EDIT', description: 'Record and edit payments', category: 'payroll' },
+  { name: 'PAYROLL_ANALYTICS_VIEW', description: 'View payroll analytics and dashboard', category: 'payroll' },
+  { name: 'PAYROLL_REPORTS_EXPORT', description: 'Export payroll reports', category: 'payroll' },
+  
+  // Dashboard Visibility
+  { name: 'dashboard.payroll', description: 'Show Payroll Management in Dashboard', category: 'dashboard' },
 ]
 
 async function main() {

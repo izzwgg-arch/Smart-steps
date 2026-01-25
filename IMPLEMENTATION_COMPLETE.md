@@ -1,148 +1,83 @@
-# Community Email Queue Fixes - Implementation Complete
+# Archive Controls + BCBA Insurance - Implementation Complete
 
-## Summary
+## ✅ ALL TASKS COMPLETED
 
-Successfully implemented separation between MAIN and COMMUNITY email queues with proper recipient handling, attachment support, and scheduling.
+### PART A: Archive Controls ✅
+- ✅ Database schema: Added `archived` boolean field
+- ✅ API endpoints: Batch archive and generate invoice for regular and BCBA
+- ✅ Archive queries: Updated to check archived flag
+- ✅ UI components: Checkboxes and batch actions on all pages
+- ✅ Generate Invoice: BCBA requires checkbox selection
 
-## ✅ Completed Tasks
+### PART B: BCBA Insurance ✅
+- ✅ Database schema: `BcbaInsurance` model created
+- ✅ API endpoints: Full CRUD for BCBA Insurance
+- ✅ UI pages: List, create, edit pages created
+- ✅ BCBA Timesheet forms: Added BCBA Insurance dropdown
+- ✅ Invoice generation: Uses BCBA Insurance rates
 
-### 1. Database Schema ✅
-- Added `EmailQueueContext` enum (MAIN | COMMUNITY)
-- Added `context`, `attachmentKey`, `attachmentUrl`, `attachmentFilename` to `EmailQueueItem`
-- Added granular permissions to `Role` model
-- Created migration SQL file
+## 📋 Files Created/Modified
 
-### 2. Backend - Recipient Separation ✅
-- **MAIN Email Queue:** Always uses fixed recipients (`info@productivebilling.com`, `jacobw@apluscenterinc.org`)
-- **COMMUNITY Email Queue:** Requires user-entered recipients (no fallback)
-- Both routes set `context` appropriately
-- Scheduled email sender uses stored recipients for COMMUNITY (no fallback)
+### New Files
+- `app/api/timesheets/batch/archive/route.ts`
+- `app/api/bcba-timesheets/batch/archive/route.ts`
+- `app/api/timesheets/batch/generate-invoice/route.ts`
+- `app/api/bcba-timesheets/batch/generate-invoice/route.ts`
+- `app/api/bcba-insurance/route.ts`
+- `app/api/bcba-insurance/[id]/route.ts`
+- `app/bcba-insurance/page.tsx`
+- `app/bcba-insurance/new/page.tsx`
+- `app/bcba-insurance/[id]/edit/page.tsx`
+- `components/bcba-insurance/BcbaInsuranceList.tsx`
+- `components/bcba-insurance/BcbaInsuranceForm.tsx`
 
-### 3. Backend - Attachment Support ✅
-- Created `/api/community/email-queue/attachment-upload` endpoint
-- Created `/api/community/email-queue/attachment/[key]` endpoint
-- Updated send-batch route to load and attach additional PDF
-- Updated scheduled email sender to include attachments
-- Files stored in `uploads/community-email-attachments/`
+### Modified Files
+- `prisma/schema.prisma` - Added `archived`, `bcbaInsuranceId`, `BcbaInsurance` model
+- `app/api/timesheets/route.ts` - Updated archive queries, added bcbaInsuranceId handling
+- `app/api/timesheets/[id]/route.ts` - Added bcbaInsuranceId handling
+- `components/timesheets/TimesheetsList.tsx` - Added checkboxes and batch actions
+- `components/timesheets/BCBATimesheetsList.tsx` - Added checkboxes and batch actions
+- `components/timesheets/BCBATimesheetForm.tsx` - Added BCBA Insurance dropdown
+- `app/bcba-timesheets/new/page.tsx` - Fetch and pass BCBA Insurance
+- `app/bcba-timesheets/[id]/edit/page.tsx` - Fetch and pass BCBA Insurance
 
-### 4. Backend - Logging ✅
-- `[EMAIL_MAIN]` prefix for main queue operations
-- `[EMAIL_COMMUNITY]` prefix for community queue operations
-- Logs include: recipients, context, attachment status
+## 🚀 Next Steps - Deployment
 
-### 5. Frontend - UI Updates ✅
-- Added "Attach PDF" button next to "Send Selected"
-- File upload with validation (PDF only, max 10MB)
-- Shows selected filename with remove option
-- Attachment included in send/schedule requests
-- Recipient field already present and validated
-
-### 6. Context Setting ✅
-- Timesheet approval → creates queue item with `context: 'MAIN'`
-- Community invoice approval → creates queue item with `context: 'COMMUNITY'`
-- Send operations set context on existing items
-
-## Files Changed
-
-### Modified (9 files):
-1. `prisma/schema.prisma`
-2. `app/api/community/email-queue/send-batch/route.ts`
-3. `app/api/community/invoices/[id]/approve/route.ts`
-4. `app/api/email-queue/send-batch/route.ts`
-5. `app/api/email-queue/send-selected/route.ts`
-6. `app/api/timesheets/[id]/approve/route.ts`
-7. `lib/jobs/scheduledEmailSender.ts`
-8. `app/community/email-queue/page.tsx`
-
-### Created (4 files):
-1. `app/api/community/email-queue/attachment-upload/route.ts`
-2. `app/api/community/email-queue/attachment/[key]/route.ts`
-3. `prisma/migrations/add_email_queue_context_and_attachments/migration.sql`
-4. `COMMUNITY_EMAIL_QUEUE_FIXES_SUMMARY.md`
-
-## Key Behaviors
-
-### MAIN Email Queue
-- Recipients: **ALWAYS** `info@productivebilling.com`, `jacobw@apluscenterinc.org`
-- Context: `MAIN`
-- No user input for recipients
-- No attachment support
-
-### COMMUNITY Email Queue
-- Recipients: **User-entered** (REQUIRED, no fallback)
-- Context: `COMMUNITY`
-- Attachment support: Yes (optional additional PDF)
-- Scheduling: Yes (with user-entered recipients)
-- Validation: Fails with 400 if recipients missing
-
-## Next Steps
-
-1. **Deploy:**
-   ```bash
-   git add .
-   git commit -m "Fix Community Email Queue: separate recipients, add attachment support"
-   git push origin main
-   ```
-
-2. **On Server:**
-   ```bash
-   cd /var/www/aplus-center
-   git pull origin main
-   npx prisma migrate deploy
-   npx prisma generate
-   mkdir -p uploads/community-email-attachments
-   npm run build
-   node create-prerender.js
-   pm2 restart aplus-center
-   ```
-
-3. **Verify:**
-   - Test MAIN queue sends to fixed recipients
-   - Test COMMUNITY queue sends to user-entered recipients
-   - Test attachment upload and inclusion
-   - Test scheduled sends use stored recipients
-
-## Verification Commands
-
+### 1. Create and Run Migration
 ```bash
-# Check logs
-pm2 logs aplus-center --lines 200 | grep -E "EMAIL_MAIN|EMAIL_COMMUNITY"
-
-# Check database
-psql -d apluscenter -c "SELECT context, COUNT(*) FROM \"EmailQueueItem\" GROUP BY context;"
-psql -d apluscenter -c "SELECT \"toEmail\", context FROM \"EmailQueueItem\" WHERE context = 'COMMUNITY' LIMIT 5;"
+npx prisma migrate dev --name add_archive_and_bcba_insurance
 ```
 
-## Expected Log Output
+Or use manual SQL (see ARCHIVE_AND_BCBA_INSURANCE_IMPLEMENTATION.md)
 
-**Main Queue:**
-```
-[EMAIL_MAIN] Sending batch email {
-  recipients: 'info@productivebilling.com, jacobw@apluscenterinc.org',
-  source: 'MAIN',
-  ...
-}
-```
+### 2. Add Navigation Link
+Add BCBA Insurance to dashboard navigation (similar to Insurance):
+- Check `components/DashboardNav.tsx` or dashboard page
+- Add link to `/bcba-insurance`
 
-**Community Queue:**
-```
-[EMAIL_COMMUNITY] Sending batch email {
-  recipients: 'user@example.com',
-  source: 'COMMUNITY',
-  context: 'COMMUNITY',
-  hasAttachment: true,
-  ...
-}
-```
+### 3. Add Permissions (Optional)
+The API routes check for `bcbaInsurance.view` and `bcbaInsurance.manage` permissions.
+- Admins have access by default
+- For custom roles, add these permissions to the permission system
 
-**Scheduled Community:**
-```
-[EMAIL_COMMUNITY] Processing scheduled email {
-  recipients: 'user@example.com',
-  source: 'COMMUNITY',
-  context: 'COMMUNITY',
-  fromStoredToEmail: 'user@example.com',
-  hasAdditionalAttachment: true,
-  ...
-}
-```
+### 4. Test
+- Create BCBA Insurance records
+- Create/edit BCBA timesheets with BCBA Insurance
+- Test archive controls (move to/from archive)
+- Generate invoices from archive
+- Verify BCBA invoices use BCBA Insurance rates
+
+## ⚠️ Important Notes
+
+1. **Migration Required**: Database schema changes need migration before use
+2. **Navigation**: BCBA Insurance page needs to be added to navigation menu
+3. **Permissions**: BCBA Insurance permissions should be added to role system (admins work by default)
+4. **Regular Insurance Unchanged**: Regular timesheets continue using regular Insurance
+
+## ✅ Ready for Testing
+
+All code is complete and ready. After migration:
+- Archive controls work on all timesheet pages
+- BCBA Insurance can be managed
+- BCBA timesheets link to BCBA Insurance
+- BCBA invoices use BCBA Insurance rates

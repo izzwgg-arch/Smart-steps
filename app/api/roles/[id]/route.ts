@@ -73,6 +73,11 @@ export async function PUT(
       canViewCommunityClassesClients,
       canViewCommunityClassesInvoices,
       canViewCommunityClassesEmailQueue,
+      communityEmailQueueView,
+      communityEmailQueueSendNow,
+      communityEmailQueueSchedule,
+      communityEmailQueueAttachPdf,
+      communityEmailQueueDelete,
     } = data
 
     const existing = await prisma.role.findUnique({
@@ -95,6 +100,12 @@ export async function PUT(
     if (canViewCommunityClassesClients !== undefined) updateData.canViewCommunityClassesClients = canViewCommunityClassesClients
     if (canViewCommunityClassesInvoices !== undefined) updateData.canViewCommunityClassesInvoices = canViewCommunityClassesInvoices
     if (canViewCommunityClassesEmailQueue !== undefined) updateData.canViewCommunityClassesEmailQueue = canViewCommunityClassesEmailQueue
+    // Update Community Email Queue granular permissions
+    if (communityEmailQueueView !== undefined) updateData.communityEmailQueueView = communityEmailQueueView
+    if (communityEmailQueueSendNow !== undefined) updateData.communityEmailQueueSendNow = communityEmailQueueSendNow
+    if (communityEmailQueueSchedule !== undefined) updateData.communityEmailQueueSchedule = communityEmailQueueSchedule
+    if (communityEmailQueueAttachPdf !== undefined) updateData.communityEmailQueueAttachPdf = communityEmailQueueAttachPdf
+    if (communityEmailQueueDelete !== undefined) updateData.communityEmailQueueDelete = communityEmailQueueDelete
 
     const role = await prisma.role.update({
       where: { id: params.id },

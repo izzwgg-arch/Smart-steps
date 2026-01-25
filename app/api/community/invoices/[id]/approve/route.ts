@@ -30,12 +30,28 @@ export async function POST(
       )
     }
 
-    // Check Community Classes subsection permission
-    const { canAccessCommunitySection } = await import('@/lib/permissions')
-    const hasAccess = await canAccessCommunitySection(session.user.id, 'invoices')
-    if (!hasAccess) {
+    // Check permissions - same pattern as BCBA timesheets
+    const userPermissions = await getUserPermissions(session.user.id)
+    const permissionKey = 'community.invoices.approve'
+    const permission = userPermissions[permissionKey]
+    
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN'
+    const hasPermission = isAdmin || (permission?.canApprove === true)
+
+    if (!hasPermission) {
+      console.error('[COMMUNITY INVOICE APPROVE] Permission denied:', {
+        userId: session.user.id,
+        userRole: session.user.role,
+        permissionKey,
+        hasPermission: permission?.canApprove,
+        isAdmin,
+      })
       return NextResponse.json(
-        { ok: false, code: 'PERMISSION_DENIED', message: 'No access to Community Classes Invoices' },
+        {
+          ok: false,
+          code: 'PERMISSION_DENIED',
+          message: 'Permission denied - Insufficient permissions to approve community invoices',
+        },
         { status: 403 }
       )
     }

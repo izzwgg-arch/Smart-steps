@@ -1,10 +1,32 @@
 import { startOfDay, endOfDay, eachDayOfInterval, format, getDay, parse } from 'date-fns'
+import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz'
+
+/**
+ * Some older records can have date-only values stored at exactly 00:00:00Z.
+ * In local timezones, that can display as the previous calendar day, which can
+ * incorrectly classify Sundays as Saturdays (and get filtered out).
+ *
+ * Heuristic:
+ * - If the timestamp is exactly midnight in UTC, treat the day-of-week as UTC.
+ * - Otherwise, treat it as local (DatePicker-created values are usually not UTC-midnight).
+ */
+export function getSafeDayOfWeek(date: Date): number {
+  const isUtcMidnight =
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0
+
+  return isUtcMidnight ? date.getUTCDay() : date.getDay()
+}
 
 export function getDaysInRange(startDate: Date, endDate: Date): Date[] {
-  return eachDayOfInterval({
+  const allDays = eachDayOfInterval({
     start: startOfDay(startDate),
     end: endOfDay(endDate),
   })
+  // Filter out Saturdays - timesheets cannot be created on Saturdays
+  return allDays.filter((date) => getSafeDayOfWeek(date) !== 6)
 }
 
 export function getDayName(date: Date): string {
@@ -16,25 +38,180 @@ export function getDayShortName(date: Date): string {
 }
 
 export function isSunday(date: Date): boolean {
-  return getDay(date) === 0
+  return getSafeDayOfWeek(date) === 0
 }
 
 export function isFriday(date: Date): boolean {
-  return getDay(date) === 5
+  return getSafeDayOfWeek(date) === 5
 }
 
 export function isSaturday(date: Date): boolean {
-  return getDay(date) === 6
+  return getSafeDayOfWeek(date) === 6
+}
+
+/**
+ * Check if a date is Saturday in a specific timezone
+ * @param date - The date to check (can be a date string or Date object)
+ * @param timezone - IANA timezone identifier (e.g., "America/New_York", "Asia/Jerusalem")
+ * @returns true if the date is Saturday in the specified timezone
+ */
+export function isSaturdayInTimezone(date: Date | string, timezone: string = 'America/New_York'): boolean {
+  try {
+    let dateObj: Date
+    
+    if (typeof date === 'string') {
+      // Parse date string - if it's just a date (YYYY-MM-DD), treat it as midnight in the target timezone
+      // If it has time info, parse it normally
+      if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        // Date-only string: create date at midnight in the target timezone
+        const [year, month, day] = date.split('-').map(Number)
+        // Create a date string with time in the target timezone, then convert
+        const dateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T00:00:00`
+        // Parse as if it's in the target timezone by using zonedTimeToUtc
+        dateObj = zonedTimeToUtc(dateStr, timezone)
+      } else {
+        // Has time info, parse normally
+        dateObj = new Date(date)
+      }
+    } else {
+      dateObj = date
+    }
+    
+    // Convert the UTC date to the specified timezone
+    const zonedDate = utcToZonedTime(dateObj, timezone)
+    
+    // Get day of week in that timezone (0 = Sunday, 6 = Saturday)
+    return zonedDate.getDay() === 6
+  } catch (error) {
+    console.error('[DATE_UTILS] Error checking Saturday in timezone:', error, { date, timezone })
+    // Fallback to safe day of week check
+    const dateObj = typeof date === 'string' ? new Date(date) : date
+    return isSaturday(dateObj)
+  }
 }
 
 export function isWeekday(date: Date): boolean {
-  const day = getDay(date)
+  const day = getSafeDayOfWeek(date)
   return day > 0 && day < 5 // Monday to Friday
 }
 
 export function formatTimeForInput(time: string): string {
   if (!time || time === '--:--') return ''
   return time
+}
+
+/**
+ * Format a Date object as a date-only string (YYYY-MM-DD) in the specified timezone
+ * This prevents timezone conversion issues when sending dates to the API
+ * @param date - The date to format
+ * @param timezone - IANA timezone identifier (e.g., "America/New_York", "Asia/Jerusalem")
+ * @returns Date string in YYYY-MM-DD format representing the date in the specified timezone
+ */
+export function formatDateOnly(date: Date, timezone: string = 'America/New_York'): string {
+  try {
+    // Convert the date to the specified timezone to get the correct calendar day
+    const zonedDate = utcToZonedTime(date, timezone)
+    // Format as YYYY-MM-DD
+    return format(zonedDate, 'yyyy-MM-dd')
+  } catch (error) {
+    console.error('[DATE_UTILS] Error formatting date only:', error, { date, timezone })
+    // Fallback to simple date formatting
+    return format(date, 'yyyy-MM-dd')
+  }
+}
+
+/**
+ * Parse a date-only string (YYYY-MM-DD) as a Date object in the specified timezone
+ * This ensures dates are interpreted correctly regardless of server timezone
+ * @param dateStr - Date string in YYYY-MM-DD format
+ * @param timezone - IANA timezone identifier (e.g., "America/New_York", "Asia/Jerusalem")
+ * @returns Date object representing midnight in the specified timezone
+ */
+export function parseDateOnly(dateStr: string, timezone: string = 'America/New_York'): Date {
+  try {
+    if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`)
+    }
+    // Parse as midnight in the target timezone
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const dateStrWithTime = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T00:00:00`
+    // Convert to UTC Date object
+    return zonedTimeToUtc(dateStrWithTime, timezone)
+  } catch (error) {
+    console.error('[DATE_UTILS] Error parsing date only:', error, { dateStr, timezone })
+    // Fallback to simple parsing
+    return new Date(dateStr)
+  }
+}
+
+/**
+ * Convert a database DateTime (UTC) to a date string in NY timezone
+ * This ensures dates are always displayed consistently regardless of viewer location
+ * @param dbDate - Date from database (UTC DateTime)
+ * @param timezone - Timesheet timezone (default: America/New_York)
+ * @returns Date string in YYYY-MM-DD format as it appears in the specified timezone
+ */
+export function getDateInTimezone(dbDate: Date | string, timezone: string = 'America/New_York'): string {
+  try {
+    const dateObj = typeof dbDate === 'string' ? new Date(dbDate) : dbDate
+    if (isNaN(dateObj.getTime())) {
+      console.error('[DATE_UTILS] Invalid date:', dbDate)
+      return ''
+    }
+    // Convert UTC date to the timesheet's timezone and get the date string
+    const zonedDate = utcToZonedTime(dateObj, timezone)
+    return format(zonedDate, 'yyyy-MM-dd')
+  } catch (error) {
+    console.error('[DATE_UTILS] Error getting date in timezone:', error, { dbDate, timezone })
+    // Fallback: try to extract date from ISO string
+    if (typeof dbDate === 'string' && dbDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+      return dbDate.substring(0, 10)
+    }
+    return ''
+  }
+}
+
+/**
+ * Convert a database DateTime (UTC) to a Date object representing the date in NY timezone
+ * This ensures dates are always interpreted consistently regardless of viewer location
+ * @param dbDate - Date from database (UTC DateTime)
+ * @param timezone - Timesheet timezone (default: America/New_York)
+ * @returns Date object representing midnight in the specified timezone
+ */
+export function getDateObjectInTimezone(dbDate: Date | string, timezone: string = 'America/New_York'): Date {
+  try {
+    const dateStr = getDateInTimezone(dbDate, timezone)
+    if (!dateStr) {
+      throw new Error('Invalid date string')
+    }
+    // Parse the date string as midnight in the target timezone
+    return parseDateOnly(dateStr, timezone)
+  } catch (error) {
+    console.error('[DATE_UTILS] Error getting date object in timezone:', error, { dbDate, timezone })
+    // Fallback
+    const dateObj = typeof dbDate === 'string' ? new Date(dbDate) : dbDate
+    return dateObj
+  }
+}
+
+/**
+ * Format a database DateTime (UTC) for display in NY timezone
+ * This ensures dates are always displayed consistently regardless of viewer location
+ * @param dbDate - Date from database (UTC DateTime)
+ * @param formatStr - Format string (e.g., 'EEE M/d/yyyy', 'MM/dd/yyyy')
+ * @param timezone - Timesheet timezone (default: America/New_York)
+ * @returns Formatted date string as it appears in the specified timezone
+ */
+export function formatDateInTimezone(dbDate: Date | string, formatStr: string, timezone: string = 'America/New_York'): string {
+  try {
+    const dateObj = getDateObjectInTimezone(dbDate, timezone)
+    return format(dateObj, formatStr)
+  } catch (error) {
+    console.error('[DATE_UTILS] Error formatting date in timezone:', error, { dbDate, formatStr, timezone })
+    // Fallback
+    const dateObj = typeof dbDate === 'string' ? new Date(dbDate) : dbDate
+    return format(dateObj, formatStr)
+  }
 }
 
 export function parseTime(time: string): { hours: number; minutes: number } {

@@ -153,12 +153,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate custom role if CUSTOM role is selected
-    if (role === 'CUSTOM' && !data.customRoleId) {
+    // If a custom role is provided, allow it for USER/CUSTOM (but not ADMIN/SUPER_ADMIN)
+    if ((role === 'ADMIN' || role === 'SUPER_ADMIN') && data.customRoleId) {
       return NextResponse.json(
-        { 
+        {
           error: 'VALIDATION_ERROR',
-          message: 'Custom role ID is required when role is CUSTOM',
+          message: 'Admins cannot be assigned a custom role',
         },
         { status: 400 }
       )
@@ -229,7 +229,8 @@ export async function POST(request: NextRequest) {
           tempPasswordHash: tempPasswordHash, // Actual temp password for first login
           tempPasswordExpiresAt: tempPasswordExpiresAt,
           role: role || 'USER',
-          customRoleId: role === 'CUSTOM' && data.customRoleId ? data.customRoleId : null,
+          // Allow USERs to be assigned a custom role as well (role permissions drive access)
+          customRoleId: (role === 'ADMIN' || role === 'SUPER_ADMIN') ? null : (data.customRoleId || null),
           active: active !== undefined ? active : true,
           activationStart: activationStart ? new Date(activationStart) : null,
           activationEnd: activationEnd ? new Date(activationEnd) : null,

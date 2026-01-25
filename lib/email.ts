@@ -36,10 +36,20 @@ function validateSMTPConfig(): { valid: boolean; error?: string } {
   return { valid: true }
 }
 
-// Create reusable transporter
+// Create reusable transporter for main email queue
 let transporter: nodemailer.Transporter | null = null
+let transporterPassword: string | null = null // Track password to detect changes
 
 function getTransporter(): nodemailer.Transporter {
+  const currentPassword = process.env.SMTP_PASS || process.env.SMTP_PASSWORD
+  
+  // Recreate transporter if password changed (to pick up new env vars after restart)
+  if (transporter && transporterPassword !== currentPassword) {
+    console.log('[EMAIL] Password changed, recreating transporter')
+    transporter = null
+    transporterPassword = null
+  }
+  
   if (!transporter) {
     const config = validateSMTPConfig()
     if (!config.valid) {
@@ -65,8 +75,68 @@ function getTransporter(): nodemailer.Transporter {
     })
     
     transporter = nodemailer.createTransport(smtpConfig)
+    transporterPassword = smtpConfig.auth.pass // Store current password
   }
   return transporter
+}
+
+// Create separate transporter for Community Classes emails
+let communityTransporter: nodemailer.Transporter | null = null
+let communityTransporterPassword: string | null = null // Track password to detect changes
+
+function getCommunityTransporter(): nodemailer.Transporter {
+  const currentPassword = process.env.COMMUNITY_SMTP_PASS || process.env.COMMUNITY_SMTP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD
+  
+  // Recreate transporter if password changed (to pick up new env vars after restart)
+  if (communityTransporter && communityTransporterPassword !== currentPassword) {
+    console.log('[EMAIL_COMMUNITY] Password changed, recreating transporter')
+    communityTransporter = null
+    communityTransporterPassword = null
+  }
+  
+  if (!communityTransporter) {
+    // Use community-specific SMTP config if provided, otherwise fall back to main config
+    const communityHost = process.env.COMMUNITY_SMTP_HOST || process.env.SMTP_HOST!
+    const communityPort = process.env.COMMUNITY_SMTP_PORT || process.env.SMTP_PORT!
+    const communitySecure = (process.env.COMMUNITY_SMTP_SECURE || process.env.SMTP_SECURE) === 'true'
+    const communityUser = process.env.COMMUNITY_SMTP_USER || process.env.SMTP_USER!
+    const communityPass = process.env.COMMUNITY_SMTP_PASS || process.env.COMMUNITY_SMTP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD!
+
+    if (!communityUser || !communityPass) {
+      throw new Error('Community SMTP not configured')
+    }
+
+    const smtpConfig = {
+      host: communityHost,
+      port: parseInt(communityPort),
+      secure: communitySecure,
+      auth: {
+        user: communityUser,
+        pass: communityPass,
+      },
+    }
+    
+    console.log('[EMAIL_COMMUNITY] Creating community transporter with config:', {
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: smtpConfig.secure,
+      user: smtpConfig.auth.user,
+      pass: smtpConfig.auth.pass ? '***SET***' : 'MISSING',
+      passLength: smtpConfig.auth.pass ? smtpConfig.auth.pass.length : 0,
+    })
+    
+    // Verify environment variables are set correctly
+    console.log('[EMAIL_COMMUNITY] Environment check:', {
+      COMMUNITY_SMTP_USER: process.env.COMMUNITY_SMTP_USER ? 'SET' : 'MISSING',
+      COMMUNITY_SMTP_PASS: process.env.COMMUNITY_SMTP_PASS ? 'SET' : 'MISSING',
+      COMMUNITY_SMTP_PASSWORD: process.env.COMMUNITY_SMTP_PASSWORD ? 'SET' : 'MISSING',
+      usingUser: smtpConfig.auth.user,
+    })
+    
+    communityTransporter = nodemailer.createTransport(smtpConfig)
+    communityTransporterPassword = communityPass // Store current password
+  }
+  return communityTransporter
 }
 
 export interface EmailOptions {
@@ -75,11 +145,13 @@ export interface EmailOptions {
   html: string
   text?: string
   from?: string // Optional custom from field (format: "Display Name <email@domain.com>")
+  replyTo?: string // Optional reply-to address
   attachments?: Array<{
     filename: string
     content: Buffer | string
     contentType?: string
   }>
+  useCommunityTransporter?: boolean // If true, use community-specific SMTP credentials
 }
 
 export interface EmailResult {
@@ -102,31 +174,67 @@ export async function sendMailSafe(
     userId?: string
   }
 ): Promise<EmailResult> {
-  // Validate SMTP config
-  const config = validateSMTPConfig()
-  if (!config.valid) {
-    const errorMsg = config.error || 'SMTP not configured'
-    console.warn(`[EMAIL] ${errorMsg}. Would send email to:`, options.to)
+  // Validate SMTP config based on which transporter we're using
+  const useCommunity = options.useCommunityTransporter === true
+  
+  if (useCommunity) {
+    // Validate community SMTP config
+    const communityHost = process.env.COMMUNITY_SMTP_HOST || process.env.SMTP_HOST
+    const communityPort = process.env.COMMUNITY_SMTP_PORT || process.env.SMTP_PORT
+    const communityUser = process.env.COMMUNITY_SMTP_USER || process.env.SMTP_USER
+    const communityPass = process.env.COMMUNITY_SMTP_PASS || process.env.COMMUNITY_SMTP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD
     
-    // Log audit event
-    if (auditMetadata?.userId) {
-      try {
-        await createAuditLog({
-          action: 'EMAIL_FAILED' as any,
-          entityType: auditMetadata.entityType || 'Email',
-          entityId: auditMetadata.entityId || 'unknown',
-          userId: auditMetadata.userId,
-          metadata: { reason: 'SMTP_NOT_CONFIGURED', to: Array.isArray(options.to) ? options.to.join(',') : options.to },
-        })
-      } catch (e) {
-        // Non-blocking
+    if (!communityHost || !communityPort || !communityUser || !communityPass) {
+      const errorMsg = 'Community SMTP configuration incomplete. Required: COMMUNITY_SMTP_USER, COMMUNITY_SMTP_PASS'
+      console.warn(`[EMAIL_COMMUNITY] ${errorMsg}. Would send email to:`, options.to)
+      
+      if (auditMetadata?.userId) {
+        try {
+          await createAuditLog({
+            action: 'EMAIL_FAILED' as any,
+            entityType: auditMetadata.entityType || 'Email',
+            entityId: auditMetadata.entityId || 'unknown',
+            userId: auditMetadata.userId,
+            metadata: { reason: 'SMTP_NOT_CONFIGURED', to: Array.isArray(options.to) ? options.to.join(',') : options.to },
+          })
+        } catch (e) {
+          // Non-blocking
+        }
+      }
+
+      return {
+        success: false,
+        error: errorMsg,
+        recipients: Array.isArray(options.to) ? options.to : [options.to],
       }
     }
+  } else {
+    // Validate main SMTP config
+    const config = validateSMTPConfig()
+    if (!config.valid) {
+      const errorMsg = config.error || 'SMTP not configured'
+      console.warn(`[EMAIL] ${errorMsg}. Would send email to:`, options.to)
+      
+      // Log audit event
+      if (auditMetadata?.userId) {
+        try {
+          await createAuditLog({
+            action: 'EMAIL_FAILED' as any,
+            entityType: auditMetadata.entityType || 'Email',
+            entityId: auditMetadata.entityId || 'unknown',
+            userId: auditMetadata.userId,
+            metadata: { reason: 'SMTP_NOT_CONFIGURED', to: Array.isArray(options.to) ? options.to.join(',') : options.to },
+          })
+        } catch (e) {
+          // Non-blocking
+        }
+      }
 
-    return {
-      success: false,
-      error: errorMsg,
-      recipients: Array.isArray(options.to) ? options.to : [options.to],
+      return {
+        success: false,
+        error: errorMsg,
+        recipients: Array.isArray(options.to) ? options.to : [options.to],
+      }
     }
   }
 
@@ -151,31 +259,53 @@ export async function sendMailSafe(
 
   try {
     // Debug: Log SMTP config (without sensitive data)
-    console.log('[EMAIL] SMTP Config Check:', {
-      host: process.env.SMTP_HOST ? 'SET' : 'MISSING',
-      port: process.env.SMTP_PORT ? 'SET' : 'MISSING',
-      user: process.env.SMTP_USER ? 'SET' : 'MISSING',
-      pass: (process.env.SMTP_PASS || process.env.SMTP_PASSWORD) ? 'SET' : 'MISSING',
+    const useCommunity = options.useCommunityTransporter === true
+    const logPrefix = useCommunity ? '[EMAIL_COMMUNITY]' : '[EMAIL]'
+    
+    console.log(`${logPrefix} SMTP Config Check:`, {
+      context: useCommunity ? 'COMMUNITY' : 'MAIN',
+      host: useCommunity 
+        ? (process.env.COMMUNITY_SMTP_HOST || process.env.SMTP_HOST ? 'SET' : 'MISSING')
+        : (process.env.SMTP_HOST ? 'SET' : 'MISSING'),
+      port: useCommunity 
+        ? (process.env.COMMUNITY_SMTP_PORT || process.env.SMTP_PORT ? 'SET' : 'MISSING')
+        : (process.env.SMTP_PORT ? 'SET' : 'MISSING'),
+      user: useCommunity
+        ? (process.env.COMMUNITY_SMTP_USER || process.env.SMTP_USER ? 'SET' : 'MISSING')
+        : (process.env.SMTP_USER ? 'SET' : 'MISSING'),
+      pass: useCommunity
+        ? ((process.env.COMMUNITY_SMTP_PASS || process.env.COMMUNITY_SMTP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD) ? 'SET' : 'MISSING')
+        : ((process.env.SMTP_PASS || process.env.SMTP_PASSWORD) ? 'SET' : 'MISSING'),
       from: process.env.EMAIL_FROM || 'NOT SET',
     })
 
-    const transporter = getTransporter()
+    const transporter = useCommunity ? getCommunityTransporter() : getTransporter()
     // Use custom from field if provided, otherwise use env vars or defaults
     const from = options.from || process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@smartstepsabapc.org'
     
-    console.log('[EMAIL] Attempting to send email to:', recipients.join(', '))
-    console.log('[EMAIL] From:', from)
+    console.log(`${logPrefix} Attempting to send email to:`, recipients.join(', '))
+    console.log(`${logPrefix} From:`, from)
+    if (options.replyTo) {
+      console.log(`${logPrefix} Reply-To:`, options.replyTo)
+    }
     
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from,
       to: recipients.join(', '),
       subject: options.subject,
       text: options.text,
       html: options.html,
       attachments: options.attachments,
-    })
+    }
+    
+    // Add replyTo if provided
+    if (options.replyTo) {
+      mailOptions.replyTo = options.replyTo
+    }
+    
+    const info = await transporter.sendMail(mailOptions)
 
-    console.log(`[EMAIL] Sent successfully. MessageId: ${info.messageId}, To: ${recipients.join(', ')}`)
+    console.log(`${logPrefix} Sent successfully. MessageId: ${info.messageId}, To: ${recipients.join(', ')}`)
 
     // Log audit event (non-blocking)
     if (auditMetadata?.userId) {
