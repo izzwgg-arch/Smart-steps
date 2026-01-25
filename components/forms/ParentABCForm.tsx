@@ -937,38 +937,67 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           {/* Print View - Modern Table Design */}
           <div className="print-only mt-6">
             {rows.length > 0 && rows.some((r) => r.date || r.antecedent || r.consequence) ? (
-              <div className="modern-table-container">
-                <table className="modern-table w-full">
-                  <thead>
-                    <tr>
-                      <th className="table-header">Date</th>
-                      <th className="table-header">Start Time</th>
-                      <th className="table-header">End Time</th>
-                      <th className="table-header">Antecedent</th>
-                      <th className="table-header">Consequence</th>
-                      <th className="table-header">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows
-                      .filter((r) => r.date || r.antecedent || r.consequence)
-                      .map((row, idx) => (
-                        <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
-                          <td className="table-cell">
-                            <div className="date-badge">
-                              {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
-                            </div>
-                          </td>
-                          <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
-                          <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
-                          <td className="table-cell">{row.antecedent || '—'}</td>
-                          <td className="table-cell">{row.consequence || '—'}</td>
-                          <td className="table-cell">{row.notes || '—'}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Duplicate header for page 2+ */}
+                <div className="print-header-duplicate print-only">
+                  <div className="modern-form-header mb-8">
+                    <div className="header-gradient">
+                      <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
+                      <div className="header-accent-line"></div>
+                    </div>
+                  </div>
+                  <div className="mb-8">
+                    <div className="info-card">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                          <div className="info-label">Client Name</div>
+                          <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
+                        </div>
+                        <div>
+                          <div className="info-label">Month</div>
+                          <div className="print-only info-value">{month ? new Date(2000, month - 1).toLocaleString('default', { month: 'long' }) : 'N/A'}</div>
+                        </div>
+                        <div>
+                          <div className="info-label">Behavior</div>
+                          <div className="print-only info-value">{behavior || 'N/A'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="modern-table-container">
+                  <table className="modern-table w-full">
+                    <thead>
+                      <tr>
+                        <th className="table-header">Date</th>
+                        <th className="table-header">Start Time</th>
+                        <th className="table-header">End Time</th>
+                        <th className="table-header">Antecedent</th>
+                        <th className="table-header">Consequence</th>
+                        <th className="table-header">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows
+                        .filter((r) => r.date || r.antecedent || r.consequence)
+                        .map((row, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
+                            <td className="table-cell">
+                              <div className="date-badge">
+                                {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
+                              </div>
+                            </td>
+                            <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
+                            <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
+                            <td className="table-cell">{row.antecedent || '—'}</td>
+                            <td className="table-cell">{row.consequence || '—'}</td>
+                            <td className="table-cell">{row.notes || '—'}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <div className="empty-state">
                 <p>No entries to display</p>
