@@ -78,8 +78,11 @@ export async function GET(
         email: employee.email || '',
         defaultHourlyRate: Number(employee.defaultHourlyRate),
       },
-      month,
-      year,
+      period: {
+        year,
+        month,
+        monthName: new Date(year, month - 1).toLocaleString('default', { month: 'long' }),
+      },
       runLines: runLines.map(line => ({
         runName: line.run.name,
         periodStart: line.run.periodStart,
