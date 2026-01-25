@@ -128,6 +128,40 @@ select,
   color: #1f2937 !important;
 }
 
+/* Override: Force buttons with inline white color style to be white (even in white containers) */
+button[style*="color: #ffffff"],
+button[style*="color:#ffffff"],
+button[style*="color: rgb(255, 255, 255)"],
+button[style*="color:rgb(255, 255, 255)"],
+.bg-white button[style*="color: #ffffff"],
+.bg-white button[style*="color:#ffffff"],
+.bg-white button[style*="color: rgb(255, 255, 255)"],
+.bg-white button[style*="color:rgb(255, 255, 255)"],
+[class*="bg-white"] button[style*="color: #ffffff"],
+[class*="bg-white"] button[style*="color:#ffffff"],
+[class*="bg-white"] button[style*="color: rgb(255, 255, 255)"],
+[class*="bg-white"] button[style*="color:rgb(255, 255, 255)"],
+button[style*="color: #ffffff"] *,
+button[style*="color:#ffffff"] *,
+button[style*="color: rgb(255, 255, 255)"] *,
+button[style*="color:rgb(255, 255, 255)"] *,
+.bg-white button[style*="color: #ffffff"] *,
+.bg-white button[style*="color:#ffffff"] *,
+.bg-white button[style*="color: rgb(255, 255, 255)"] *,
+.bg-white button[style*="color:rgb(255, 255, 255)"] *,
+[class*="bg-white"] button[style*="color: #ffffff"] *,
+[class*="bg-white"] button[style*="color:#ffffff"] *,
+[class*="bg-white"] button[style*="color: rgb(255, 255, 255)"] *,
+[class*="bg-white"] button[style*="color:rgb(255, 255, 255)"] *,
+button[style*="color: #ffffff"] span[style*="color: #ffffff"],
+button[style*="color:#ffffff"] span[style*="color:#ffffff"],
+.bg-white button[style*="color: #ffffff"] span[style*="color: #ffffff"],
+.bg-white button[style*="color:#ffffff"] span[style*="color:#ffffff"],
+[class*="bg-white"] button[style*="color: #ffffff"] span[style*="color: #ffffff"],
+[class*="bg-white"] button[style*="color:#ffffff"] span[style*="color:#ffffff"] {
+  color: #ffffff !important;
+}
+
 /* Force invoice numbers and edit buttons to be black (override white link rule) */
 .bg-white td[style*="color: #000000"],
 .bg-white a[style*="color: #000000"],
