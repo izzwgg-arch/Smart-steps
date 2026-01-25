@@ -75,7 +75,11 @@ div.bg-gray-50 p[style*="color"],
 .email-queue-subheader,
 p.email-queue-subheader,
 .bg-gray-50 .email-queue-subheader,
-div[class*="bg-gray"] .email-queue-subheader {
+div[class*="bg-gray"] .email-queue-subheader,
+.bg-gray-50 p.email-queue-subheader,
+div[class*="bg-gray"] p.email-queue-subheader,
+div.bg-gray-50 p.email-queue-subheader,
+p.email-queue-subheader:not(.bg-white p):not(.card p):not([class*="bg-white"] p) {
   color: #000000 !important;
 }
 
@@ -200,14 +204,20 @@ div.bg-white a[href*="/edit"] {
 .bg-gray-50 h2[style*="color"],
 .bg-gray-50 h3[style*="color"],
 .bg-gray-50 p[style*="color"],
+.bg-gray-50 .email-queue-subheader,
+.bg-gray-50 p.email-queue-subheader,
 div[class*="bg-gray"] h1[style*="color"],
 div[class*="bg-gray"] h2[style*="color"],
 div[class*="bg-gray"] h3[style*="color"],
 div[class*="bg-gray"] p[style*="color"],
+div[class*="bg-gray"] .email-queue-subheader,
+div[class*="bg-gray"] p.email-queue-subheader,
 div.bg-gray-50 h1[style*="color"],
 div.bg-gray-50 h2[style*="color"],
 div.bg-gray-50 h3[style*="color"],
-div.bg-gray-50 p[style*="color"] {
+div.bg-gray-50 p[style*="color"],
+div.bg-gray-50 .email-queue-subheader,
+div.bg-gray-50 p.email-queue-subheader {
   color: #000000 !important;
 }
 
@@ -307,4 +317,13 @@ div.bg-gray-50 p[style*="color"] {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+}
+
+/* FINAL OVERRIDE: Force email queue sub-headers to be black - highest priority */
+div.bg-gray-50 p.email-queue-subheader,
+div[class*="bg-gray"] p.email-queue-subheader,
+.bg-gray-50 p.email-queue-subheader,
+p.email-queue-subheader.email-queue-subheader,
+.email-queue-subheader.email-queue-subheader {
+  color: #000000 !important;
 }
