@@ -51,7 +51,8 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const mode = (searchParams.get('mode') || 'edit').toLowerCase()
-  const forceReadOnly = mode === 'view' || mode === 'print'
+  // Only force read-only for view mode, not print mode (print mode can still allow editing)
+  const forceReadOnly = mode === 'view'
   const [clientId, setClientId] = useState('')
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [behavior, setBehavior] = useState('')
@@ -80,18 +81,29 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
         const res = await fetch('/api/user/permissions')
         if (res.ok) {
           const data = await res.json()
+          // Check if user has FORMS_EDIT permission or is ADMIN/SUPER_ADMIN
           const hasEdit = data.permissions?.['FORMS_EDIT']?.canView === true ||
                          data.permissions?.['FORMS_EDIT']?.canCreate === true ||
                          data.permissions?.['FORMS_EDIT']?.canUpdate === true ||
-                         data.role === 'ADMIN' || data.role === 'SUPER_ADMIN'
+                         data.role === 'ADMIN' || 
+                         data.role === 'SUPER_ADMIN'
           setCanEdit(hasEdit)
+          // Log for debugging
+          if (!hasEdit) {
+            console.log('Permission check failed:', {
+              permissions: data.permissions,
+              role: data.role,
+              FORMS_EDIT: data.permissions?.['FORMS_EDIT']
+            })
+          }
         } else {
-          // If API fails, default to true for ADMIN/SUPER_ADMIN
+          // If API fails, default to true (allow editing)
+          console.warn('Permission API failed, defaulting to allow edit')
           setCanEdit(true)
         }
       } catch (error) {
         console.error('Error checking permissions:', error)
-        // Default to true on error for ADMIN users
+        // Default to true on error (allow editing)
         setCanEdit(true)
       }
     }
