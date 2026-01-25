@@ -553,6 +553,20 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             transition: all 0.3s ease !important;
           }
           
+          .info-card .grid {
+            display: grid !important;
+            grid-template-columns: repeat(3, 1fr) !important;
+            gap: 24pt !important;
+          }
+          
+          @media print {
+            .info-card .grid {
+              display: grid !important;
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 24pt !important;
+            }
+          }
+          
           .info-label {
             font-size: 10pt !important;
             font-weight: 600 !important;
