@@ -572,7 +572,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           .modern-table-container {
             background: #ffffff !important;
             border-radius: 12pt !important;
-            overflow: hidden !important;
+            overflow: visible !important;
             box-shadow: 0 2pt 8pt rgba(0, 0, 0, 0.08) !important;
             border: 1pt solid #e2e8f0 !important;
           }
@@ -581,6 +581,21 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             border-collapse: separate !important;
             border-spacing: 0 !important;
             width: 100% !important;
+          }
+          
+          .modern-table thead {
+            display: table-header-group !important;
+          }
+          
+          .modern-table tbody {
+            display: table-row-group !important;
+          }
+          
+          .modern-table tbody tr:first-child {
+            display: table-row !important;
+            visibility: visible !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           
           .table-header {
@@ -605,10 +620,14 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           
           .table-row-even {
             background: #ffffff !important;
+            display: table-row !important;
+            visibility: visible !important;
           }
           
           .table-row-odd {
             background: #f8fafc !important;
+            display: table-row !important;
+            visibility: visible !important;
           }
           
           .table-cell {
@@ -616,11 +635,18 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             border-bottom: 1pt solid #e2e8f0 !important;
             vertical-align: middle !important;
             font-size: 10pt !important;
+            display: table-cell !important;
+            visibility: visible !important;
           }
           
           .table-row-even .table-cell,
           .table-row-odd .table-cell {
             border-bottom: 1pt solid #e2e8f0 !important;
+          }
+          
+          .modern-table tbody tr:first-child td {
+            display: table-cell !important;
+            visibility: visible !important;
           }
           
           .date-badge {
