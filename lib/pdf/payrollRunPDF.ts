@@ -3,7 +3,7 @@
  * Uses Playwright to convert HTML to PDF
  */
 
-import { generatePayrollRunSummaryHTML } from './payrollRunSummaryReportHtml'
+import { generateRunSummaryReportHTML } from './payrollRunSummaryReportHtml'
 import { generatePDFFromHTML } from './playwrightPDF'
 
 export async function generatePayrollRunPDF(run: any): Promise<Buffer> {
@@ -25,7 +25,7 @@ export async function generatePayrollRunPDF(run: any): Promise<Buffer> {
     amountOwed: parseFloat(line.amountOwed?.toString() || '0'),
   }))
 
-  const html = generatePayrollRunSummaryHTML({
+  const html = generateRunSummaryReportHTML({
     run: {
       id: run.id,
       name: run.name || 'Payroll Run',
