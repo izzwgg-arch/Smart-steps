@@ -45,7 +45,7 @@ export default async function EditInvoicePage({
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#ccff33' }}>
+    <div className="min-h-screen bg-gray-50">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
         <InvoiceEditForm invoice={invoiceData} />
