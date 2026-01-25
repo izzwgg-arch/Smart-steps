@@ -210,6 +210,8 @@ export async function GET(request: NextRequest) {
         insurances: allInsurances,
       },
     })
+    
+    return result
   } catch (error) {
     console.error('Error fetching analytics:', error)
     return NextResponse.json(
