@@ -28,12 +28,16 @@ export async function generateEmployeeMonthlyReportPDF(data: {
   }
   breakdown: Array<{
     date: Date | string
+    sourceImport?: string | null
     hours: number
-    hourlyRate: number
-    grossPay: number
-    paid: number
-    owed: number
-    runName?: string
+    rate: number
+    gross: number
+  }>
+  payments: Array<{
+    date: Date | string
+    amount: number
+    method: string
+    reference?: string | null
   }>
 }): Promise<Buffer> {
   const html = generateEmployeeMonthlyReportHTML(data)
