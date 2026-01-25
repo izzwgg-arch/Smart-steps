@@ -651,10 +651,10 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
               // Always navigate back - direct method that always works
               window.location.href = '/forms'
             }}
-            className="flex items-center text-gray-600 hover:text-gray-900 cursor-pointer bg-transparent border-none p-0"
-            style={{ background: 'transparent', border: 'none', padding: 0 }}
+            className="flex items-center text-white hover:text-gray-200 cursor-pointer bg-transparent border-none p-0"
+            style={{ background: 'transparent', border: 'none', padding: 0, color: '#ffffff' }}
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="w-4 h-4 mr-2" style={{ color: '#ffffff' }} />
             Back to Forms
           </button>
         </div>
