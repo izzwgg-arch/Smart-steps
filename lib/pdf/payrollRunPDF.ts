@@ -36,7 +36,6 @@ export async function generatePayrollRunPDF(run: any): Promise<Buffer> {
     },
     summary,
     employees,
-    createdBy: run.createdBy?.username || 'System',
   })
 
   return await generatePDFFromHTML(html)
