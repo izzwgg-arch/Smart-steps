@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { calculateUnits } from '@/lib/utils'
 import { detectTimesheetOverlaps } from '@/lib/server/timesheetOverlapValidation'
 import { startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns'
-import { parseDateOnly } from '@/lib/dateUtils'
+import { parseDateOnly, isSaturdayInTimezone } from '@/lib/dateUtils'
 import { getTimesheetVisibilityScope } from '@/lib/permissions'
 import { startPerfLog } from '@/lib/api-performance'
 
