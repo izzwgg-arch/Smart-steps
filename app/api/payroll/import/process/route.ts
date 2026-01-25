@@ -266,7 +266,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update import record
-    await prisma.payrollImport.update({
+    await (prisma as any).payrollImport.update({
       where: { id: importRecord.id },
       data: {
         importedRows: importedCount,
