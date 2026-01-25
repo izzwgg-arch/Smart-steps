@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Use finalInsuranceId for BCBA, insuranceId for regular
-    const finalInsuranceIdForUse = isBCBA ? (insuranceId || finalInsuranceId) : insuranceId
+    const finalInsuranceIdForUse = isBCBA ? finalInsuranceId : insuranceId
 
     // For BCBA timesheets, use a placeholder provider or find first active provider
     let finalProviderId = providerId
