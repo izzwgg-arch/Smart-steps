@@ -43,6 +43,26 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff !important;
 }
 
+/* Override white header rule for elements with inline black color style - must come after white rule */
+h1[style*="color: #000000"],
+h1[style*="color:#000000"],
+h1[style*="color: rgb(0, 0, 0)"],
+h1[style*="color:rgb(0, 0, 0)"],
+h2[style*="color: #000000"],
+h2[style*="color:#000000"],
+h2[style*="color: rgb(0, 0, 0)"],
+h2[style*="color:rgb(0, 0, 0)"],
+h3[style*="color: #000000"],
+h3[style*="color:#000000"],
+h3[style*="color: rgb(0, 0, 0)"],
+h3[style*="color:rgb(0, 0, 0)"],
+p[style*="color: #000000"],
+p[style*="color:#000000"],
+p[style*="color: rgb(0, 0, 0)"],
+p[style*="color:rgb(0, 0, 0)"] {
+  color: #000000 !important;
+}
+
 /* Make paragraphs white on blue background (except in white containers) */
 p:not(.bg-white p):not(.card p):not([class*="bg-white"] p) {
   color: #ffffff !important;
@@ -164,18 +184,19 @@ div.bg-white a[href*="/edit"] {
 }
 
 /* Force email queue page headers to be black (override white header rule) */
-.bg-gray-50 h1[style*="color: #000000"],
-.bg-gray-50 h2[style*="color: #000000"],
-.bg-gray-50 h3[style*="color: #000000"],
-.bg-gray-50 p[style*="color: #000000"],
-div[class*="bg-gray"] h1[style*="color: #000000"],
-div[class*="bg-gray"] h2[style*="color: #000000"],
-div[class*="bg-gray"] h3[style*="color: #000000"],
-div[class*="bg-gray"] p[style*="color: #000000"],
-h1[style*="color: #000000"],
-h2[style*="color: #000000"],
-h3[style*="color: #000000"],
-p[style*="color: #000000"] {
+/* This must be very specific and come after the white header rule */
+.bg-gray-50 h1[style*="color"],
+.bg-gray-50 h2[style*="color"],
+.bg-gray-50 h3[style*="color"],
+.bg-gray-50 p[style*="color"],
+div[class*="bg-gray"] h1[style*="color"],
+div[class*="bg-gray"] h2[style*="color"],
+div[class*="bg-gray"] h3[style*="color"],
+div[class*="bg-gray"] p[style*="color"],
+div.bg-gray-50 h1[style*="color"],
+div.bg-gray-50 h2[style*="color"],
+div.bg-gray-50 h3[style*="color"],
+div.bg-gray-50 p[style*="color"] {
   color: #000000 !important;
 }
 
