@@ -889,6 +889,13 @@ export function BCBATimesheetForm({
       return
     }
 
+    // Get client's insurance from the selected client
+    const selectedClient = clients.find(c => c.id === clientId)
+    if (!selectedClient || !selectedClient.insuranceId) {
+      toast.error('Selected client must have insurance assigned')
+      return
+    }
+
     // Check if at least one entry has a service type
     const entriesWithServiceType = dayEntries.filter(e => e.use && e.serviceType)
     if (entriesWithServiceType.length === 0) {
