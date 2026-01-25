@@ -70,12 +70,56 @@ export async function GET(
       orderBy: { run: { periodStart: 'asc' } },
     })
 
+    // Calculate summary
+    const totalHours = runLines.reduce((sum, line) => sum + Number(line.totalHours), 0)
+    const avgRate = runLines.length > 0 
+      ? runLines.reduce((sum, line) => sum + Number(line.hourlyRateUsed), 0) / runLines.length
+      : Number(employee.defaultHourlyRate)
+    const totalGross = runLines.reduce((sum, line) => sum + Number(line.grossPay), 0)
+    const totalPaid = runLines.reduce((sum, line) => sum + Number(line.amountPaid), 0)
+    const totalOwed = runLines.reduce((sum, line) => sum + Number(line.amountOwed), 0)
+
+    // Transform runLines to breakdown
+    const breakdown = runLines.flatMap(line => {
+      const days = Math.ceil((new Date(line.run.periodEnd).getTime() - new Date(line.run.periodStart).getTime()) / (1000 * 60 * 60 * 24)) + 1
+      const dailyHours = Number(line.totalHours) / days
+      const dailyGross = Number(line.grossPay) / days
+      const dailyPaid = Number(line.amountPaid) / days
+      const dailyOwed = Number(line.amountOwed) / days
+      
+      const entries = []
+      const startDate = new Date(line.run.periodStart)
+      for (let i = 0; i < days; i++) {
+        const date = new Date(startDate)
+        date.setDate(startDate.getDate() + i)
+        entries.push({
+          date,
+          sourceImport: line.run.name || null,
+          hours: dailyHours,
+          rate: Number(line.hourlyRateUsed),
+          gross: dailyGross,
+        })
+      }
+      return entries
+    })
+
+    // Collect all payments
+    const payments = runLines.flatMap(line => 
+      line.payments.map(pay => ({
+        date: pay.paidAt,
+        amount: Number(pay.amount),
+        method: pay.method || 'Unknown',
+        reference: pay.reference || null,
+      }))
+    )
+
     // Generate PDF using the new report generator
     const pdfBuffer: Buffer = await generateEmployeeMonthlyReportPDF({
       employee: {
         id: employee.id,
         fullName: employee.fullName,
-        email: employee.email || '',
+        email: employee.email || null,
+        phone: employee.phone || null,
         defaultHourlyRate: Number(employee.defaultHourlyRate),
       },
       period: {
@@ -83,22 +127,15 @@ export async function GET(
         month,
         monthName: new Date(year, month - 1).toLocaleString('default', { month: 'long' }),
       },
-      runLines: runLines.map(line => ({
-        runName: line.run.name,
-        periodStart: line.run.periodStart,
-        periodEnd: line.run.periodEnd,
-        totalHours: Number(line.totalHours),
-        hourlyRate: Number(line.hourlyRateUsed),
-        grossPay: Number(line.grossPay),
-        amountPaid: Number(line.amountPaid),
-        amountOwed: Number(line.amountOwed),
-        payments: line.payments.map(pay => ({
-          amount: Number(pay.amount),
-          paidAt: pay.paidAt,
-          method: pay.method,
-          reference: pay.reference || '',
-        })),
-      })),
+      summary: {
+        totalHours,
+        hourlyRate: avgRate,
+        grossPay: totalGross,
+        totalPaid,
+        totalOwed,
+      },
+      breakdown,
+      payments,
     })
 
     const safeFileName = employee.displayName.replace(/[^a-zA-Z0-9]/g, '_')
