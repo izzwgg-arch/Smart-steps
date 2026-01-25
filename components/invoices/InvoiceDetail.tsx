@@ -142,7 +142,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
         </Link>
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-black">
+            <h1 className="text-3xl font-bold" style={{ color: '#000000' }}>
               Invoice {invoice.invoiceNumber}
             </h1>
             <p className="text-gray-600 mt-1">
@@ -163,10 +163,11 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                 {(['DRAFT', 'READY'].includes(invoice.status)) && (
                   <Link
                     href={`/invoices/${invoice.id}/edit`}
-                    className="px-4 py-2 bg-white border border-gray-300 text-black rounded-md hover:bg-gray-50 flex items-center space-x-2"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center space-x-2"
+                    style={{ color: '#000000' }}
                   >
-                    <Edit className="w-4 h-4 text-black" />
-                    <span>Edit</span>
+                    <Edit className="w-4 h-4" style={{ color: '#000000' }} />
+                    <span style={{ color: '#000000' }}>Edit</span>
                   </Link>
                 )}
                 <button 

@@ -94,7 +94,7 @@ export default function PublicRegularInvoicePage() {
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6 sm:p-8">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
-          <h1 className="text-3xl font-bold text-black">Invoice #{invoice.invoiceNumber}</h1>
+          <h1 className="text-3xl font-bold" style={{ color: '#000000' }}>Invoice #{invoice.invoiceNumber}</h1>
           <button
             onClick={handleDownloadPdf}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"

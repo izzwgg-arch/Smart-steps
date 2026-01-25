@@ -444,7 +444,7 @@ export function InvoicesList() {
           <tbody className="bg-white divide-y divide-gray-200">
             {invoices.map((invoice) => (
               <tr key={invoice.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-black">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ color: '#000000' }}>
                   {invoice.invoiceNumber}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -484,10 +484,11 @@ export function InvoicesList() {
                       <>
                         <Link
                           href={`/invoices/${invoice.id}/edit`}
-                          className="flex items-center px-4 py-2 text-sm text-black hover:bg-gray-100 min-h-[44px]"
+                          className="flex items-center px-4 py-2 text-sm hover:bg-gray-100 min-h-[44px]"
+                          style={{ color: '#000000' }}
                         >
-                          <Edit className="w-4 h-4 mr-2 text-black" />
-                          Edit
+                          <Edit className="w-4 h-4 mr-2" style={{ color: '#000000' }} />
+                          <span style={{ color: '#000000' }}>Edit</span>
                         </Link>
                         <button
                           onClick={() => handleDelete(invoice.id)}

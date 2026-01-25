@@ -414,10 +414,11 @@ export function CommunityInvoicesList() {
                               onClick={() => {
                                 window.location.href = `/community/invoices/${invoice.id}/edit`
                               }}
-                              className="flex items-center w-full px-4 py-2 text-sm text-black hover:bg-gray-100 min-h-[44px]"
+                              className="flex items-center w-full px-4 py-2 text-sm hover:bg-gray-100 min-h-[44px]"
+                              style={{ color: '#000000' }}
                             >
-                              <Edit className="w-4 h-4 mr-2 text-black" />
-                              Edit
+                              <Edit className="w-4 h-4 mr-2" style={{ color: '#000000' }} />
+                              <span style={{ color: '#000000' }}>Edit</span>
                             </button>
                           )}
                           <button

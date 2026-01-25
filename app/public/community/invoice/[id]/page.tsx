@@ -160,7 +160,7 @@ export default function PublicCommunityInvoicePage({ params }: { params: Promise
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Invoice Information</h2>
               <div className="text-gray-700 space-y-2">
-                <p><span className="font-medium text-black">Invoice ID:</span> <span className="text-black">{invoice.id}</span></p>
+                <p><span className="font-medium" style={{ color: '#000000' }}>Invoice ID:</span> <span style={{ color: '#000000' }}>{invoice.id}</span></p>
                 <p><span className="font-medium">Date:</span> {formatDate(invoice.createdAt)}</p>
                 {invoice.serviceDate && (
                   <p><span className="font-medium">Service Date:</span> {formatDate(invoice.serviceDate)}</p>
