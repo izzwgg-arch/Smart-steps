@@ -891,7 +891,8 @@ export function BCBATimesheetForm({
 
     // Get client's insurance from the selected client
     const selectedClient = clients.find(c => c.id === clientId)
-    if (!selectedClient || !selectedClient.insuranceId) {
+    const clientInsuranceId = (selectedClient as any)?.insuranceId || (selectedClient as any)?.insurance?.id
+    if (!selectedClient || !clientInsuranceId) {
       toast.error('Selected client must have insurance assigned')
       return
     }
