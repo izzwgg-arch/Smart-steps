@@ -290,19 +290,27 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
     }
 
     // Allow saving with ONE complete row (ignore extra incomplete rows)
-    const validRows = rows.filter(
-      (r) =>
-        r.date &&
-        r.startTime &&
-        validateTime(r.startTime) &&
-        r.endTime &&
-        validateTime(r.endTime) &&
-        r.startTime < r.endTime &&
-        r.antecedent &&
-        r.consequence
-    )
+    // Start and end times are optional, but if provided, both must be valid and end > start
+    const validRows = rows.filter((r) => {
+      if (!r.date || !r.antecedent || !r.consequence) {
+        return false
+      }
+      // If start time is provided, validate it
+      if (r.startTime && !validateTime(r.startTime)) {
+        return false
+      }
+      // If end time is provided, validate it
+      if (r.endTime && !validateTime(r.endTime)) {
+        return false
+      }
+      // If both times are provided, validate that end > start
+      if (r.startTime && r.endTime && r.startTime >= r.endTime) {
+        return false
+      }
+      return true
+    })
     if (validRows.length === 0) {
-      toast.error('Please add at least one complete row (Date, Times, Antecedent, Consequence)')
+      toast.error('Please add at least one complete row (Date, Antecedent, Consequence)')
       return
     }
 
