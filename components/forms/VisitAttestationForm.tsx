@@ -356,6 +356,160 @@ export function VisitAttestationForm({ clients, providers }: VisitAttestationFor
             object-fit: contain !important;
             display: block !important;
           }
+          
+          /* Modern Form Styling */
+          .modern-form-header {
+            margin-bottom: 24pt !important;
+          }
+          
+          .header-gradient {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%) !important;
+            padding: 16pt 24pt !important;
+            border-radius: 10pt !important;
+            box-shadow: 0 3pt 8pt rgba(0, 102, 204, 0.3) !important;
+            position: relative !important;
+            overflow: hidden !important;
+          }
+          
+          .header-gradient::before {
+            content: '' !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            height: 3pt !important;
+            background: linear-gradient(90deg, #00aaff 0%, #0066cc 50%, #004499 100%) !important;
+          }
+          
+          .header-gradient h1 {
+            color: #ffffff !important;
+            font-size: 22pt !important;
+            font-weight: 700 !important;
+            margin: 0 !important;
+            text-align: center !important;
+            letter-spacing: 0.5pt !important;
+            text-shadow: 0 2pt 4pt rgba(0, 0, 0, 0.2) !important;
+          }
+          
+          .header-accent-line {
+            height: 2pt !important;
+            background: rgba(255, 255, 255, 0.3) !important;
+            margin-top: 8pt !important;
+            border-radius: 2pt !important;
+          }
+          
+          .info-card {
+            background: #f8fafc !important;
+            border: 2pt solid #e2e8f0 !important;
+            border-radius: 10pt !important;
+            padding: 16pt !important;
+            transition: all 0.3s ease !important;
+          }
+          
+          .info-label {
+            font-size: 10pt !important;
+            font-weight: 600 !important;
+            color: #475569 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5pt !important;
+            margin-bottom: 8pt !important;
+          }
+          
+          .info-value {
+            font-size: 14pt !important;
+            font-weight: 600 !important;
+            color: #1e293b !important;
+            padding-top: 4pt !important;
+          }
+          
+          .modern-table-container {
+            background: #ffffff !important;
+            border-radius: 12pt !important;
+            overflow: hidden !important;
+            box-shadow: 0 2pt 8pt rgba(0, 0, 0, 0.08) !important;
+            border: 1pt solid #e2e8f0 !important;
+          }
+          
+          .modern-table {
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            width: 100% !important;
+          }
+          
+          .table-header {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%) !important;
+            color: #ffffff !important;
+            font-size: 11pt !important;
+            font-weight: 700 !important;
+            padding: 12pt 14pt !important;
+            text-align: left !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5pt !important;
+            border: none !important;
+          }
+          
+          .table-header:first-child {
+            border-top-left-radius: 12pt !important;
+          }
+          
+          .table-header:last-child {
+            border-top-right-radius: 12pt !important;
+          }
+          
+          .table-row-even {
+            background: #ffffff !important;
+          }
+          
+          .table-row-odd {
+            background: #f8fafc !important;
+          }
+          
+          .table-cell {
+            padding: 12pt 14pt !important;
+            border-bottom: 1pt solid #e2e8f0 !important;
+            vertical-align: middle !important;
+            font-size: 10pt !important;
+          }
+          
+          .table-row-even .table-cell,
+          .table-row-odd .table-cell {
+            border-bottom: 1pt solid #e2e8f0 !important;
+          }
+          
+          .date-badge {
+            display: inline-block !important;
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%) !important;
+            color: #0369a1 !important;
+            padding: 6pt 12pt !important;
+            border-radius: 8pt !important;
+            font-weight: 600 !important;
+            font-size: 10pt !important;
+            border: 1pt solid #7dd3fc !important;
+            box-shadow: 0 2pt 4pt rgba(3, 105, 161, 0.1) !important;
+          }
+          
+          .signature-container {
+            display: inline-block !important;
+            padding: 8pt !important;
+            background: #ffffff !important;
+            border: 2pt solid #e2e8f0 !important;
+            border-radius: 8pt !important;
+            box-shadow: 0 2pt 4pt rgba(0, 0, 0, 0.05) !important;
+          }
+          
+          .signature-container .signature-img {
+            max-width: 180pt !important;
+            max-height: 50pt !important;
+            object-fit: contain !important;
+            display: block !important;
+          }
+          
+          .empty-state {
+            text-align: center !important;
+            padding: 40pt !important;
+            color: #94a3b8 !important;
+            font-size: 12pt !important;
+          }
         }
       `}</style>
       <div className="px-4 py-6 sm:px-0">
@@ -374,66 +528,76 @@ export function VisitAttestationForm({ clients, providers }: VisitAttestationFor
           </button>
         </div>
 
-        <div className="bg-white shadow rounded-lg p-6 print-form">
-          <h1 className="text-2xl font-bold mb-6 text-center">Visit Attestation Form</h1>
+        <div className="bg-white shadow rounded-lg p-6 print-form" style={{ boxShadow: 'none' }}>
+          {/* Modern Header with Gradient */}
+          <div className="modern-form-header mb-8">
+            <div className="header-gradient">
+              <h1 className="text-3xl font-bold mb-2 text-white">VISIT ATTESTATION FORM</h1>
+              <div className="header-accent-line"></div>
+            </div>
+          </div>
 
           {/* Header Section */}
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <span className="no-print">Name (Client):</span>
-                <span className="print-only font-semibold">Name (Client): {selectedClient ? selectedClient.name : ''}</span>
-              </label>
-              <select
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                disabled={!canEdit || forceReadOnly}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100 no-print"
-              >
-                <option value="">Select Client</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <span className="no-print">Month:</span>
-                <span className="print-only font-semibold">Month: {months[month - 1]}</span>
-              </label>
-              <select
-                value={month}
-                onChange={(e) => setMonth(parseInt(e.target.value))}
-                disabled={!canEdit || forceReadOnly}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100 no-print"
-              >
-                {months.map((m, idx) => (
-                  <option key={idx + 1} value={idx + 1}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <span className="no-print">Provider:</span>
-                <span className="print-only font-semibold">Provider: {selectedProvider ? selectedProvider.name : ''}</span>
-              </label>
-              <select
-                value={providerId}
-                onChange={(e) => setProviderId(e.target.value)}
-                disabled={!canEdit || forceReadOnly}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100 no-print"
-              >
-                <option value="">Select Provider</option>
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
+          <div className="mb-8">
+            <div className="info-card">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <div className="info-label">Name (Client)</div>
+                  <div className="no-print">
+                    <select
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      disabled={!canEdit || forceReadOnly}
+                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                    >
+                      <option value="">Select Client</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
+                </div>
+                <div>
+                  <div className="info-label">Month</div>
+                  <div className="no-print">
+                    <select
+                      value={month}
+                      onChange={(e) => setMonth(parseInt(e.target.value))}
+                      disabled={!canEdit || forceReadOnly}
+                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                    >
+                      {months.map((m, idx) => (
+                        <option key={idx + 1} value={idx + 1}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="print-only info-value">{months[month - 1]}</div>
+                </div>
+                <div>
+                  <div className="info-label">Provider</div>
+                  <div className="no-print">
+                    <select
+                      value={providerId}
+                      onChange={(e) => setProviderId(e.target.value)}
+                      disabled={!canEdit || forceReadOnly}
+                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                    >
+                      <option value="">Select Provider</option>
+                      {providers.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="print-only info-value">{selectedProvider ? selectedProvider.name : 'N/A'}</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -484,35 +648,41 @@ export function VisitAttestationForm({ clients, providers }: VisitAttestationFor
             </table>
           </div>
 
-          {/* Print View - Single Table with all rows */}
+          {/* Print View - Modern Table Design */}
           <div className="print-only mt-6">
             {rows.filter((r) => r.date && r.signature).length > 0 ? (
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-2 text-left font-semibold border-b border-black">Date</th>
-                    <th className="px-4 py-2 text-left font-semibold border-b border-black">Parent Signature</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows
-                    .filter((r) => r.date && r.signature)
-                    .map((row, idx) => (
-                      <tr key={idx}>
-                        <td className="px-4 py-2">
-                          {row.date ? format(row.date, 'MM/dd/yyyy') : ''}
-                        </td>
-                        <td className="px-4 py-2">
-                          {row.signature && (
-                            <img src={row.signature} alt="Signature" className="signature-img" />
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+              <div className="modern-table-container">
+                <table className="modern-table w-full">
+                  <thead>
+                    <tr>
+                      <th className="table-header">Date</th>
+                      <th className="table-header">Parent Signature</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows
+                      .filter((r) => r.date && r.signature)
+                      .map((row, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
+                          <td className="table-cell">
+                            <div className="date-badge">
+                              {row.date ? format(row.date, 'MM/dd/yyyy') : ''}
+                            </div>
+                          </td>
+                          <td className="table-cell">
+                            {row.signature && (
+                              <div className="signature-container">
+                                <img src={row.signature} alt="Signature" className="signature-img" />
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="empty-state">
                 <p>No entries to display</p>
               </div>
             )}
