@@ -22,7 +22,7 @@ export async function GET(
     }
 
     const permissions = await getUserPermissions(session.user.id)
-    const canGenerate = hasPayrollAccess(permissions, 'payroll.employee_reports') || 
+    const canGenerate = 
                         session.user.role === 'ADMIN' || 
                         session.user.role === 'SUPER_ADMIN'
 
