@@ -321,8 +321,8 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
         header: { behavior },
         rows: validRows.map((r) => ({
           date: r.date!.toISOString(),
-          startTime: r.startTime,
-          endTime: r.endTime,
+          startTime: r.startTime || '',
+          endTime: r.endTime || '',
           antecedent: r.antecedent,
           consequence: r.consequence,
           notes: r.notes || undefined,
