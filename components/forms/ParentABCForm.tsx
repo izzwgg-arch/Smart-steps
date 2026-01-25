@@ -727,106 +727,108 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             </div>
           </div>
 
-          {/* Regular View - Single Table with all rows */}
+          {/* Regular View - Modern Table Design */}
           <div className="no-print mt-6">
-            <table className="w-full border border-gray-300">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Date</th>
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Start Time</th>
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">End Time</th>
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Antecedent</th>
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Consequence</th>
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Notes</th>
-                  {canEdit && <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, idx) => (
-                  <tr key={row.id} className="border-b border-gray-200">
-                    <td className="px-4 py-2">
-                      <DatePicker
-                        selected={row.date}
-                        onChange={(date) => handleRowChange(row.id, 'date', date)}
-                        disabled={!canEdit}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                        dateFormat="MM/dd/yyyy"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="time"
-                        value={row.startTime}
-                        onChange={(e) => handleRowChange(row.id, 'startTime', e.target.value)}
-                        disabled={!canEdit}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="time"
-                        value={row.endTime}
-                        onChange={(e) => handleRowChange(row.id, 'endTime', e.target.value)}
-                        disabled={!canEdit}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={row.antecedent}
-                        onChange={(e) => handleRowChange(row.id, 'antecedent', e.target.value)}
-                        disabled={!canEdit}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                      >
-                        <option value="">Select...</option>
-                        {ANTECEDENT_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={row.consequence}
-                        onChange={(e) => handleRowChange(row.id, 'consequence', e.target.value)}
-                        disabled={!canEdit}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                      >
-                        <option value="">Select...</option>
-                        {CONSEQUENCE_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        value={row.notes}
-                        onChange={(e) => handleRowChange(row.id, 'notes', e.target.value)}
-                        disabled={!canEdit}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                        placeholder="Optional"
-                      />
-                    </td>
-                    {canEdit && (
-                      <td className="px-4 py-2">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveRow(row.id)}
-                          className="text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Remove
-                        </button>
-                      </td>
-                    )}
+            <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gradient-to-r from-blue-600 to-blue-800">
+                    <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">Date</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">Start Time</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">End Time</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">Antecedent</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">Consequence</th>
+                    <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">Notes</th>
+                    {canEdit && <th className="px-4 py-3 text-left font-semibold text-white text-sm uppercase tracking-wider">Actions</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {rows.map((row, idx) => (
+                    <tr key={row.id} className={idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <DatePicker
+                          selected={row.date}
+                          onChange={(date) => handleRowChange(row.id, 'date', date)}
+                          disabled={!canEdit}
+                          className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                          dateFormat="MM/dd/yyyy"
+                        />
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <input
+                          type="time"
+                          value={row.startTime}
+                          onChange={(e) => handleRowChange(row.id, 'startTime', e.target.value)}
+                          disabled={!canEdit}
+                          className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                        />
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <input
+                          type="time"
+                          value={row.endTime}
+                          onChange={(e) => handleRowChange(row.id, 'endTime', e.target.value)}
+                          disabled={!canEdit}
+                          className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                        />
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <select
+                          value={row.antecedent}
+                          onChange={(e) => handleRowChange(row.id, 'antecedent', e.target.value)}
+                          disabled={!canEdit}
+                          className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                        >
+                          <option value="">Select...</option>
+                          {ANTECEDENT_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <select
+                          value={row.consequence}
+                          onChange={(e) => handleRowChange(row.id, 'consequence', e.target.value)}
+                          disabled={!canEdit}
+                          className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                        >
+                          <option value="">Select...</option>
+                          {CONSEQUENCE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={row.notes}
+                          onChange={(e) => handleRowChange(row.id, 'notes', e.target.value)}
+                          disabled={!canEdit}
+                          className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                          placeholder="Optional"
+                        />
+                      </td>
+                      {canEdit && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRow(row.id)}
+                            className="text-red-600 hover:text-red-800 text-sm flex items-center gap-1 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Remove
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Print View - Modern Table Design */}
