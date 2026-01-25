@@ -236,13 +236,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Both regular and BCBA timesheets require insurance
-    if (!insuranceId) {
+    // For BCBA timesheets, insuranceId should already be set from client above
+    // For regular timesheets, check if insuranceId is provided
+    if (!isBCBA && !insuranceId) {
       return NextResponse.json(
         { error: 'Insurance is required' },
         { status: 400 }
       )
     }
+    
+    // Use finalInsuranceId for BCBA, insuranceId for regular
+    const finalInsuranceIdForUse = isBCBA ? (insuranceId || finalInsuranceId) : insuranceId
 
     // For BCBA timesheets, use a placeholder provider or find first active provider
     let finalProviderId = providerId
@@ -264,7 +268,7 @@ export async function POST(request: NextRequest) {
     const [provider, client, insurance] = await Promise.all([
       finalProviderId ? prisma.provider.findUnique({ where: { id: finalProviderId } }) : Promise.resolve(null),
       prisma.client.findUnique({ where: { id: clientId } }),
-      insuranceId ? prisma.insurance.findUnique({ where: { id: insuranceId } }) : Promise.resolve(null),
+      finalInsuranceIdForUse ? prisma.insurance.findUnique({ where: { id: finalInsuranceIdForUse } }) : Promise.resolve(null),
     ])
 
     if (!client?.active) {
@@ -283,7 +287,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Only check insurance if it's provided (regular timesheets)
-    if (insuranceId && !insurance?.active) {
+    if (finalInsuranceIdForUse && !insurance?.active) {
       return NextResponse.json(
         { error: 'Insurance must be active' },
         { status: 400 }
@@ -402,7 +406,7 @@ export async function POST(request: NextRequest) {
           providerId: finalProviderId, // Use placeholder provider for BCBA timesheets
           clientId,
           bcbaId,
-          insuranceId: insuranceId, // Required for both regular and BCBA timesheets
+          insuranceId: finalInsuranceIdForUse, // Required for both regular and BCBA timesheets
           isBCBA: isBCBA === true,
           serviceType: serviceType || null,
           sessionData: sessionData || null,

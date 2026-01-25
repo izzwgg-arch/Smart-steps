@@ -983,7 +983,7 @@ export function BCBATimesheetForm({
           providerId: '', // BCBA timesheets don't use provider
           clientId,
           bcbaId,
-          insuranceId: null, // Insurance is derived from client.insuranceId
+          insuranceId: clientInsuranceId, // Use client's insurance
           isBCBA: true,
           serviceType: serviceType || null, // Keep for backward compatibility
           sessionData: sessionData || null, // Keep for backward compatibility
