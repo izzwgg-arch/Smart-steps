@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     // Save template if name provided
     let templateId: string | null = null
     if (templateName) {
-      const template = await prisma.payrollImportTemplate.create({
+      const template = await (prisma as any).payrollImportTemplate.create({
         data: {
           name: templateName,
           employeeColumn,
