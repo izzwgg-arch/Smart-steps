@@ -75,7 +75,7 @@ export function InvoiceEditForm({ invoice }: InvoiceEditFormProps) {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Invoice
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900">
+        <h1 className="text-3xl font-bold text-black">
           Edit Invoice {invoice.invoiceNumber}
         </h1>
       </div>

@@ -142,7 +142,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
         </Link>
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-black">
               Invoice {invoice.invoiceNumber}
             </h1>
             <p className="text-gray-600 mt-1">
@@ -163,9 +163,9 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                 {(['DRAFT', 'READY'].includes(invoice.status)) && (
                   <Link
                     href={`/invoices/${invoice.id}/edit`}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center space-x-2"
+                    className="px-4 py-2 bg-white border border-gray-300 text-black rounded-md hover:bg-gray-50 flex items-center space-x-2"
                   >
-                    <Edit className="w-4 h-4" />
+                    <Edit className="w-4 h-4 text-black" />
                     <span>Edit</span>
                   </Link>
                 )}
