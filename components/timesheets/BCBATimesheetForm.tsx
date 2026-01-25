@@ -18,6 +18,7 @@ import {
   getDateObjectInTimezone,
   formatDateInTimezone,
   parseDateOnly,
+  isSaturdayInTimezone,
 } from '@/lib/dateUtils'
 import {
   parseTimeToMinutes,
