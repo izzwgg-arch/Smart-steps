@@ -211,6 +211,8 @@ export async function POST(request: NextRequest) {
     } = data
 
     // Validation - BCBA timesheets don't require provider or insurance
+    // For BCBA timesheets, if insuranceId is not provided, get it from the client
+    let finalInsuranceId = insuranceId
     if (isBCBA) {
       // For BCBA timesheets, providerId is optional (use empty string as placeholder)
       if (!clientId || !bcbaId || !startDate || !endDate) {
@@ -220,11 +222,19 @@ export async function POST(request: NextRequest) {
         )
       }
       // BCBA timesheets require Insurance (with BCBA rates)
-      if (!insuranceId) {
-        return NextResponse.json(
-          { error: 'Insurance is required for BCBA timesheets' },
-          { status: 400 }
-        )
+      // If insuranceId is not provided, get it from the client
+      if (!finalInsuranceId) {
+        const client = await prisma.client.findUnique({
+          where: { id: clientId },
+          include: { insurance: true },
+        })
+        if (!client?.insuranceId) {
+          return NextResponse.json(
+            { error: 'Client must have insurance assigned for BCBA timesheets' },
+            { status: 400 }
+          )
+        }
+        finalInsuranceId = client.insuranceId
       }
     } else {
       // Regular timesheets require provider
