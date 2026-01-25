@@ -163,6 +163,22 @@ div.bg-white a[href*="/edit"] {
   color: #1f2937 !important;
 }
 
+/* Force email queue page headers to be black (override white header rule) */
+.bg-gray-50 h1[style*="color: #000000"],
+.bg-gray-50 h2[style*="color: #000000"],
+.bg-gray-50 h3[style*="color: #000000"],
+.bg-gray-50 p[style*="color: #000000"],
+div[class*="bg-gray"] h1[style*="color: #000000"],
+div[class*="bg-gray"] h2[style*="color: #000000"],
+div[class*="bg-gray"] h3[style*="color: #000000"],
+div[class*="bg-gray"] p[style*="color: #000000"],
+h1[style*="color: #000000"],
+h2[style*="color: #000000"],
+h3[style*="color: #000000"],
+p[style*="color: #000000"] {
+  color: #000000 !important;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
