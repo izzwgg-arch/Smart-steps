@@ -566,43 +566,47 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
           </div>
 
           {/* Header Section */}
-          <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="mb-8">
             <div className="info-card">
-              <div className="info-label">Client Name</div>
-              <div className="no-print">
-                <select
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  disabled={!canEdit || forceReadOnly}
-                  className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                >
-                  <option value="">Select Client</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <div className="info-label">Client Name</div>
+                  <div className="no-print">
+                    <select
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      disabled={!canEdit || forceReadOnly}
+                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                    >
+                      <option value="">Select Client</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
+                </div>
+                <div>
+                  <div className="info-label">Month</div>
+                  <div className="no-print">
+                    <select
+                      value={month}
+                      onChange={(e) => setMonth(parseInt(e.target.value))}
+                      disabled={!canEdit || forceReadOnly}
+                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                    >
+                      {months.map((m, idx) => (
+                        <option key={idx + 1} value={idx + 1}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="print-only info-value">{months[month - 1]}</div>
+                </div>
               </div>
-              <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
-            </div>
-            <div className="info-card">
-              <div className="info-label">Month</div>
-              <div className="no-print">
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(parseInt(e.target.value))}
-                  disabled={!canEdit || forceReadOnly}
-                  className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                >
-                  {months.map((m, idx) => (
-                    <option key={idx + 1} value={idx + 1}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="print-only info-value">{months[month - 1]}</div>
             </div>
           </div>
 
