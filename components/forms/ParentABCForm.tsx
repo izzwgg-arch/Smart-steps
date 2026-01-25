@@ -80,7 +80,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
         const res = await fetch('/api/user/permissions')
         if (res.ok) {
           const data = await res.json()
-          const hasEdit = data.permissions?.some((p: any) => p.name === 'FORMS_EDIT') ||
+          const hasEdit = data.permissions?.['FORMS_EDIT']?.canView === true ||
+                         data.permissions?.['FORMS_EDIT']?.canCreate === true ||
+                         data.permissions?.['FORMS_EDIT']?.canUpdate === true ||
                          data.role === 'ADMIN' || data.role === 'SUPER_ADMIN'
           setCanEdit(hasEdit)
         } else {
