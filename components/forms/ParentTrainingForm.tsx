@@ -737,7 +737,7 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
               style={{ color: '#ffffff' }}
             >
               <Printer className="w-4 h-4" style={{ color: '#ffffff' }} />
-              Print
+              <span style={{ color: '#ffffff' }}>Print</span>
             </button>
           </div>
         </div>

@@ -169,8 +169,9 @@ export function SignatureCapture({ value, onChange, disabled = false }: Signatur
               setShowUpload(false)
             }}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+            style={{ color: '#ffffff' }}
           >
-            <span>Draw</span>
+            <span style={{ color: '#ffffff' }}>Draw</span>
           </button>
           <button
             type="button"
@@ -180,9 +181,10 @@ export function SignatureCapture({ value, onChange, disabled = false }: Signatur
               fileInputRef.current?.click()
             }}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
+            style={{ color: '#ffffff' }}
           >
-            <Upload className="w-4 h-4" />
-            <span>Upload</span>
+            <Upload className="w-4 h-4" style={{ color: '#ffffff' }} />
+            <span style={{ color: '#ffffff' }}>Upload</span>
           </button>
           <input
             ref={fileInputRef}
