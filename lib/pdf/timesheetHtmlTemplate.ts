@@ -93,11 +93,11 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   
   // Client signature as data URL if available
   const clientSigImg = timesheet.client.signature
-    ? `<img src="${timesheet.client.signature}" alt="Client Signature" style="max-height: 80px; max-width: 100%; object-fit: contain; border: 1px solid #ccc;" />`
+    ? `<div class="signature-container"><img src="${timesheet.client.signature}" alt="Client Signature" /></div>`
     : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'
   
   const providerSigImg = timesheet.provider.signature
-    ? `<img src="${timesheet.provider.signature}" alt="Provider Signature" style="max-height: 80px; max-width: 100%; object-fit: contain; border: 1px solid #ccc;" />`
+    ? `<div class="signature-container"><img src="${timesheet.provider.signature}" alt="Provider Signature" /></div>`
     : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'
   
   return `<!DOCTYPE html>
@@ -121,28 +121,54 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       line-height: 1.4;
     }
     
-    .header {
+    /* Modern Header with Gradient */
+    .modern-header {
+      margin-bottom: 24px;
+    }
+    
+    .header-gradient {
+      background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+      padding: 16px 24px;
+      border-radius: 10px;
+      box-shadow: 0 3px 8px rgba(0, 102, 204, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .header-gradient::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00aaff 0%, #0066cc 50%, #004499 100%);
+    }
+    
+    .header-gradient h1 {
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0;
       text-align: center;
-      margin-bottom: 16px;
+      letter-spacing: 0.5px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
     
-    .header h1 {
-      font-size: 28px;
-      font-weight: bold;
-      margin-bottom: 8px;
+    .header-accent-line {
+      height: 2px;
+      background: rgba(255, 255, 255, 0.3);
+      margin-top: 8px;
+      border-radius: 2px;
     }
     
-    .subtitle {
-      font-size: 20px;
-      font-weight: bold;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 24px;
-    }
-    
-    .info-grid {
-      display: block;
-      margin-bottom: 24px;
+    /* Modern Info Cards */
+    .info-card {
+      background: #f8fafc;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
     }
     
     .info-item {
@@ -150,39 +176,101 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     }
     
     .info-label {
-      font-weight: bold;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+    
+    .info-value {
+      font-weight: 600;
+      color: #1e293b;
+      font-size: 14px;
+      margin-top: 4px;
     }
     
     .service-type {
       color: rgb(13, 148, 136);
+      font-weight: 600;
     }
     
     .period {
-      margin-bottom: 16px;
+      background: #f8fafc;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
     }
     
     .period-label {
-      font-weight: bold;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+    
+    /* Modern Table Design */
+    .modern-table-container {
+      background: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e2e8f0;
+      margin-bottom: 24px;
     }
     
     table {
       width: 100%;
-      border-collapse: collapse;
-      border: 1px solid #000;
-      margin-bottom: 24px;
+      border-collapse: separate;
+      border-spacing: 0;
     }
     
     th {
-      background-color: #f0f0f0;
-      border: 1px solid #000;
-      padding: 8px;
+      background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 12px 14px;
       text-align: left;
-      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: none;
+    }
+    
+    th:first-child {
+      border-top-left-radius: 12px;
+    }
+    
+    th:last-child {
+      border-top-right-radius: 12px;
     }
     
     td {
-      border: 1px solid #000;
-      padding: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 14px;
+      font-size: 10px;
+    }
+    
+    tbody tr:nth-child(even) {
+      background: #ffffff;
+    }
+    
+    tbody tr:nth-child(odd) {
+      background: #f8fafc;
+    }
+    
+    .date-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+      color: #0369a1;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 10px;
+      border: 1px solid #7dd3fc;
+      box-shadow: 0 2px 4px rgba(3, 105, 161, 0.1);
     }
     
     .totals {
@@ -192,6 +280,10 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       margin-bottom: 24px;
       font-weight: bold;
       font-size: 14px;
+      background: #f8fafc;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px;
     }
     
     .signatures {
@@ -202,14 +294,38 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     }
     
     .signature-label {
-      font-weight: bold;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
       margin-bottom: 8px;
+    }
+    
+    .signature-container {
+      display: inline-block;
+      padding: 8px;
+      background: #ffffff;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+    
+    .signature-container img {
+      max-height: 50px;
+      max-width: 180px;
+      object-fit: contain;
+      display: block;
     }
     
     .legend {
       font-size: 12px;
       color: #333;
       margin-top: 24px;
+      background: #f8fafc;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 16px;
     }
     
     .legend-item {
@@ -218,60 +334,75 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>${isBCBA ? 'BCBA Timesheet' : 'Timesheet'} Smart Steps ABA</h1>
+  <div class="modern-header">
+    <div class="header-gradient">
+      <h1>${isBCBA ? 'BCBA TIMESHEET' : 'TIMESHEET'} SMART STEPS ABA</h1>
+      <div class="header-accent-line"></div>
+    </div>
   </div>
   
-  <div class="info-grid">
+  <div class="info-card">
     ${isBCBA ? `
     <div>
       <div class="info-item">
-        <span class="info-label">BCBA:</span> ${timesheet.bcba.name}
+        <span class="info-label">BCBA</span>
+        <div class="info-value">${timesheet.bcba.name}</div>
       </div>
       <div class="info-item">
-        <span class="info-label">Client:</span> ${timesheet.client.name || ''}
+        <span class="info-label">Client</span>
+        <div class="info-value">${timesheet.client.name || 'N/A'}</div>
       </div>
       ${timesheet.client.address ? `
       <div class="info-item">
-        <span class="info-label">Address:</span> ${timesheet.client.address}
+        <span class="info-label">Address</span>
+        <div class="info-value">${timesheet.client.address}</div>
       </div>
       ` : ''}
       <div class="info-item">
-        <span class="info-label">Phone:</span> ${timesheet.client.phone || ''}
+        <span class="info-label">Phone</span>
+        <div class="info-value">${timesheet.client.phone || 'N/A'}</div>
       </div>
       ${timesheet.sessionData ? `
       <div class="info-item">
-        <span class="info-label">Session Data / Analysis:</span> ${timesheet.sessionData}
+        <span class="info-label">Session Data / Analysis</span>
+        <div class="info-value">${timesheet.sessionData}</div>
       </div>
       ` : ''}
       ${timesheet.client.dlb ? `
       <div class="info-item">
-        <span class="info-label">DLB:</span> ${timesheet.client.dlb}
+        <span class="info-label">DLB</span>
+        <div class="info-value">${timesheet.client.dlb}</div>
       </div>
       ` : ''}
     </div>
     ` : `
     <div>
       <div class="info-item">
-        <span class="info-label">Provider:</span> ${timesheet.provider.name}
+        <span class="info-label">Provider</span>
+        <div class="info-value">${timesheet.provider.name}</div>
       </div>
       <div class="info-item">
-        <span class="info-label">BCBA:</span> ${timesheet.bcba.name}
+        <span class="info-label">BCBA</span>
+        <div class="info-value">${timesheet.bcba.name}</div>
       </div>
       <div class="info-item">
-        <span class="info-label">Child:</span> ${timesheet.client.name || ''}
+        <span class="info-label">Child</span>
+        <div class="info-value">${timesheet.client.name || 'N/A'}</div>
       </div>
       <div class="info-item">
-        <span class="info-label">Phone:</span> ${timesheet.client.phone || ''}
+        <span class="info-label">Phone</span>
+        <div class="info-value">${timesheet.client.phone || 'N/A'}</div>
       </div>
     </div>
     `}
   </div>
   
   <div class="period">
-    <span class="period-label">Period:</span> ${format(startDate, 'EEE M/d/yyyy').toLowerCase()} - ${format(endDate, 'EEE M/d/yyyy').toLowerCase()}
+    <span class="period-label">Period</span>
+    <div class="info-value">${format(startDate, 'EEE M/d/yyyy').toLowerCase()} - ${format(endDate, 'EEE M/d/yyyy').toLowerCase()}</div>
   </div>
   
+  <div class="modern-table-container">
   <table>
     <thead>
       <tr>
@@ -311,7 +442,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
         const serviceTypeInitials = isBCBA ? getServiceTypeInitials(entryServiceType) : ''
         return `
         <tr>
-          <td>${format(entryDate, 'EEE M/d/yyyy').toLowerCase()}</td>
+          <td><span class="date-badge">${format(entryDate, 'EEE M/d/yyyy').toLowerCase()}</span></td>
           ${isBCBA ? `<td>${serviceTypeInitials}</td>` : ''}
           <td>${formatTime(entry.startTime)}</td>
           <td>${formatTime(entry.endTime)}</td>
@@ -325,6 +456,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       }).join('')}
     </tbody>
   </table>
+  </div>
   
   <div class="totals">
     ${!isBCBA ? `
@@ -337,9 +469,9 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   <div class="signatures">
     ${isBCBA ? `
     <div>
-      <div class="signature-label">BCBA Signature:</div>
+      <div class="signature-label">BCBA Signature</div>
       ${timesheet.bcba.signature
-        ? `<img src="${timesheet.bcba.signature}" alt="BCBA Signature" style="max-height: 80px; max-width: 100%; object-fit: contain; border: 1px solid #ccc;" />`
+        ? `<div class="signature-container"><img src="${timesheet.bcba.signature}" alt="BCBA Signature" /></div>`
         : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'}
     </div>
     ` : `
