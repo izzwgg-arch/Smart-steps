@@ -142,7 +142,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
         </Link>
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold" style={{ color: '#000000' }}>
+            <h1 className="text-3xl font-bold" style={{ color: '#ffffff' }}>
               Invoice {invoice.invoiceNumber}
             </h1>
             <p className="text-gray-600 mt-1">
