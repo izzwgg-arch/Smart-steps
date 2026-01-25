@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     endTimer(reqId, 'query')
 
     // Convert Decimal to number for JSON serialization
-    const serializedEmployees = employees.map(emp => ({
+    const serializedEmployees = employees.map((emp: any) => ({
       ...emp,
       defaultHourlyRate: typeof emp.defaultHourlyRate === 'object' && 'toNumber' in emp.defaultHourlyRate
         ? emp.defaultHourlyRate.toNumber()
