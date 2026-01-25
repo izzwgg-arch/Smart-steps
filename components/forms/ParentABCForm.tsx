@@ -589,20 +589,33 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             overflow: visible !important;
             box-shadow: 0 2pt 8pt rgba(0, 0, 0, 0.08) !important;
             border: 1pt solid #e2e8f0 !important;
+            display: block !important;
+            visibility: visible !important;
           }
           
           .modern-table {
             border-collapse: separate !important;
             border-spacing: 0 !important;
             width: 100% !important;
+            display: table !important;
+            visibility: visible !important;
           }
           
           .modern-table thead {
             display: table-header-group !important;
+            visibility: visible !important;
           }
           
           .modern-table tbody {
             display: table-row-group !important;
+            visibility: visible !important;
+          }
+          
+          .modern-table tbody tr {
+            display: table-row !important;
+            visibility: visible !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           
           .modern-table tbody tr:first-child {
@@ -622,6 +635,8 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             text-transform: uppercase !important;
             letter-spacing: 0.5pt !important;
             border: none !important;
+            display: table-cell !important;
+            visibility: visible !important;
           }
           
           .table-header:first-child {
@@ -656,9 +671,16 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           .table-row-even .table-cell,
           .table-row-odd .table-cell {
             border-bottom: 1pt solid #e2e8f0 !important;
+            display: table-cell !important;
+            visibility: visible !important;
           }
           
           .modern-table tbody tr:first-child td {
+            display: table-cell !important;
+            visibility: visible !important;
+          }
+          
+          .modern-table tbody tr td {
             display: table-cell !important;
             visibility: visible !important;
           }
