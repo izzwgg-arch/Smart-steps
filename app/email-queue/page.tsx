@@ -353,7 +353,7 @@ export default function EmailQueuePage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold" style={{ color: '#000000' }}>Email Queue</h1>
-            <p className="mt-2 text-sm" style={{ color: '#000000' }}>
+            <p className="mt-2 text-sm email-queue-subheader" style={{ color: '#000000' }}>
               Manage timesheets queued for email approval
             </p>
           </div>

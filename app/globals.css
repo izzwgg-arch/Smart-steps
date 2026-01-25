@@ -71,7 +71,11 @@ p[style*="color: rgb(0, 0, 0)"],
 p[style*="color:rgb(0, 0, 0)"],
 .bg-gray-50 p[style*="color"],
 div[class*="bg-gray"] p[style*="color"],
-div.bg-gray-50 p[style*="color"] {
+div.bg-gray-50 p[style*="color"],
+.email-queue-subheader,
+p.email-queue-subheader,
+.bg-gray-50 .email-queue-subheader,
+div[class*="bg-gray"] .email-queue-subheader {
   color: #000000 !important;
 }
 
