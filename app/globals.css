@@ -115,6 +115,24 @@ h3[style*="color: #000000"] {
   color: #000000 !important;
 }
 
+/* Force edit buttons in dropdown menus to be black */
+.bg-white a[href*="/edit"][style*="color: #000000"],
+.bg-white a[href*="/invoices"][href*="/edit"][style*="color: #000000"],
+[class*="bg-white"] a[href*="/edit"][style*="color: #000000"],
+[class*="bg-white"] a[href*="/invoices"][href*="/edit"][style*="color: #000000"],
+a[href*="/edit"][style*="color: #000000"],
+a[href*="/invoices"][href*="/edit"][style*="color: #000000"] {
+  color: #000000 !important;
+}
+
+/* Override white link rule for edit links specifically - must be inside white containers */
+.bg-white a[href*="/invoices"][href*="/edit"],
+[class*="bg-white"] a[href*="/invoices"][href*="/edit"],
+div[class*="bg-white"] a[href*="/edit"],
+div.bg-white a[href*="/edit"] {
+  color: #000000 !important;
+}
+
 /* BCBA Service Type - Green color (override white container rule) */
 /* Must be more specific than .bg-white * to override */
 .bg-white .service-type-value,
