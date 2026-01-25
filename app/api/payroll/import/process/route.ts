@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
           .digest('hex')
 
         // Check for duplicate
-        const existing = await prisma.payrollTimeLog.findFirst({
+        const existing = await (prisma as any).payrollTimeLog.findFirst({
           where: {
             fileHash,
             rowSignature,
