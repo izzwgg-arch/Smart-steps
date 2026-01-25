@@ -879,8 +879,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   type="button"
                   onClick={handleAddRow}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+                  style={{ color: '#ffffff' }}
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4" style={{ color: '#ffffff' }} />
                   Add Row
                 </button>
                 <button
@@ -888,8 +889,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   onClick={handleSave}
                   disabled={loading}
                   className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+                  style={{ color: '#ffffff' }}
                 >
-                  <Save className="w-4 h-4" />
+                  <Save className="w-4 h-4" style={{ color: '#ffffff' }} />
                   {loading ? 'Saving...' : 'Save'}
                 </button>
               </>
@@ -898,8 +900,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
               type="button"
               onClick={handlePrint}
               className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 flex items-center gap-2"
+              style={{ color: '#ffffff' }}
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4" style={{ color: '#ffffff' }} />
               Print
             </button>
           </div>
