@@ -695,9 +695,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           </div>
 
           {/* Header Section */}
-          <div className="mb-8 space-y-6">
+          <div className="mb-8">
             <div className="info-card">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <div className="info-label">Client Name</div>
                   <div className="no-print">
@@ -735,21 +735,21 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   </div>
                   <div className="print-only info-value">{months[month - 1]}</div>
                 </div>
+                <div>
+                  <div className="info-label">Behavior</div>
+                  <div className="no-print">
+                    <input
+                      type="text"
+                      value={behavior}
+                      onChange={(e) => setBehavior(e.target.value)}
+                      disabled={!canEdit || forceReadOnly}
+                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                      placeholder="Enter behavior description"
+                    />
+                  </div>
+                  <div className="print-only info-value">{behavior || 'N/A'}</div>
+                </div>
               </div>
-            </div>
-            <div className="info-card">
-              <div className="info-label">Behavior</div>
-              <div className="no-print">
-                <input
-                  type="text"
-                  value={behavior}
-                  onChange={(e) => setBehavior(e.target.value)}
-                  disabled={!canEdit || forceReadOnly}
-                  className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                  placeholder="Enter behavior description"
-                />
-              </div>
-              <div className="print-only info-value">{behavior || 'N/A'}</div>
             </div>
           </div>
 
