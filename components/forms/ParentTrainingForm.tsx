@@ -388,14 +388,14 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
           
           /* Modern Form Styling */
           .modern-form-header {
-            margin-bottom: 32pt !important;
+            margin-bottom: 24pt !important;
           }
           
           .header-gradient {
             background: linear-gradient(135deg, #0066cc 0%, #004499 100%) !important;
-            padding: 24pt 32pt !important;
-            border-radius: 12pt !important;
-            box-shadow: 0 4pt 12pt rgba(0, 102, 204, 0.3) !important;
+            padding: 16pt 24pt !important;
+            border-radius: 10pt !important;
+            box-shadow: 0 3pt 8pt rgba(0, 102, 204, 0.3) !important;
             position: relative !important;
             overflow: hidden !important;
           }
@@ -406,13 +406,13 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
             top: 0 !important;
             left: 0 !important;
             right: 0 !important;
-            height: 4pt !important;
+            height: 3pt !important;
             background: linear-gradient(90deg, #00aaff 0%, #0066cc 50%, #004499 100%) !important;
           }
           
           .header-gradient h1 {
             color: #ffffff !important;
-            font-size: 28pt !important;
+            font-size: 22pt !important;
             font-weight: 700 !important;
             margin: 0 !important;
             text-align: center !important;
@@ -421,9 +421,9 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
           }
           
           .header-accent-line {
-            height: 3pt !important;
+            height: 2pt !important;
             background: rgba(255, 255, 255, 0.3) !important;
-            margin-top: 12pt !important;
+            margin-top: 8pt !important;
             border-radius: 2pt !important;
           }
           
