@@ -580,8 +580,8 @@ export default function CommunityEmailQueuePage() {
         </div>
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Community Invoice Email Queue</h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <h1 className="text-3xl font-bold" style={{ color: '#000000' }}>Community Invoice Email Queue</h1>
+            <p className="mt-2 text-sm" style={{ color: '#000000' }}>
               Manage community invoices queued for email approval
             </p>
           </div>
@@ -955,7 +955,7 @@ export default function CommunityEmailQueuePage() {
         {showEmailModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">
+              <h2 className="text-xl font-bold mb-4" style={{ color: '#000000' }}>
                 {scheduleSend ? 'Schedule Email Send' : 'Send Email'}
               </h2>
               <p className="text-sm text-gray-600 mb-4">
