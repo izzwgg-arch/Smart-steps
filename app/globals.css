@@ -53,7 +53,7 @@ a[href*="/clients"],
 a[href*="/providers"],
 a[href*="/timesheets"],
 a[href*="/bcba-timesheets"],
-a[href*="/invoices"],
+a[href*="/invoices"]:not([style*="color: #000000"]):not(.bg-white a):not([class*="bg-white"] a),
 a[href*="/bcbas"],
 a[href*="/insurance"],
 a[href*="/users"],
@@ -91,6 +91,28 @@ select,
 .card *,
 [class*="bg-white"] * {
   color: #1f2937 !important;
+}
+
+/* Force invoice numbers and edit buttons to be black (override white link rule) */
+.bg-white td[style*="color: #000000"],
+.bg-white a[style*="color: #000000"],
+.bg-white span[style*="color: #000000"],
+.bg-white h1[style*="color: #000000"],
+.bg-white h2[style*="color: #000000"],
+.bg-white h3[style*="color: #000000"],
+[class*="bg-white"] td[style*="color: #000000"],
+[class*="bg-white"] a[style*="color: #000000"],
+[class*="bg-white"] span[style*="color: #000000"],
+[class*="bg-white"] h1[style*="color: #000000"],
+[class*="bg-white"] h2[style*="color: #000000"],
+[class*="bg-white"] h3[style*="color: #000000"],
+td[style*="color: #000000"],
+a[style*="color: #000000"],
+span[style*="color: #000000"],
+h1[style*="color: #000000"],
+h2[style*="color: #000000"],
+h3[style*="color: #000000"] {
+  color: #000000 !important;
 }
 
 /* BCBA Service Type - Green color (override white container rule) */
