@@ -893,7 +893,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
 
           {/* Print View - Modern Table Design */}
           <div className="print-only mt-6">
-            {rows.filter((r) => r.date && r.antecedent && r.consequence).length > 0 ? (
+            {rows.length > 0 && rows.some((r) => r.date || r.antecedent || r.consequence) ? (
               <div className="modern-table-container">
                 <table className="modern-table w-full">
                   <thead>
@@ -908,18 +908,18 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   </thead>
                   <tbody>
                     {rows
-                      .filter((r) => r.date && r.antecedent && r.consequence)
+                      .filter((r) => r.date || r.antecedent || r.consequence)
                       .map((row, idx) => (
                         <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
                           <td className="table-cell">
                             <div className="date-badge">
-                              {row.date ? format(row.date, 'MM/dd/yyyy') : ''}
+                              {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
                             </div>
                           </td>
                           <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
                           <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
-                          <td className="table-cell">{row.antecedent}</td>
-                          <td className="table-cell">{row.consequence}</td>
+                          <td className="table-cell">{row.antecedent || '—'}</td>
+                          <td className="table-cell">{row.consequence || '—'}</td>
                           <td className="table-cell">{row.notes || '—'}</td>
                         </tr>
                       ))}
