@@ -414,7 +414,7 @@ export function CommunityInvoicesList() {
                               onClick={() => {
                                 window.location.href = `/community/invoices/${invoice.id}/edit`
                               }}
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"
+                              className="flex items-center w-full px-4 py-2 text-sm text-black hover:bg-gray-100 min-h-[44px]"
                             >
                               <Edit className="w-4 h-4 mr-2" />
                               Edit
