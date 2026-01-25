@@ -390,24 +390,30 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           @page {
             margin: 0 !important;
             size: auto;
-            @top-center {
-              content: element(header);
-            }
           }
           
           /* Repeat header and info card on each page */
           @media print {
-            /* Make header a running element */
+            /* Ensure header and info card don't break across pages */
             .print-header-wrapper {
-              position: running(header);
               page-break-inside: avoid !important;
               break-inside: avoid !important;
+              page-break-after: avoid !important;
+              break-after: avoid !important;
               margin-bottom: 20pt !important;
             }
             
             /* Ensure table header repeats */
             .modern-table thead {
               display: table-header-group !important;
+            }
+            
+            /* Duplicate header will appear on page 2+ */
+            .print-header-duplicate {
+              page-break-before: always !important;
+              break-before: page !important;
+              margin-top: 0 !important;
+              margin-bottom: 20pt !important;
             }
           }
           html,
