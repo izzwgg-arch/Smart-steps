@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
       }),
 
       // Invoices with entries, payments, and adjustments
-      prisma.invoice.findMany({
+      (prisma as any).invoice.findMany({
         where: invoiceWhere,
         include: {
           entries: {
@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
           })
         : Promise.resolve([]),
       !bcbaId
-        ? prisma.bCBA.findMany({ where: { deletedAt: null } })
+        ? (prisma as any).bCBA.findMany({ where: { deletedAt: null } })
         : Promise.resolve([]),
       !insuranceId
         ? prisma.insurance.findMany({
