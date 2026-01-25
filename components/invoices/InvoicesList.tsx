@@ -486,7 +486,7 @@ export function InvoicesList() {
                           href={`/invoices/${invoice.id}/edit`}
                           className="flex items-center px-4 py-2 text-sm text-black hover:bg-gray-100 min-h-[44px]"
                         >
-                          <Edit className="w-4 h-4 mr-2" />
+                          <Edit className="w-4 h-4 mr-2 text-black" />
                           Edit
                         </Link>
                         <button
