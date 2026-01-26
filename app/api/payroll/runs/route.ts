@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Now get import rows with valid clock-in/clock-out pairs (or at least minutesWorked)
+    // Get all import rows for selected employees (we'll calculate minutes from inTime/outTime if needed)
     importRows = await (prisma as any).payrollImportRow?.findMany({
       where: {
         importId: sourceImportId,
@@ -165,27 +165,51 @@ export async function POST(request: NextRequest) {
           gte: periodStartDate,
           lte: periodEndDate,
         },
-        OR: [
-          { minutesWorked: { not: null } },
-          { inTime: { not: null }, outTime: { not: null } },
-        ],
       },
       include: {
         linkedEmployee: true,
       },
     })
-    console.log(`[PAYROLL RUN] Found ${importRows.length} linked import rows with valid time data for import ${sourceImportId} with ${selectedEmployeeIds.length} selected employees`)
+    console.log(`[PAYROLL RUN] Found ${importRows.length} linked import rows for import ${sourceImportId} with ${selectedEmployeeIds.length} selected employees`)
     
-    // Check if we have any linked rows with valid time data BEFORE creating the run
+    // Check if we have any linked rows BEFORE creating the run
     if (importRows.length === 0) {
       return NextResponse.json(
         { 
-          error: 'No valid time entries found for selected employees.',
-          details: `No import rows with valid clock-in/clock-out pairs or minutes worked found for the selected ${selectedEmployeeIds.length} employee(s) in this import within the specified period. Please ensure employees are linked and have valid time entries.`
+          error: 'No import rows found for selected employees.',
+          details: `No import rows found for the selected ${selectedEmployeeIds.length} employee(s) in this import within the specified period. Please ensure employees are linked to import rows.`
         },
         { status: 400 }
       )
     }
+    
+    // Filter to only rows with valid time data (minutesWorked OR both inTime and outTime)
+    const validImportRows = importRows.filter((row: any) => {
+      // If minutesWorked exists, use it
+      if (row.minutesWorked !== null && row.minutesWorked !== undefined && row.minutesWorked > 0) {
+        return true
+      }
+      // If both inTime and outTime exist, we can calculate minutes
+      if (row.inTime && row.outTime) {
+        return true
+      }
+      return false
+    })
+    
+    console.log(`[PAYROLL RUN] Filtered to ${validImportRows.length} rows with valid time data out of ${importRows.length} total rows`)
+    
+    if (validImportRows.length === 0) {
+      return NextResponse.json(
+        { 
+          error: 'No valid time entries found for selected employees.',
+          details: `Found ${importRows.length} import rows for the selected ${selectedEmployeeIds.length} employee(s), but none have valid clock-in/clock-out pairs or minutes worked. Please ensure import rows have valid time data.`
+        },
+        { status: 400 }
+      )
+    }
+    
+    // Use valid rows for processing
+    importRows = validImportRows
 
     // Create the payroll run (only if we have data)
     const payrollRun = await (prisma as any).payrollRun?.create({
@@ -220,11 +244,13 @@ export async function POST(request: NextRequest) {
 
       linkedCount++
       const employeeId = row.linkedEmployeeId
-      // Use minutesWorked directly - if not available, calculate from inTime/outTime
-      let minutesWorked = row.minutesWorked || 0
+      // Calculate minutesWorked - prefer stored value, otherwise calculate from inTime/outTime
+      let minutesWorked = 0
       
-      // If minutesWorked is null but we have inTime and outTime, calculate it
-      if (!minutesWorked && row.inTime && row.outTime) {
+      if (row.minutesWorked !== null && row.minutesWorked !== undefined && row.minutesWorked > 0) {
+        minutesWorked = row.minutesWorked
+      } else if (row.inTime && row.outTime) {
+        // Calculate from inTime and outTime
         const inTime = new Date(row.inTime)
         const outTime = new Date(row.outTime)
         // Handle overnight shifts
@@ -236,6 +262,12 @@ export async function POST(request: NextRequest) {
         if (diffMs > 0) {
           minutesWorked = Math.floor(diffMs / (1000 * 60))
         }
+      }
+      
+      // Skip rows with no valid time data
+      if (minutesWorked === 0) {
+        console.log(`[PAYROLL RUN] Skipping row ${row.id} - no valid time data (minutesWorked=${row.minutesWorked}, inTime=${row.inTime}, outTime=${row.outTime})`)
+        continue
       }
 
       if (!employeeTotals.has(employeeId)) {
