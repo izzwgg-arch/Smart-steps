@@ -101,7 +101,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
     
     body {
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 11px;
+      font-size: 12px;
       color: #000;
       background: #fff;
       padding: 0.4in;
@@ -134,7 +134,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
     
     .header-gradient h1 {
       color: #ffffff;
-      font-size: 18px;
+      font-size: 24px;
       font-weight: 700;
       margin: 0;
       text-align: center;
@@ -193,7 +193,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
     .info-value {
       font-weight: 600;
       color: #1e293b;
-      font-size: 12px;
+      font-size: 13px;
       margin-top: 2px;
     }
     
@@ -216,7 +216,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
     th {
       background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
       color: #ffffff;
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 700;
       padding: 8px 10px;
       text-align: left;
@@ -236,7 +236,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
     td {
       border-bottom: 1px solid #e2e8f0;
       padding: 6px 10px;
-      font-size: 11px;
+      font-size: 12px;
     }
     
     tbody tr:nth-child(even) {
@@ -254,7 +254,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
       padding: 4px 8px;
       border-radius: 6px;
       font-weight: 600;
-      font-size: 11px;
+      font-size: 12px;
       border: 1px solid #7dd3fc;
       box-shadow: 0 1px 3px rgba(3, 105, 161, 0.1);
     }
@@ -265,7 +265,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
       gap: 24px;
       margin-bottom: 12px;
       font-weight: bold;
-      font-size: 12px;
+      font-size: 13px;
       background: #f8fafc;
       border: 2px solid #e2e8f0;
       border-radius: 8px;
