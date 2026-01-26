@@ -350,7 +350,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   <!-- Period at top -->
   <div class="period" style="margin-bottom: 12px;">
     <span class="period-label">Period:</span>
-    <span class="info-value" style="font-size: 11px; display: inline;">${format(startDate, 'EEE M/d/yyyy').toLowerCase()} - ${format(endDate, 'EEE M/d/yyyy').toLowerCase()}</span>
+    <span class="info-value" style="font-size: 11px; display: inline;">${format(startDate, 'EEE M/d/yyyy').replace(/^[a-z]/, (match) => match.toUpperCase())} - ${format(endDate, 'EEE M/d/yyyy').replace(/^[a-z]/, (match) => match.toUpperCase())}</span>
   </div>
   
   <!-- Info card with 4 columns for Provider, BCBA, Child, Phone -->
@@ -432,7 +432,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
         const serviceTypeInitials = isBCBA ? getServiceTypeInitials(entryServiceType) : ''
         return `
         <tr>
-          <td><span class="date-badge">${format(entryDate, 'EEE M/d/yyyy').toLowerCase()}</span></td>
+          <td><span class="date-badge">${format(entryDate, 'EEE M/d/yyyy').replace(/^[a-z]/, (match) => match.toUpperCase())}</span></td>
           ${isBCBA ? `<td>${serviceTypeInitials}</td>` : ''}
           <td>${formatTime(entry.startTime)}</td>
           <td>${formatTime(entry.endTime)}</td>
