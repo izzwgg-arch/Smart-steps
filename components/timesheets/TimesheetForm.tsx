@@ -1233,7 +1233,7 @@ export function TimesheetForm({
         providerId,
         clientId,
         bcbaId,
-        insuranceId: insuranceId || null
+        insuranceId: insuranceId || null,
         startDate: startDate ? formatDateOnly(startDate, timezone) : null,
         endDate: endDate ? formatDateOnly(endDate, timezone) : null,
         timezone,
