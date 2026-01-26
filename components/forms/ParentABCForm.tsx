@@ -996,16 +996,12 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                         .map((row, idx) => {
                           // Insert duplicate header after approximately 12 rows (roughly one page)
                           const shouldInsertHeader = idx === 12
-                          // Capture values at render time
-                          const clientName = selectedClient ? selectedClient.name : 'N/A'
-                          const monthName = months[month - 1] || 'N/A'
-                          const behaviorValue = behavior || 'N/A'
                           return (
                             <>
                               {shouldInsertHeader && (
                                 <tr key={`header-${idx}`} style={{ pageBreakBefore: 'always', breakBefore: 'page' }}>
-                                  <td colSpan={6} style={{ padding: '20pt', border: 'none', backgroundColor: 'transparent', pageBreakInside: 'avoid' }}>
-                                    <div className="print-header-duplicate">
+                                  <td colSpan={6} style={{ padding: '0', border: 'none', backgroundColor: 'transparent', pageBreakInside: 'avoid', display: 'block' }}>
+                                    <div className="print-header-duplicate" style={{ padding: '20pt', width: '100%' }}>
                                       <div className="modern-form-header mb-8">
                                         <div className="header-gradient">
                                           <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
@@ -1017,21 +1013,15 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div>
                                               <div className="info-label">Client Name</div>
-                                              <div className="print-only info-value duplicate-header-value">
-                                                {clientName}
-                                              </div>
+                                              <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
                                             </div>
                                             <div>
                                               <div className="info-label">Month</div>
-                                              <div className="print-only info-value duplicate-header-value">
-                                                {monthName}
-                                              </div>
+                                              <div className="print-only info-value">{months[month - 1]}</div>
                                             </div>
                                             <div>
                                               <div className="info-label">Behavior</div>
-                                              <div className="print-only info-value duplicate-header-value">
-                                                {behaviorValue}
-                                              </div>
+                                              <div className="print-only info-value">{behavior || 'N/A'}</div>
                                             </div>
                                           </div>
                                         </div>
