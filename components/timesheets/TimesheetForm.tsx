@@ -200,6 +200,16 @@ export function TimesheetForm({
   const [clientId, setClientId] = useState(timesheet?.clientId || '')
   const [bcbaId, setBcbaId] = useState(timesheet?.bcbaId || '')
   const [insuranceId, setInsuranceId] = useState(timesheet?.insuranceId || '')
+  
+  // Auto-select insurance when client changes
+  useEffect(() => {
+    if (clientId) {
+      const selectedClient = clients.find(c => c.id === clientId)
+      if (selectedClient?.insurance?.id) {
+        setInsuranceId(selectedClient.insurance.id)
+      }
+    }
+  }, [clientId, clients])
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([])
   const [totalHours, setTotalHours] = useState(0)
   // Always use America/New_York timezone for all timesheets regardless of user location
@@ -1223,7 +1233,7 @@ export function TimesheetForm({
         providerId,
         clientId,
         bcbaId,
-        insuranceId: null, // Insurance derived from client
+        insuranceId: insuranceId || null
         startDate: startDate ? formatDateOnly(startDate, timezone) : null,
         endDate: endDate ? formatDateOnly(endDate, timezone) : null,
         timezone,
@@ -1310,15 +1320,8 @@ export function TimesheetForm({
       return
     }
 
-    if (!providerId || !clientId || !bcbaId) {
+    if (!providerId || !clientId || !bcbaId || !insuranceId) {
       toast.error('Please fill all assignment fields')
-      return
-    }
-    
-    // Validate client has insurance
-    const selectedClient = clients.find(c => c.id === clientId)
-    if (!selectedClient || !selectedClient.insurance) {
-      toast.error('Selected client must have insurance assigned')
       return
     }
 
@@ -1438,7 +1441,7 @@ export function TimesheetForm({
           providerId,
           clientId,
           bcbaId,
-          insuranceId: null, // Insurance is derived from client.insuranceId
+          insuranceId: insuranceId, // Use selected insurance for regular timesheets
           startDate: formatDateOnly(startDate, timezone),
           endDate: formatDateOnly(endDate, timezone),
           timezone,
@@ -1888,6 +1891,27 @@ export function TimesheetForm({
                   return (
                     <option key={bcba.id} value={bcba.id}>
                       {bcba.name || 'Unnamed BCBA'}
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Insurance <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={insuranceId}
+                onChange={(e) => setInsuranceId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">Select insurance</option>
+                {Array.isArray(insurances) && insurances.map((insurance) => {
+                  if (!insurance || !insurance.id) return null
+                  return (
+                    <option key={insurance.id} value={insurance.id}>
+                      {insurance.name || 'Unnamed Insurance'}
                     </option>
                   )
                 })}
