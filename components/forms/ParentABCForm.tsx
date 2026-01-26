@@ -410,10 +410,40 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             
             /* Duplicate header will appear on page 2+ */
             .print-header-duplicate {
+              display: block !important;
+              visibility: visible !important;
               page-break-before: always !important;
               break-before: page !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
               margin-top: 0 !important;
               margin-bottom: 20pt !important;
+              padding-top: 0 !important;
+            }
+            
+            /* Ensure duplicate header content is visible */
+            .print-header-duplicate * {
+              display: block !important;
+              visibility: visible !important;
+            }
+            
+            .print-header-duplicate .modern-form-header,
+            .print-header-duplicate .info-card {
+              display: block !important;
+              visibility: visible !important;
+            }
+            
+            .print-header-duplicate .grid {
+              display: grid !important;
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 24pt !important;
+            }
+            
+            .print-header-duplicate .header-gradient,
+            .print-header-duplicate .header-gradient h1,
+            .print-header-duplicate .header-accent-line {
+              display: block !important;
+              visibility: visible !important;
             }
           }
           html,
