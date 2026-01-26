@@ -1034,20 +1034,18 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                         .filter((r) => r.date || r.antecedent || r.consequence)
                         .map((row, idx) => (
                           <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
-                                <td className="table-cell">
-                                  <div className="date-badge">
-                                    {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
-                                  </div>
-                                </td>
-                                <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
-                                <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
-                                <td className="table-cell">{row.antecedent || '—'}</td>
-                                <td className="table-cell">{row.consequence || '—'}</td>
-                                <td className="table-cell">{row.notes || '—'}</td>
-                              </tr>
-                            </>
-                          )
-                        })}
+                            <td className="table-cell">
+                              <div className="date-badge">
+                                {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
+                              </div>
+                            </td>
+                            <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
+                            <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
+                            <td className="table-cell">{row.antecedent || '—'}</td>
+                            <td className="table-cell">{row.consequence || '—'}</td>
+                            <td className="table-cell">{row.notes || '—'}</td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
