@@ -1002,19 +1002,19 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div>
                                               <div className="info-label">Client Name</div>
-                                              <div className="info-value" style={{ display: 'block', visibility: 'visible' }}>
+                                              <div className="print-only info-value" style={{ display: 'block', visibility: 'visible', color: '#1e293b', fontSize: '14pt', fontWeight: 600 }}>
                                                 {selectedClient ? selectedClient.name : 'N/A'}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="info-label">Month</div>
-                                              <div className="info-value" style={{ display: 'block', visibility: 'visible' }}>
-                                                {month ? new Date(2000, month - 1).toLocaleString('default', { month: 'long' }) : 'N/A'}
+                                              <div className="print-only info-value" style={{ display: 'block', visibility: 'visible', color: '#1e293b', fontSize: '14pt', fontWeight: 600 }}>
+                                                {months[month - 1]}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="info-label">Behavior</div>
-                                              <div className="info-value" style={{ display: 'block', visibility: 'visible' }}>
+                                              <div className="print-only info-value" style={{ display: 'block', visibility: 'visible', color: '#1e293b', fontSize: '14pt', fontWeight: 600 }}>
                                                 {behavior || 'N/A'}
                                               </div>
                                             </div>
