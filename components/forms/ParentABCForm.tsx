@@ -410,6 +410,17 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             
             /* Duplicate header will appear on page 2+ */
             .print-header-duplicate {
+              display: none !important;
+            }
+            
+            /* Show duplicate header only after first page break */
+            .modern-table-container ~ .print-header-duplicate,
+            .print-header-duplicate:first-of-type {
+              display: none !important;
+            }
+            
+            /* Show duplicate header when it comes after table content */
+            .print-header-duplicate {
               display: block !important;
               visibility: visible !important;
               page-break-before: always !important;
@@ -978,7 +989,35 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           {/* Print View - Modern Table Design */}
           <div className="print-only mt-6">
             {rows.length > 0 && rows.some((r) => r.date || r.antecedent || r.consequence) ? (
-              <div className="modern-table-container">
+              <>
+                {/* Duplicate header for page 2+ - placed BEFORE table */}
+                <div className="print-header-duplicate print-only" style={{ pageBreakBefore: 'always', breakBefore: 'page', marginBottom: '20pt' }}>
+                  <div className="modern-form-header mb-8">
+                    <div className="header-gradient">
+                      <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
+                      <div className="header-accent-line"></div>
+                    </div>
+                  </div>
+                  <div className="mb-8">
+                    <div className="info-card">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                          <div className="info-label">Client Name</div>
+                          <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
+                        </div>
+                        <div>
+                          <div className="info-label">Month</div>
+                          <div className="print-only info-value">{months[month - 1]}</div>
+                        </div>
+                        <div>
+                          <div className="info-label">Behavior</div>
+                          <div className="print-only info-value">{behavior || 'N/A'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="modern-table-container">
                   <table className="modern-table w-full">
                     <thead>
                       <tr>
@@ -993,44 +1032,8 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                     <tbody>
                       {rows
                         .filter((r) => r.date || r.antecedent || r.consequence)
-                        .map((row, idx) => {
-                          // Insert duplicate header after approximately 12 rows (roughly one page)
-                          const shouldInsertHeader = idx === 12
-                          return (
-                            <>
-                              {shouldInsertHeader && (
-                                <tr key={`header-${idx}`} style={{ pageBreakBefore: 'always', breakBefore: 'page' }}>
-                                  <td colSpan={6} style={{ padding: '0', border: 'none', backgroundColor: 'transparent', pageBreakInside: 'avoid', display: 'block' }}>
-                                    <div className="print-header-duplicate" style={{ padding: '20pt', width: '100%' }}>
-                                      <div className="modern-form-header mb-8">
-                                        <div className="header-gradient">
-                                          <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
-                                          <div className="header-accent-line"></div>
-                                        </div>
-                                      </div>
-                                      <div className="mb-8">
-                                        <div className="info-card">
-                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            <div>
-                                              <div className="info-label">Client Name</div>
-                                              <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
-                                            </div>
-                                            <div>
-                                              <div className="info-label">Month</div>
-                                              <div className="print-only info-value">{months[month - 1]}</div>
-                                            </div>
-                                            <div>
-                                              <div className="info-label">Behavior</div>
-                                              <div className="print-only info-value">{behavior || 'N/A'}</div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                              <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
+                        .map((row, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
                                 <td className="table-cell">
                                   <div className="date-badge">
                                     {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
