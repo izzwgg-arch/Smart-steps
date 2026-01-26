@@ -256,7 +256,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     td {
       border-bottom: 1px solid #e2e8f0;
       padding: 6px 10px;
-      font-size: 9px;
+      font-size: 11px;
     }
     
     tbody tr:nth-child(even) {
