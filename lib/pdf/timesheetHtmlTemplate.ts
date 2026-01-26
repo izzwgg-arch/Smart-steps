@@ -310,18 +310,27 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     
     .signature-container {
       display: inline-block;
-      padding: 8px;
+      padding: 6px;
       background: #ffffff;
       border: 2px solid #e2e8f0;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
     
     .signature-container img {
-      max-height: 40px;
-      max-width: 150px;
+      max-height: 35px;
+      max-width: 140px;
       object-fit: contain;
       display: block;
+    }
+    
+    .signature-label {
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
     }
     
     .legend {
