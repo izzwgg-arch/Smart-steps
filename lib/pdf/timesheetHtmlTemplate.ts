@@ -303,9 +303,9 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       font-weight: 600;
       color: #475569;
       text-transform: uppercase;
-      font-size: 10px;
+      font-size: 9px;
       letter-spacing: 0.5px;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
     
     .signature-container {
@@ -322,15 +322,6 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       max-width: 140px;
       object-fit: contain;
       display: block;
-    }
-    
-    .signature-label {
-      font-weight: 600;
-      color: #475569;
-      text-transform: uppercase;
-      font-size: 9px;
-      letter-spacing: 0.5px;
-      margin-bottom: 4px;
     }
     
     .legend {
