@@ -274,7 +274,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       padding: 4px 8px;
       border-radius: 6px;
       font-weight: 600;
-      font-size: 9px;
+      font-size: 11px;
       border: 1px solid #7dd3fc;
       box-shadow: 0 1px 3px rgba(3, 105, 161, 0.1);
     }
