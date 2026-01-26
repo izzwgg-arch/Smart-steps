@@ -445,6 +445,17 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
               display: block !important;
               visibility: visible !important;
             }
+            
+            /* Force duplicate header values to be visible */
+            .print-header-duplicate .duplicate-header-value {
+              display: block !important;
+              visibility: visible !important;
+              opacity: 1 !important;
+              color: #1e293b !important;
+              font-size: 14pt !important;
+              font-weight: 600 !important;
+              line-height: 1.5 !important;
+            }
           }
           html,
           body {
