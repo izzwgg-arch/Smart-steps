@@ -985,6 +985,10 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                         .map((row, idx) => {
                           // Insert duplicate header after approximately 12 rows (roughly one page)
                           const shouldInsertHeader = idx === 12
+                          // Capture values at render time
+                          const clientName = selectedClient ? selectedClient.name : 'N/A'
+                          const monthName = months[month - 1] || 'N/A'
+                          const behaviorValue = behavior || 'N/A'
                           return (
                             <>
                               {shouldInsertHeader && (
@@ -1002,20 +1006,20 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div>
                                               <div className="info-label">Client Name</div>
-                                              <div className="print-only info-value" style={{ display: 'block', visibility: 'visible', color: '#1e293b', fontSize: '14pt', fontWeight: 600 }}>
-                                                {selectedClient ? selectedClient.name : 'N/A'}
+                                              <div className="print-only info-value" style={{ display: 'block !important', visibility: 'visible !important', color: '#1e293b !important', fontSize: '14pt !important', fontWeight: '600 !important' }}>
+                                                {clientName}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="info-label">Month</div>
-                                              <div className="print-only info-value" style={{ display: 'block', visibility: 'visible', color: '#1e293b', fontSize: '14pt', fontWeight: 600 }}>
-                                                {months[month - 1]}
+                                              <div className="print-only info-value" style={{ display: 'block !important', visibility: 'visible !important', color: '#1e293b !important', fontSize: '14pt !important', fontWeight: '600 !important' }}>
+                                                {monthName}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="info-label">Behavior</div>
-                                              <div className="print-only info-value" style={{ display: 'block', visibility: 'visible', color: '#1e293b', fontSize: '14pt', fontWeight: 600 }}>
-                                                {behavior || 'N/A'}
+                                              <div className="print-only info-value" style={{ display: 'block !important', visibility: 'visible !important', color: '#1e293b !important', fontSize: '14pt !important', fontWeight: '600 !important' }}>
+                                                {behaviorValue}
                                               </div>
                                             </div>
                                           </div>
