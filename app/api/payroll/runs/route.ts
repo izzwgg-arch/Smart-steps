@@ -132,6 +132,31 @@ export async function POST(request: NextRequest) {
     periodStartDate.setHours(0, 0, 0, 0)
     periodEndDate.setHours(23, 59, 59, 999)
     
+    // First, verify that employees exist and are linked to import rows
+    const employeeCheck = await (prisma as any).payrollImportRow?.findMany({
+      where: {
+        importId: sourceImportId,
+        linkedEmployeeId: { in: selectedEmployeeIds },
+      },
+      select: {
+        linkedEmployeeId: true,
+      },
+      distinct: ['linkedEmployeeId'],
+    })
+    
+    console.log(`[PAYROLL RUN] Employee check: Found ${employeeCheck.length} unique linked employees for import ${sourceImportId} with ${selectedEmployeeIds.length} selected employees`)
+    
+    if (employeeCheck.length === 0) {
+      return NextResponse.json(
+        { 
+          error: 'No employees found in import.',
+          details: `No import rows are linked to the selected ${selectedEmployeeIds.length} employee(s) in this import. Please go to the import edit page and link employees to the rows first.`
+        },
+        { status: 400 }
+      )
+    }
+    
+    // Now get import rows with valid clock-in/clock-out pairs (or at least minutesWorked)
     importRows = await (prisma as any).payrollImportRow?.findMany({
       where: {
         importId: sourceImportId,
@@ -140,19 +165,23 @@ export async function POST(request: NextRequest) {
           gte: periodStartDate,
           lte: periodEndDate,
         },
+        OR: [
+          { minutesWorked: { not: null } },
+          { inTime: { not: null }, outTime: { not: null } },
+        ],
       },
       include: {
         linkedEmployee: true,
       },
     })
-    console.log(`[PAYROLL RUN] Found ${importRows.length} linked import rows for import ${sourceImportId} with ${selectedEmployeeIds.length} selected employees`)
+    console.log(`[PAYROLL RUN] Found ${importRows.length} linked import rows with valid time data for import ${sourceImportId} with ${selectedEmployeeIds.length} selected employees`)
     
-    // Check if we have any linked rows BEFORE creating the run
+    // Check if we have any linked rows with valid time data BEFORE creating the run
     if (importRows.length === 0) {
       return NextResponse.json(
         { 
-          error: 'No import rows found for selected employees.',
-          details: `No import rows found for the selected ${selectedEmployeeIds.length} employee(s) in this import. Please ensure employees are linked to import rows.`
+          error: 'No valid time entries found for selected employees.',
+          details: `No import rows with valid clock-in/clock-out pairs or minutes worked found for the selected ${selectedEmployeeIds.length} employee(s) in this import within the specified period. Please ensure employees are linked and have valid time entries.`
         },
         { status: 400 }
       )
@@ -175,7 +204,6 @@ export async function POST(request: NextRequest) {
       employeeId: string
       employee: any
       totalMinutes: number
-      totalHours: number
       hourlyRate: number
     }>()
 
@@ -192,8 +220,23 @@ export async function POST(request: NextRequest) {
 
       linkedCount++
       const employeeId = row.linkedEmployeeId
-      const minutesWorked = row.minutesWorked || 0
-      const hoursWorked = row.hoursWorked ? parseFloat(row.hoursWorked.toString()) : 0
+      // Use minutesWorked directly - if not available, calculate from inTime/outTime
+      let minutesWorked = row.minutesWorked || 0
+      
+      // If minutesWorked is null but we have inTime and outTime, calculate it
+      if (!minutesWorked && row.inTime && row.outTime) {
+        const inTime = new Date(row.inTime)
+        const outTime = new Date(row.outTime)
+        // Handle overnight shifts
+        let adjustedOutTime = new Date(outTime)
+        if (adjustedOutTime < inTime) {
+          adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
+        }
+        const diffMs = adjustedOutTime.getTime() - inTime.getTime()
+        if (diffMs > 0) {
+          minutesWorked = Math.floor(diffMs / (1000 * 60))
+        }
+      }
 
       if (!employeeTotals.has(employeeId)) {
         // Get hourly rate from employeeRates override or employee default
@@ -207,18 +250,14 @@ export async function POST(request: NextRequest) {
           employeeId,
           employee: row.linkedEmployee,
           totalMinutes: 0,
-          totalHours: 0,
           hourlyRate,
         })
       }
 
       const totals = employeeTotals.get(employeeId)!
-      totals.totalMinutes += minutesWorked || 0
-      // Calculate hours: prefer hoursWorked, fallback to minutes/60, ensure it's a number
-      const calculatedHours = hoursWorked > 0 ? hoursWorked : (minutesWorked > 0 ? minutesWorked / 60 : 0)
-      totals.totalHours += calculatedHours
+      totals.totalMinutes += minutesWorked
       
-      console.log(`[PAYROLL RUN] Row ${row.id}: employee=${row.linkedEmployee.fullName}, minutes=${minutesWorked}, hours=${hoursWorked}, calculatedHours=${calculatedHours}, newTotal=${totals.totalHours.toFixed(2)}`)
+      console.log(`[PAYROLL RUN] Row ${row.id}: employee=${row.linkedEmployee.fullName}, minutes=${minutesWorked}, newTotalMinutes=${totals.totalMinutes}`)
     }
 
     console.log(`[PAYROLL RUN] Summary: ${linkedCount} linked rows, ${unlinkedCount} unlinked rows, ${employeeTotals.size} employees with totals`)
@@ -235,17 +274,24 @@ export async function POST(request: NextRequest) {
 
     // Create PayrollRunLine records
     const runLines = Array.from(employeeTotals.values()).map(totals => {
-      const totalHoursRounded = parseFloat(totals.totalHours.toFixed(2))
-      const grossPay = parseFloat((totals.totalHours * totals.hourlyRate).toFixed(2))
+      // Calculate hours and minutes as integers
+      const hours = Math.floor(totals.totalMinutes / 60)
+      const minutes = totals.totalMinutes % 60
       
-      console.log(`[PAYROLL RUN] Creating line for ${totals.employee.fullName}: minutes=${totals.totalMinutes}, hours=${totalHoursRounded}, rate=$${totals.hourlyRate}, gross=$${grossPay}`)
+      // Calculate gross pay: (hours * hourlyRate) + (minutes / 60 * hourlyRate)
+      const grossPay = parseFloat(((hours * totals.hourlyRate) + (minutes / 60 * totals.hourlyRate)).toFixed(2))
+      
+      // Store totalHours as decimal for backward compatibility, but we'll display hours/minutes separately
+      const totalHoursDecimal = parseFloat((totals.totalMinutes / 60).toFixed(2))
+      
+      console.log(`[PAYROLL RUN] Creating line for ${totals.employee.fullName}: totalMinutes=${totals.totalMinutes}, hours=${hours}, minutes=${minutes}, rate=$${totals.hourlyRate}, gross=$${grossPay}`)
       
       return {
         runId: payrollRun.id,
         employeeId: totals.employeeId,
         hourlyRateUsed: totals.hourlyRate,
         totalMinutes: totals.totalMinutes,
-        totalHours: totalHoursRounded,
+        totalHours: totalHoursDecimal, // Keep for backward compatibility
         grossPay: grossPay,
         amountPaid: 0,
         amountOwed: grossPay,

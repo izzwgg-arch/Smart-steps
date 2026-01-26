@@ -507,7 +507,12 @@ export function PayrollRunDetail({
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {parseFloat(line.totalHours.toString()).toFixed(2)}
+                    {(() => {
+                      const totalMinutes = line.totalMinutes || 0
+                      const hours = Math.floor(totalMinutes / 60)
+                      const minutes = totalMinutes % 60
+                      return `${hours} hours${minutes > 0 ? ` ${minutes} minutes` : ''}`
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(parseFloat(line.hourlyRateUsed.toString()))}

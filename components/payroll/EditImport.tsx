@@ -452,8 +452,7 @@ export function EditImport({ importId }: { importId: string }) {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Work Date</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">In Time</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Out Time</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Minutes</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hours</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time Worked</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Linked Employee</th>
               </tr>
             </thead>
@@ -526,30 +525,14 @@ export function EditImport({ importId }: { importId: string }) {
                       <div className="text-xs text-red-600 mt-1">{validateRow(row)}</div>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <input
-                      type="number"
-                      value={row.minutesWorked || ''}
-                      onChange={(e) => {
-                        const minutes = e.target.value ? parseInt(e.target.value) : null
-                        updateRow(row.id, 'minutesWorked', minutes)
-                      }}
-                      disabled={importData.status === 'FINALIZED'}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100"
-                    />
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.hoursWorked || ''}
-                      onChange={(e) => {
-                        const hours = e.target.value ? parseFloat(e.target.value) : null
-                        updateRow(row.id, 'hoursWorked', hours)
-                      }}
-                      disabled={importData.status === 'FINALIZED'}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100"
-                    />
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {(() => {
+                      const totalMinutes = row.minutesWorked || 0
+                      if (totalMinutes === 0) return '-'
+                      const hours = Math.floor(totalMinutes / 60)
+                      const minutes = totalMinutes % 60
+                      return `${hours} hours${minutes > 0 ? ` ${minutes} minutes` : ''}`
+                    })()}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm">
                     {linkingRowId === row.id ? (
