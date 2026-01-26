@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
-import { renderInvoicePdf, BRANDING_PRESETS, InvoiceForPDF } from './invoiceTemplate'
+import { generateInvoiceHTML, InvoiceForHTML } from './invoiceHtmlTemplate'
+import { generatePDFFromHTML } from './playwrightPDF'
 
 /**
  * Generate Community Invoice PDF from invoiceId
@@ -42,8 +43,8 @@ export async function generateCommunityInvoicePdf(invoiceId: string): Promise<Bu
       className: invoice.class.name,
     })
 
-    // Generate PDF using shared template with KJ Play Center branding
-    const invoiceForPdf: InvoiceForPDF = {
+    // Generate PDF using HTML template with KJ Play Center branding
+    const invoiceForHtml: InvoiceForHTML = {
       id: invoice.id,
       createdAt: invoice.createdAt,
       serviceDate: invoice.serviceDate ?? undefined,
@@ -58,8 +59,18 @@ export async function generateCommunityInvoicePdf(invoiceId: string): Promise<Bu
       class: {
         name: invoice.class.name,
       },
+      branding: {
+        orgName: 'KJ PLAY CENTER',
+        tagline: 'Where you Discover Intelligence Creativity, Excitement and Fun.',
+        addressLine: 'Address 68 Jefferson St. Highland Mills N.Y.10930',
+        phoneLine: '845-827-9585',
+        emailLine: 'kjplaycanter@gmail.com',
+      },
     }
-    const pdfBuffer = await renderInvoicePdf(invoiceForPdf, BRANDING_PRESETS.KJ_PLAY_CENTER)
+    
+    // Generate HTML and convert to PDF using Playwright
+    const html = generateInvoiceHTML(invoiceForHtml)
+    const pdfBuffer = await generatePDFFromHTML(html, correlationId)
     const duration = Date.now() - startTime
 
     console.error(`[COMMUNITY_INVOICE_PDF] ${correlationId} PDF generated successfully`, {

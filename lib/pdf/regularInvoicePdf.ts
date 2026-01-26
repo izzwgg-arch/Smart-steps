@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
-import { renderInvoicePdf, BRANDING_PRESETS, InvoiceForPDF } from './invoiceTemplate'
+import { generateInvoiceHTML, InvoiceForHTML } from './invoiceHtmlTemplate'
+import { generatePDFFromHTML } from './playwrightPDF'
 
 /**
  * Generate Regular Invoice PDF from invoiceId
@@ -70,8 +71,8 @@ export async function generateRegularInvoicePdf(invoiceId: string): Promise<Buff
       }
     })
 
-    // Prepare invoice data for PDF template
-    const invoiceForPdf: InvoiceForPDF = {
+    // Prepare invoice data for HTML template
+    const invoiceForHtml: InvoiceForHTML = {
       id: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
       createdAt: invoice.createdAt,
@@ -84,10 +85,14 @@ export async function generateRegularInvoicePdf(invoiceId: string): Promise<Buff
         idNumber: invoice.client.idNumber, // Use idNumber as Medicaid ID
       },
       entries: pdfEntries,
+      branding: {
+        orgName: 'Smart Steps ABA',
+      },
     }
 
-    // Generate PDF using shared template with Smart Steps ABA branding
-    const pdfBuffer = await renderInvoicePdf(invoiceForPdf, BRANDING_PRESETS.SMART_STEPS_ABA)
+    // Generate HTML and convert to PDF using Playwright
+    const html = generateInvoiceHTML(invoiceForHtml)
+    const pdfBuffer = await generatePDFFromHTML(html, correlationId)
     const duration = Date.now() - startTime
 
     console.error(`[REGULAR_INVOICE_PDF] ${correlationId} PDF generated successfully`, {
