@@ -1049,6 +1049,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                     </tbody>
                   </table>
                 </div>
+              </>
             ) : (
               <div className="empty-state">
                 <p>No entries to display</p>
