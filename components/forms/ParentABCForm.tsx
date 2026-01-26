@@ -967,35 +967,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           {/* Print View - Modern Table Design */}
           <div className="print-only mt-6">
             {rows.length > 0 && rows.some((r) => r.date || r.antecedent || r.consequence) ? (
-              <>
-                {/* Duplicate header for page 2+ */}
-                <div className="print-header-duplicate print-only">
-                  <div className="modern-form-header mb-8">
-                    <div className="header-gradient">
-                      <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
-                      <div className="header-accent-line"></div>
-                    </div>
-                  </div>
-                  <div className="mb-8">
-                    <div className="info-card">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                          <div className="info-label">Client Name</div>
-                          <div className="print-only info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
-                        </div>
-                        <div>
-                          <div className="info-label">Month</div>
-                          <div className="print-only info-value">{month ? new Date(2000, month - 1).toLocaleString('default', { month: 'long' }) : 'N/A'}</div>
-                        </div>
-                        <div>
-                          <div className="info-label">Behavior</div>
-                          <div className="print-only info-value">{behavior || 'N/A'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modern-table-container">
+              <div className="modern-table-container">
                   <table className="modern-table w-full">
                     <thead>
                       <tr>
