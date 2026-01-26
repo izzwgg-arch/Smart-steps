@@ -1006,19 +1006,19 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div>
                                               <div className="info-label">Client Name</div>
-                                              <div className="print-only info-value" style={{ display: 'block !important', visibility: 'visible !important', color: '#1e293b !important', fontSize: '14pt !important', fontWeight: '600 !important' }}>
+                                              <div className="print-only info-value duplicate-header-value">
                                                 {clientName}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="info-label">Month</div>
-                                              <div className="print-only info-value" style={{ display: 'block !important', visibility: 'visible !important', color: '#1e293b !important', fontSize: '14pt !important', fontWeight: '600 !important' }}>
+                                              <div className="print-only info-value duplicate-header-value">
                                                 {monthName}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="info-label">Behavior</div>
-                                              <div className="print-only info-value" style={{ display: 'block !important', visibility: 'visible !important', color: '#1e293b !important', fontSize: '14pt !important', fontWeight: '600 !important' }}>
+                                              <div className="print-only info-value duplicate-header-value">
                                                 {behaviorValue}
                                               </div>
                                             </div>
