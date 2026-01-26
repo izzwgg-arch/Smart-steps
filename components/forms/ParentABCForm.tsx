@@ -1010,20 +1010,58 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                     <tbody>
                       {rows
                         .filter((r) => r.date || r.antecedent || r.consequence)
-                        .map((row, idx) => (
-                          <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
-                            <td className="table-cell">
-                              <div className="date-badge">
-                                {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
-                              </div>
-                            </td>
-                            <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
-                            <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
-                            <td className="table-cell">{row.antecedent || '—'}</td>
-                            <td className="table-cell">{row.consequence || '—'}</td>
-                            <td className="table-cell">{row.notes || '—'}</td>
-                          </tr>
-                        ))}
+                        .map((row, idx) => {
+                          // Insert duplicate header after approximately 12 rows (roughly one page)
+                          const shouldInsertHeader = idx === 12
+                          return (
+                            <>
+                              {shouldInsertHeader && (
+                                <tr key={`header-${idx}`} style={{ pageBreakBefore: 'always', breakBefore: 'page' }}>
+                                  <td colSpan={6} style={{ padding: '20pt', border: 'none', backgroundColor: 'transparent', pageBreakInside: 'avoid' }}>
+                                    <div className="print-header-duplicate">
+                                      <div className="modern-form-header mb-8">
+                                        <div className="header-gradient">
+                                          <h1 className="text-3xl font-bold mb-2 text-white">PARENT ABC DATA SHEET</h1>
+                                          <div className="header-accent-line"></div>
+                                        </div>
+                                      </div>
+                                      <div className="mb-8">
+                                        <div className="info-card">
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div>
+                                              <div className="info-label">Client Name</div>
+                                              <div className="info-value">{selectedClient ? selectedClient.name : 'N/A'}</div>
+                                            </div>
+                                            <div>
+                                              <div className="info-label">Month</div>
+                                              <div className="info-value">{month ? new Date(2000, month - 1).toLocaleString('default', { month: 'long' }) : 'N/A'}</div>
+                                            </div>
+                                            <div>
+                                              <div className="info-label">Behavior</div>
+                                              <div className="info-value">{behavior || 'N/A'}</div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
+                                <td className="table-cell">
+                                  <div className="date-badge">
+                                    {row.date ? format(row.date, 'MM/dd/yyyy') : '—'}
+                                  </div>
+                                </td>
+                                <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
+                                <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
+                                <td className="table-cell">{row.antecedent || '—'}</td>
+                                <td className="table-cell">{row.consequence || '—'}</td>
+                                <td className="table-cell">{row.notes || '—'}</td>
+                              </tr>
+                            </>
+                          )
+                        })}
                     </tbody>
                   </table>
                 </div>
