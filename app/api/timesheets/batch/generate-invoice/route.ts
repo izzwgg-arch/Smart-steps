@@ -133,14 +133,27 @@ export async function POST(request: NextRequest) {
       const client = weekTimesheets[0].client
       const clientId = weekTimesheets[0].clientId
 
-      // Get insurance rate from client's insurance profile (regular insurance)
-      if (!client.insurance) {
+      // Get insurance from timesheet's insuranceId (for regular timesheets)
+      // Use the insurance specified on the timesheet, not just client's default
+      const timesheetInsuranceId = weekTimesheets[0].insuranceId
+      let insurance = client.insurance // Fallback to client's insurance
+      
+      if (timesheetInsuranceId) {
+        // Fetch the insurance from the timesheet's insuranceId
+        const timesheetInsurance = await prisma.insurance.findUnique({
+          where: { id: timesheetInsuranceId, deletedAt: null },
+        })
+        if (timesheetInsurance) {
+          insurance = timesheetInsurance
+        }
+      }
+      
+      if (!insurance) {
         const errorMsg = `Client "${client.name}" has no insurance assigned`
         errors.push(errorMsg)
         continue
       }
 
-      const insurance = client.insurance
       // Use regular-specific rates, with fallbacks
       const ratePerUnit = (insurance as any).regularRatePerUnit 
         ? new Decimal((insurance as any).regularRatePerUnit.toString())
