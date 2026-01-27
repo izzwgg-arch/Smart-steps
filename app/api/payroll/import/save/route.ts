@@ -57,8 +57,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if this is an event-based file (has Att Type or Event Type column)
-    // If IN and OUT are mapped to the same column, we'll pair events
-    const hasEventTypeMapping = mapping.eventType || false
+    // CRITICAL: Only treat as event type if it's EXPLICITLY mapped to eventType field
+    // If "Att Type" is mapped to OUT time, it's NOT an event type - it's a fingerprint scanner
+    const hasEventTypeMapping = mapping.eventType ? true : false
     const hasSameTimeColumn = mapping.inTime && mapping.outTime && mapping.inTime === mapping.outTime
     const hasOnlyInTime = mapping.inTime && !mapping.outTime // Only IN time mapped, no OUT time
     
@@ -131,8 +132,10 @@ export async function POST(request: NextRequest) {
     })
 
     // Check if this is an event-based file (has Att Type or Event Type column)
-    const eventTypeColumn = mapping.eventType || 'Att Type'
-    const isEventBased = hasEventTypeMapping && data.length > 0 && data[0][eventTypeColumn] !== undefined
+    // CRITICAL: Only check for event-based if eventType is EXPLICITLY mapped
+    // If "Att Type" is mapped to OUT time, don't treat it as event-based
+    const eventTypeColumn = mapping.eventType || null
+    const isEventBased = hasEventTypeMapping && eventTypeColumn && data.length > 0 && data[0][eventTypeColumn] !== undefined
 
     // Debug logging
     console.log(`[PAYROLL IMPORT] Detection check:`, {
