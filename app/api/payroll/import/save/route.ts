@@ -202,12 +202,16 @@ export async function POST(request: NextRequest) {
           punchesByEmployeeDate.set(dateKey, [])
         }
         
-        // If both IN and OUT are mapped to different columns, collect punches from both
+        // If both IN and OUT are mapped to different columns, treat each row as a single punch
+        // Fingerprint scanner files typically have separate rows for IN and OUT punches
         if (mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime) {
-          // Separate columns: each row can have IN punch, OUT punch, or both
-          // Add IN punch if present (check if value exists and is not empty)
+          // Separate columns: each row typically has ONE punch (either IN or OUT)
+          // Use the column that has a value - if both have values, prefer IN column
           const hasInValue = inTimeValue !== null && inTimeValue !== undefined && String(inTimeValue).trim() !== ''
+          const hasOutValue = outTimeValue !== null && outTimeValue !== undefined && String(outTimeValue).trim() !== ''
+          
           if (hasInValue) {
+            // Row has IN time - treat as IN punch
             punchesByEmployeeDate.get(dateKey)!.push({
               index,
               row,
@@ -217,11 +221,8 @@ export async function POST(request: NextRequest) {
               employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
               employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
             })
-          }
-          
-          // Add OUT punch if present (check if value exists and is not empty)
-          const hasOutValue = outTimeValue !== null && outTimeValue !== undefined && String(outTimeValue).trim() !== ''
-          if (hasOutValue) {
+          } else if (hasOutValue) {
+            // Row has OUT time but no IN time - treat as OUT punch
             punchesByEmployeeDate.get(dateKey)!.push({
               index,
               row,
@@ -232,6 +233,7 @@ export async function POST(request: NextRequest) {
               employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
             })
           }
+          // If neither has a value, skip this row
         } else {
           // Same column or only one column mapped: use single time value
           const timeColumn = mapping.inTime || mapping.outTime
