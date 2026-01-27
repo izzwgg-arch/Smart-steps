@@ -6,6 +6,7 @@ import { Decimal } from '@prisma/client/runtime/library'
 import { logCreate } from '@/lib/audit'
 import { getWeekStart, getWeekEnd, getWeekKey } from '@/lib/weekUtils'
 import { utcToZonedTime, format } from 'date-fns-tz'
+import { minutesToUnits, calculateEntryTotals, calculateInvoiceTotals } from '@/lib/billing'
 
 /**
  * POST /api/timesheets/batch/generate-invoice
@@ -149,7 +150,8 @@ export async function POST(request: NextRequest) {
       }
       
       if (!insurance) {
-        const errorMsg = `Client "${client.name}" has no insurance assigned`
+        const errorMsg = `MISSING_INSURANCE_RATE: Client "${client.name}" has no insurance assigned`
+        console.error(`[BATCH INVOICE GEN] ${errorMsg}`)
         errors.push(errorMsg)
         continue
       }
@@ -159,6 +161,14 @@ export async function POST(request: NextRequest) {
         ? new Decimal((insurance as any).regularRatePerUnit.toString())
         : new Decimal(insurance.ratePerUnit.toString()) // Legacy fallback
       const unitMinutes = (insurance as any).regularUnitMinutes || 15 // Default to 15 minutes
+
+      // Validate rate exists
+      if (!ratePerUnit || ratePerUnit.toNumber() <= 0) {
+        const errorMsg = `MISSING_INSURANCE_RATE: Client "${client.name}" has invalid or missing rate per unit`
+        console.error(`[BATCH INVOICE GEN] ${errorMsg}`)
+        errors.push(errorMsg)
+        continue
+      }
 
       const weekStart = getWeekStart(weekTimesheets[0].startDate)
       const weekEnd = getWeekEnd(weekTimesheets[0].startDate)
@@ -188,36 +198,55 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Calculate totals using regular insurance unitMinutes
-      const totalMinutes = allEntries.reduce((sum, entry) => sum + entry.minutes, 0)
-      const totalUnits = allEntries.reduce((sum, entry) => {
-        // Recalculate units based on regular insurance unitMinutes
-        const units = entry.minutes / unitMinutes
-        return sum + units
-      }, 0)
-      const totalAmount = new Decimal(totalUnits).times(ratePerUnit)
+      // Calculate totals using billing utility (rounds UP to next whole unit)
+      const { totalMinutes, unitsBilled, amount: totalAmount } = calculateInvoiceTotals(
+        allEntries,
+        ratePerUnit,
+        unitMinutes
+      )
 
       invoiceCounter++
       const invoiceNumber = `INV-${new Date().getFullYear()}-${String(invoiceCounter).padStart(4, '0')}`
 
-      // Create invoice entries
+      console.log(`[BATCH INVOICE GEN] Creating invoice ${invoiceNumber} for client "${client.name}"`)
+      console.log(`[BATCH INVOICE GEN] Calculation breakdown:`)
+      console.log(`  - Total minutes: ${totalMinutes}`)
+      console.log(`  - Units billed (ceil): ${unitsBilled}`)
+      console.log(`  - Rate per unit: $${ratePerUnit.toNumber()}`)
+      console.log(`  - Total amount: $${totalAmount.toNumber()}`)
+      console.log(`  - Date range: ${format(utcToZonedTime(weekStart, 'America/New_York'), 'MMM d, yyyy')} to ${format(utcToZonedTime(weekEnd, 'America/New_York'), 'MMM d, yyyy')}`)
+      console.log(`  - Entries included: ${allEntries.length}`)
+
+      // Create invoice entries (calculate per entry, then sum)
       const invoiceEntries: any[] = []
+      let entryTotalUnits = 0
+      let entryTotalAmount = new Decimal(0)
+      
       for (const entry of allEntries) {
         const timesheet = weekTimesheets.find(ts => ts.entries.some(e => e.id === entry.id))
         if (!timesheet) continue
         
-        // Recalculate units based on regular insurance unitMinutes
-        const entryUnits = new Decimal(entry.minutes / unitMinutes)
-        const entryAmount = entryUnits.times(ratePerUnit)
+        // Calculate units and amount for this entry (rounds UP per entry)
+        const { unitsBilled: entryUnits, amount: entryAmount } = calculateEntryTotals(
+          entry.minutes,
+          ratePerUnit,
+          unitMinutes
+        )
+        
+        entryTotalUnits += entryUnits
+        entryTotalAmount = entryTotalAmount.plus(entryAmount)
+        
         invoiceEntries.push({
           timesheetId: entry.timesheetId,
           providerId: timesheet.providerId,
           insuranceId: client.insuranceId!,
-          units: entryUnits,
+          units: new Decimal(entryUnits),
           rate: ratePerUnit.toNumber(),
           amount: entryAmount,
         })
       }
+      
+      console.log(`[BATCH INVOICE GEN] Entry-level totals: ${entryTotalUnits} units, $${entryTotalAmount.toNumber()}`)
 
       // Create invoice in transaction
       try {
@@ -228,10 +257,10 @@ export async function POST(request: NextRequest) {
               clientId,
               startDate: weekStart,
               endDate: weekEnd,
-              totalAmount,
+              totalAmount: entryTotalAmount, // Use sum of entry amounts (may differ slightly from aggregate due to per-entry rounding)
               paidAmount: new Decimal(0),
               adjustments: new Decimal(0),
-              outstanding: totalAmount,
+              outstanding: entryTotalAmount,
               status: 'DRAFT',
               createdBy: session.user.id,
               entries: {
@@ -239,6 +268,9 @@ export async function POST(request: NextRequest) {
               },
             },
           })
+          
+          console.log(`[BATCH INVOICE GEN] ✅ Invoice ${newInvoice.invoiceNumber} created with ID ${newInvoice.id}`)
+          console.log(`[BATCH INVOICE GEN] Final totals: ${entryTotalUnits} units, $${entryTotalAmount.toNumber()}`)
 
           // Mark entries as invoiced
           const entryIds = allEntries.map(e => e.id)

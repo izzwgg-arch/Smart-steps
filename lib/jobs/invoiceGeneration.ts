@@ -289,45 +289,50 @@ async function generateInvoiceForClient(
     throw new Error(`Invalid insurance rate: ${insurance.ratePerUnit}`)
   }
 
-  // Calculate totals using rounding policy (round UP to nearest 15 minutes)
-  // 1 unit = 15 minutes
+  // Calculate totals using billing utility (rounds UP to nearest whole unit)
+  // 1 unit = 15 minutes, rounded UP
+  const { calculateEntryTotals } = await import('@/lib/billing')
+  
   let totalAmount = new Decimal(0)
   let totalMinutes = 0
   let totalUnits = 0
   const invoiceEntries: any[] = []
+  const unitMinutes = 15 // Standard unit size
 
   for (const timesheet of timesheets) {
     for (const entry of timesheet.entries) {
-      // Use the stored minutes (already calculated with rounding policy)
+      // Use the stored minutes
       const minutes = entry.minutes
       
-      // Calculate units: 1 unit = 15 minutes (no rounding)
-      // Units are stored directly from timesheet entries
-      const units = minutes / 15
-      
-      // Calculate amount using snapshot rate (rate per unit)
-      const amount = new Decimal(units).times(ratePerUnit)
+      // Calculate units using billing utility (rounds UP)
+      const { unitsBilled, amount } = calculateEntryTotals(minutes, ratePerUnit, unitMinutes)
       
       // Guard against NaN
-      if (isNaN(minutes) || isNaN(units) || isNaN(amount.toNumber())) {
-        console.error(`[INVOICE GENERATION] Invalid calculation for entry ${entry.id}: minutes=${minutes}, units=${units}`)
+      if (isNaN(minutes) || isNaN(unitsBilled) || isNaN(amount.toNumber())) {
+        console.error(`[INVOICE GENERATION] Invalid calculation for entry ${entry.id}: minutes=${minutes}, units=${unitsBilled}`)
         throw new Error(`Invalid calculation for timesheet entry ${entry.id}`)
       }
 
       totalAmount = totalAmount.plus(amount)
       totalMinutes += minutes
-      totalUnits += units
+      totalUnits += unitsBilled
 
       invoiceEntries.push({
         timesheetId: timesheet.id,
         providerId: timesheet.providerId,
         insuranceId: timesheet.insuranceId,
-        units: new Decimal(units),
+        units: new Decimal(unitsBilled),
         rate: ratePerUnit, // Snapshot rate per unit
         amount: amount,
       })
     }
   }
+  
+  console.log(`[INVOICE GENERATION] Calculation summary:`)
+  console.log(`  - Total minutes: ${totalMinutes}`)
+  console.log(`  - Total units billed (ceil): ${totalUnits}`)
+  console.log(`  - Rate per unit: $${ratePerUnit.toFixed(2)}`)
+  console.log(`  - Total amount: $${totalAmount.toNumber()}`)
 
   if (invoiceEntries.length === 0) {
     throw new Error('No eligible entries found for invoice generation')
@@ -382,7 +387,7 @@ async function generateInvoiceForClient(
     // Only update timesheets that are not deleted
     const timesheetIds = timesheets.map(ts => ts.id)
     if (timesheetIds.length > 0) {
-      await tx.timesheet.updateMany({
+      await (tx as any).timesheet.updateMany({
         where: {
           id: { in: timesheetIds },
           deletedAt: null, // Only update non-deleted timesheets

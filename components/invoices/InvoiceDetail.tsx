@@ -78,6 +78,9 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
   const [loading, setLoading] = useState(true)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false)
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [debugData, setDebugData] = useState<any>(null)
+  const [loadingDebug, setLoadingDebug] = useState(false)
 
   useEffect(() => {
     fetchInvoice()
@@ -101,6 +104,29 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
 
   const refreshInvoice = () => {
     fetchInvoice()
+  }
+
+  const fetchDebugData = async () => {
+    if (!showDebugPanel) {
+      setShowDebugPanel(true)
+      setLoadingDebug(true)
+      try {
+        const res = await fetch(`/api/invoices/${invoiceId}/debug`)
+        if (res.ok) {
+          const data = await res.json()
+          setDebugData(data)
+        } else {
+          toast.error('Failed to load debug data')
+        }
+      } catch (error) {
+        toast.error('Failed to load debug data')
+      } finally {
+        setLoadingDebug(false)
+      }
+    } else {
+      setShowDebugPanel(false)
+      setDebugData(null)
+    }
   }
 
   if (loading) {
@@ -526,6 +552,93 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
 
         {/* Summary Sidebar */}
         <div className="space-y-6">
+          {userRole === 'ADMIN' && (
+            <div className="bg-white shadow rounded-lg p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold">Debug Calculation</h2>
+                <button
+                  onClick={fetchDebugData}
+                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded text-gray-700"
+                >
+                  {showDebugPanel ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {showDebugPanel && (
+                <div className="mt-4">
+                  {loadingDebug ? (
+                    <p className="text-sm text-gray-500">Loading debug data...</p>
+                  ) : debugData ? (
+                    <div className="space-y-4 text-sm">
+                      <div className="border-b pb-2">
+                        <p className="font-semibold">Calculation Summary</p>
+                        <div className="mt-2 space-y-1 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Total Minutes:</span>
+                            <span className="font-mono">{debugData.calculation.totalMinutes}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Units Raw:</span>
+                            <span className="font-mono">{debugData.calculation.totalUnitsRaw.toFixed(4)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Units Billed (ceil):</span>
+                            <span className="font-mono font-semibold">{debugData.calculation.totalUnitsBilled}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Rate per Unit:</span>
+                            <span className="font-mono">${debugData.insurance.ratePerUnit.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Calculated Amount:</span>
+                            <span className="font-mono">${debugData.calculation.totalAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Invoice Amount:</span>
+                            <span className="font-mono">${debugData.calculation.invoiceTotalAmount.toFixed(2)}</span>
+                          </div>
+                          {Math.abs(debugData.calculation.difference) > 0.01 && (
+                            <div className="flex justify-between text-red-600">
+                              <span>Difference:</span>
+                              <span className="font-mono">${debugData.calculation.difference.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="border-b pb-2">
+                        <p className="font-semibold">Insurance</p>
+                        <div className="mt-2 text-xs">
+                          <p><span className="text-gray-600">Name:</span> {debugData.insurance.name}</p>
+                          <p><span className="text-gray-600">Unit Minutes:</span> {debugData.insurance.unitMinutes}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="font-semibold mb-2">Entry Breakdown ({debugData.entries.length} entries)</p>
+                        <div className="max-h-64 overflow-y-auto space-y-2 text-xs">
+                          {debugData.entries.slice(0, 10).map((entry: any, idx: number) => (
+                            <div key={idx} className="border-l-2 border-gray-200 pl-2 py-1">
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">{entry.date}</span>
+                                <span className="font-mono">{entry.minutes} min</span>
+                              </div>
+                              <div className="flex justify-between text-gray-500">
+                                <span>{entry.startTime} - {entry.endTime}</span>
+                                <span className="font-mono">{entry.unitsBilled} units × ${entry.ratePerUnit} = ${entry.amount.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          ))}
+                          {debugData.entries.length > 10 && (
+                            <p className="text-gray-500 italic">... and {debugData.entries.length - 10} more entries</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No debug data available</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="bg-white shadow rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-4">Summary</h2>
             <div className="space-y-3">

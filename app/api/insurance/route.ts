@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       : finalRegularMins
 
     // Create insurance
-    const insurance = await prisma.insurance.create({
+    const insurance = await (prisma as any).insurance.create({
       data: {
         name,
         ratePerUnit: finalRegularRate, // Keep for backward compatibility

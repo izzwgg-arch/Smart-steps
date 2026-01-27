@@ -57,9 +57,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if this is an event-based file (has Att Type or Event Type column)
-    // CRITICAL: Only treat as event type if it's EXPLICITLY mapped to eventType field
-    // If "Att Type" is mapped to OUT time, it's NOT an event type - it's a fingerprint scanner
-    const hasEventTypeMapping = mapping.eventType ? true : false
+    // CRITICAL: If eventType equals outTime (same column mapped to both), it's NOT an event type - it's a fingerprint scanner
+    // Use explicit string comparison with trimming to handle any type/whitespace issues
+    const eventTypeVal = mapping.eventType ? String(mapping.eventType).trim() : null
+    const outTimeVal = mapping.outTime ? String(mapping.outTime).trim() : null
+    const hasEventTypeMapping = eventTypeVal && eventTypeVal !== outTimeVal ? true : false
     const hasSameTimeColumn = mapping.inTime && mapping.outTime && mapping.inTime === mapping.outTime
     const hasOnlyInTime = mapping.inTime && !mapping.outTime // Only IN time mapped, no OUT time
     
@@ -119,9 +121,12 @@ export async function POST(request: NextRequest) {
     // where each row has one punch (either IN or OUT time)
     const hasSeparateInOutColumns = mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime
     
-    // FINGERPRINT SCANNER: If multiple punches per day detected, ALWAYS treat as fingerprint scanner
+    // FINGERPRINT SCANNER: If multiple punches per day detected, ALWAYS treat as fingerprint scanner REGARDLESS of mapping
+    // This is the PRIMARY detection method - if we see multiple punches per employee per day, it's a fingerprint scanner
     // OR if mapping suggests it (same column, only IN time, OR separate IN/OUT columns)
-    const isFingerprintScanner = (hasMultiplePunchesPerDay || isFingerprintScannerCandidate || hasSeparateInOutColumns) && !hasEventTypeMapping && data.length > 0
+    const isFingerprintScanner = hasMultiplePunchesPerDay 
+      ? true  // FORCE fingerprint scanner if multiple punches detected
+      : (isFingerprintScannerCandidate || hasSeparateInOutColumns) && !hasEventTypeMapping && data.length > 0
     
     console.log(`[PAYROLL IMPORT] Fingerprint scanner detection:`, {
       hasMultiplePunchesPerDay,
@@ -132,9 +137,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Check if this is an event-based file (has Att Type or Event Type column)
-    // CRITICAL: Only check for event-based if eventType is EXPLICITLY mapped
-    // If "Att Type" is mapped to OUT time, don't treat it as event-based
-    const eventTypeColumn = mapping.eventType || null
+    // Restore working version: use mapping.eventType directly, but only if hasEventTypeMapping is true
+    const eventTypeColumn = hasEventTypeMapping ? mapping.eventType : null
     const isEventBased = hasEventTypeMapping && eventTypeColumn && data.length > 0 && data[0][eventTypeColumn] !== undefined
 
     // Debug logging

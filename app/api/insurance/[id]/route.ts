@@ -74,21 +74,21 @@ export async function PUT(
     
     const finalRegularMins = regularUnitMinutes !== undefined && regularUnitMinutes !== null
       ? parseInt(regularUnitMinutes)
-      : (existingInsurance.regularUnitMinutes || 15)
+      : ((existingInsurance as any).regularUnitMinutes || 15)
 
     const finalBcbaRate = bcbaRatePerUnit !== undefined && bcbaRatePerUnit !== null
       ? parseFloat(bcbaRatePerUnit)
-      : (existingInsurance.bcbaRatePerUnit 
-          ? parseFloat(existingInsurance.bcbaRatePerUnit.toString())
+      : ((existingInsurance as any).bcbaRatePerUnit 
+          ? parseFloat((existingInsurance as any).bcbaRatePerUnit.toString())
           : finalRegularRate)
     
     const finalBcbaMins = bcbaUnitMinutes !== undefined && bcbaUnitMinutes !== null
       ? parseInt(bcbaUnitMinutes)
-      : (existingInsurance.bcbaUnitMinutes || finalRegularMins)
+      : ((existingInsurance as any).bcbaUnitMinutes || finalRegularMins)
 
     // If regular rate changed, record in history
-    const oldRegularRate = existingInsurance.regularRatePerUnit 
-      ? parseFloat(existingInsurance.regularRatePerUnit.toString())
+    const oldRegularRate = (existingInsurance as any).regularRatePerUnit 
+      ? parseFloat((existingInsurance as any).regularRatePerUnit.toString())
       : parseFloat(existingInsurance.ratePerUnit.toString())
     
     if (finalRegularRate !== oldRegularRate) {
@@ -113,7 +113,7 @@ export async function PUT(
       })
     }
 
-    const insurance = await prisma.insurance.update({
+    const insurance = await (prisma as any).insurance.update({
       where: { id: params.id },
       data: {
         name: name !== undefined ? name : existingInsurance.name,
