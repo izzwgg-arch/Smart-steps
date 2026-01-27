@@ -60,6 +60,9 @@ interface PayrollEmployee {
   phone: string | null
   active: boolean
   defaultHourlyRate: number
+  overtimeRateHourly: number | null
+  overtimeStartTime: number | null // Minutes since midnight
+  overtimeEnabled: boolean
   scannerExternalId: string | null
   notes: string | null
 }
@@ -82,6 +85,9 @@ export function EmployeeDirectory({ permissions, userRole }: { permissions: any,
   const [phone, setPhone] = useState('')
   const [active, setActive] = useState(true)
   const [defaultHourlyRate, setDefaultHourlyRate] = useState('')
+  const [overtimeRateHourly, setOvertimeRateHourly] = useState('')
+  const [overtimeStartTime, setOvertimeStartTime] = useState('') // HH:MM format
+  const [overtimeEnabled, setOvertimeEnabled] = useState(false)
   const [scannerExternalId, setScannerExternalId] = useState('')
   const [notes, setNotes] = useState('')
 
@@ -115,9 +121,37 @@ export function EmployeeDirectory({ permissions, userRole }: { permissions: any,
     setPhone('')
     setActive(true)
     setDefaultHourlyRate('')
+    setOvertimeRateHourly('')
+    setOvertimeStartTime('')
+    setOvertimeEnabled(false)
     setScannerExternalId('')
     setNotes('')
     setShowForm(true)
+  }
+
+  // Convert minutes since midnight to HH:MM format
+  const minutesToTime = (minutes: number | null): string => {
+    if (minutes === null || minutes === undefined) return ''
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+    return `${displayHours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')} ${period}`
+  }
+
+  // Convert HH:MM AM/PM to minutes since midnight
+  const timeToMinutes = (timeStr: string): number | null => {
+    if (!timeStr.trim()) return null
+    const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+    if (!match) return null
+    let hours = parseInt(match[1])
+    const minutes = parseInt(match[2])
+    const period = match[3].toUpperCase()
+    
+    if (period === 'PM' && hours !== 12) hours += 12
+    if (period === 'AM' && hours === 12) hours = 0
+    
+    return hours * 60 + minutes
   }
 
   const handleEditEmployee = (employee: PayrollEmployee) => {
@@ -127,6 +161,9 @@ export function EmployeeDirectory({ permissions, userRole }: { permissions: any,
     setPhone(employee.phone || '')
     setActive(employee.active ?? true)
     setDefaultHourlyRate((employee.defaultHourlyRate || 0).toString())
+    setOvertimeRateHourly((employee.overtimeRateHourly || '').toString())
+    setOvertimeStartTime(minutesToTime(employee.overtimeStartTime))
+    setOvertimeEnabled(employee.overtimeEnabled ?? false)
     setScannerExternalId(employee.scannerExternalId || '')
     setNotes(employee.notes || '')
     setShowForm(true)
@@ -150,6 +187,32 @@ export function EmployeeDirectory({ permissions, userRole }: { permissions: any,
       return
     }
 
+    // Validate overtime fields
+    let overtimeRate: number | null = null
+    let overtimeStart: number | null = null
+    
+    if (overtimeRateHourly.trim()) {
+      overtimeRate = parseFloat(overtimeRateHourly)
+      if (isNaN(overtimeRate) || overtimeRate <= 0) {
+        toast.error('Overtime rate must be a positive number')
+        return
+      }
+      
+      if (!overtimeStartTime.trim()) {
+        toast.error('Overtime start time is required when overtime rate is set')
+        return
+      }
+      
+      overtimeStart = timeToMinutes(overtimeStartTime)
+      if (overtimeStart === null) {
+        toast.error('Invalid overtime start time format. Use HH:MM AM/PM (e.g., 5:00 PM)')
+        return
+      }
+    } else if (overtimeStartTime.trim()) {
+      toast.error('Overtime rate is required when overtime start time is set')
+      return
+    }
+
     setSaving(true)
 
     try {
@@ -168,6 +231,9 @@ export function EmployeeDirectory({ permissions, userRole }: { permissions: any,
           phone: phone.trim() || null,
           active,
           defaultHourlyRate: parseFloat(defaultHourlyRate),
+          overtimeRateHourly: overtimeRate,
+          overtimeStartTime: overtimeStart,
+          overtimeEnabled: overtimeEnabled && overtimeRate !== null,
           scannerExternalId: scannerExternalId.trim() || null,
           notes: notes.trim() || null,
         }),
@@ -305,6 +371,57 @@ export function EmployeeDirectory({ permissions, userRole }: { permissions: any,
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
                   />
                 </div>
+              </div>
+
+              <div className="md:col-span-2 border-t pt-4 mt-2">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Overtime Settings</h3>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Overtime Hourly Rate
+                </label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={overtimeRateHourly}
+                    onChange={(e) => setOvertimeRateHourly(e.target.value)}
+                    placeholder="Optional"
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Overtime Start Time
+                </label>
+                <input
+                  type="text"
+                  value={overtimeStartTime}
+                  onChange={(e) => setOvertimeStartTime(e.target.value)}
+                  placeholder="5:00 PM"
+                  pattern="\d{1,2}:\d{2}\s*(AM|PM)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">Format: HH:MM AM/PM (e.g., 5:00 PM)</p>
+              </div>
+
+              <div>
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overtimeEnabled}
+                    onChange={(e) => setOvertimeEnabled(e.target.checked)}
+                    disabled={!overtimeRateHourly.trim()}
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded disabled:opacity-50"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Overtime Enabled</span>
+                </label>
+                <p className="mt-1 text-xs text-gray-500">Automatically enabled when overtime rate is set</p>
               </div>
 
               <div>

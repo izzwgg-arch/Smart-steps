@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
         phone: true,
         active: true,
         defaultHourlyRate: true,
+        overtimeRateHourly: true,
+        overtimeStartTime: true,
+        overtimeEnabled: true,
         scannerExternalId: true,
         createdAt: true,
         updatedAt: true,
@@ -39,6 +42,11 @@ export async function GET(request: NextRequest) {
       defaultHourlyRate: typeof emp.defaultHourlyRate === 'object' && 'toNumber' in emp.defaultHourlyRate
         ? emp.defaultHourlyRate.toNumber()
         : Number(emp.defaultHourlyRate) || 0,
+      overtimeRateHourly: emp.overtimeRateHourly && typeof emp.overtimeRateHourly === 'object' && 'toNumber' in emp.overtimeRateHourly
+        ? emp.overtimeRateHourly.toNumber()
+        : emp.overtimeRateHourly ? Number(emp.overtimeRateHourly) : null,
+      overtimeStartTime: emp.overtimeStartTime !== null && emp.overtimeStartTime !== undefined ? Number(emp.overtimeStartTime) : null,
+      overtimeEnabled: emp.overtimeEnabled ?? false,
     }))
 
       const totalMs = endTimer(reqId, 'total') || 0
@@ -75,6 +83,9 @@ export async function POST(request: NextRequest) {
       phone,
       active,
       defaultHourlyRate,
+      overtimeRateHourly,
+      overtimeStartTime,
+      overtimeEnabled,
       scannerExternalId,
       notes,
     } = body
@@ -86,6 +97,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate overtime fields
+    if (overtimeRateHourly !== null && overtimeRateHourly !== undefined) {
+      const otRate = parseFloat(overtimeRateHourly)
+      if (isNaN(otRate) || otRate <= 0) {
+        return NextResponse.json(
+          { error: 'Overtime rate must be a positive number' },
+          { status: 400 }
+        )
+      }
+      if (overtimeStartTime === null || overtimeStartTime === undefined) {
+        return NextResponse.json(
+          { error: 'Overtime start time is required when overtime rate is set' },
+          { status: 400 }
+        )
+      }
+      const otTime = parseInt(overtimeStartTime)
+      if (isNaN(otTime) || otTime < 0 || otTime >= 1440) {
+        return NextResponse.json(
+          { error: 'Overtime start time must be between 0 and 1439 (minutes since midnight)' },
+          { status: 400 }
+        )
+      }
+    }
+
     const employee = await (prisma as any).payrollEmployee.create({
       data: {
         fullName: fullName.trim(),
@@ -93,6 +128,9 @@ export async function POST(request: NextRequest) {
         phone: phone?.trim() || null,
         active: active !== undefined ? active : true,
         defaultHourlyRate: parseFloat(defaultHourlyRate),
+        overtimeRateHourly: overtimeRateHourly !== null && overtimeRateHourly !== undefined ? parseFloat(overtimeRateHourly) : null,
+        overtimeStartTime: overtimeStartTime !== null && overtimeStartTime !== undefined ? parseInt(overtimeStartTime) : null,
+        overtimeEnabled: overtimeEnabled !== undefined ? overtimeEnabled : (overtimeRateHourly !== null && overtimeRateHourly !== undefined),
         scannerExternalId: scannerExternalId?.trim() || null,
         notes: notes?.trim() || null,
       },

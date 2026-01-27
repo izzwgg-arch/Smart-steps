@@ -19,6 +19,11 @@ interface PayrollRunLine {
   hourlyRateUsed: number
   totalMinutes: number
   totalHours: number
+  regularMinutes: number
+  overtimeMinutes: number
+  regularPay: number
+  overtimePay: number
+  overtimeRateUsed: number | null
   grossPay: number
   amountPaid: number
   amountOwed: number
@@ -486,9 +491,10 @@ export function PayrollRunDetail({
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hours</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gross Pay</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time Breakdown</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rates</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pay Breakdown</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Pay</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owed</th>
                 {canEditPayments && (
@@ -506,16 +512,53 @@ export function PayrollRunDetail({
                       <span className="text-sm font-medium text-gray-900">{line.employee.fullName}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {(() => {
-                      const totalMinutes = line.totalMinutes || 0
-                      const hours = Math.floor(totalMinutes / 60)
-                      const minutes = totalMinutes % 60
-                      return `${hours} hours${minutes > 0 ? ` ${minutes} minutes` : ''}`
-                    })()}
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    <div className="space-y-1">
+                      <div>
+                        <span className="font-medium">Regular:</span>{' '}
+                        {(() => {
+                          const regMins = line.regularMinutes || 0
+                          const regHours = Math.floor(regMins / 60)
+                          const regMinsRem = regMins % 60
+                          return `${regHours} hours${regMinsRem > 0 ? ` ${regMinsRem} minutes` : ''}`
+                        })()}
+                      </div>
+                      {(line.overtimeMinutes || 0) > 0 && (
+                        <div>
+                          <span className="font-medium">Overtime:</span>{' '}
+                          {(() => {
+                            const otMins = line.overtimeMinutes || 0
+                            const otHours = Math.floor(otMins / 60)
+                            const otMinsRem = otMins % 60
+                            return `${otHours} hours${otMinsRem > 0 ? ` ${otMinsRem} minutes` : ''}`
+                          })()}
+                        </div>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(parseFloat(line.hourlyRateUsed.toString()))}
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    <div className="space-y-1">
+                      <div>
+                        <span className="font-medium">Regular:</span> {formatCurrency(parseFloat(line.hourlyRateUsed.toString()))}/hr
+                      </div>
+                      {line.overtimeRateUsed && (line.overtimeMinutes || 0) > 0 && (
+                        <div>
+                          <span className="font-medium">OT:</span> {formatCurrency(parseFloat(line.overtimeRateUsed.toString()))}/hr
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    <div className="space-y-1">
+                      <div>
+                        <span className="font-medium">Regular:</span> {formatCurrency(parseFloat((line.regularPay || 0).toString()))}
+                      </div>
+                      {(line.overtimePay || 0) > 0 && (
+                        <div>
+                          <span className="font-medium">Overtime:</span> {formatCurrency(parseFloat((line.overtimePay || 0).toString()))}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {formatCurrency(parseFloat(line.grossPay.toString()))}

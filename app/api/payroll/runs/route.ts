@@ -223,12 +223,111 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Helper function to split time interval into regular and overtime
+    const splitTimeInterval = (
+      inTime: Date,
+      outTime: Date,
+      workDate: Date,
+      overtimeStartTime: number | null, // Minutes since midnight
+      overtimeEnabled: boolean
+    ): { regularMinutes: number; overtimeMinutes: number } => {
+      if (!overtimeEnabled || overtimeStartTime === null) {
+        // No overtime - all time is regular
+        const diffMs = outTime.getTime() - inTime.getTime()
+        const totalMinutes = Math.floor(diffMs / (1000 * 60))
+        return { regularMinutes: totalMinutes, overtimeMinutes: 0 }
+      }
+
+      // Create overtime boundary for the work date
+      const overtimeBoundary = new Date(workDate)
+      overtimeBoundary.setHours(Math.floor(overtimeStartTime / 60), overtimeStartTime % 60, 0, 0)
+
+      // Handle overnight shifts - split into two segments
+      const isOvernight = outTime.getDate() !== inTime.getDate()
+      
+      if (isOvernight) {
+        // Segment 1: inTime to end of day1
+        const endOfDay1 = new Date(inTime)
+        endOfDay1.setHours(23, 59, 59, 999)
+        
+        // Segment 2: start of day2 to outTime
+        const startOfDay2 = new Date(outTime)
+        startOfDay2.setHours(0, 0, 0, 0)
+
+        // Process segment 1 (day1)
+        let seg1Regular = 0
+        let seg1Overtime = 0
+        if (inTime < overtimeBoundary) {
+          // Starts before overtime
+          if (endOfDay1 < overtimeBoundary) {
+            // Entirely before overtime
+            seg1Regular = Math.floor((endOfDay1.getTime() - inTime.getTime()) / (1000 * 60))
+          } else {
+            // Crosses overtime boundary
+            seg1Regular = Math.floor((overtimeBoundary.getTime() - inTime.getTime()) / (1000 * 60))
+            seg1Overtime = Math.floor((endOfDay1.getTime() - overtimeBoundary.getTime()) / (1000 * 60))
+          }
+        } else {
+          // Starts at or after overtime
+          seg1Overtime = Math.floor((endOfDay1.getTime() - inTime.getTime()) / (1000 * 60))
+        }
+
+        // Process segment 2 (day2 - use same overtime boundary time but on day2)
+        const overtimeBoundaryDay2 = new Date(startOfDay2)
+        overtimeBoundaryDay2.setHours(Math.floor(overtimeStartTime / 60), overtimeStartTime % 60, 0, 0)
+        
+        let seg2Regular = 0
+        let seg2Overtime = 0
+        if (startOfDay2 < overtimeBoundaryDay2) {
+          // Starts before overtime
+          if (outTime < overtimeBoundaryDay2) {
+            // Entirely before overtime
+            seg2Regular = Math.floor((outTime.getTime() - startOfDay2.getTime()) / (1000 * 60))
+          } else {
+            // Crosses overtime boundary
+            seg2Regular = Math.floor((overtimeBoundaryDay2.getTime() - startOfDay2.getTime()) / (1000 * 60))
+            seg2Overtime = Math.floor((outTime.getTime() - overtimeBoundaryDay2.getTime()) / (1000 * 60))
+          }
+        } else {
+          // Starts at or after overtime
+          seg2Overtime = Math.floor((outTime.getTime() - startOfDay2.getTime()) / (1000 * 60))
+        }
+
+        return {
+          regularMinutes: seg1Regular + seg2Regular,
+          overtimeMinutes: seg1Overtime + seg2Overtime,
+        }
+      } else {
+        // Same day shift
+        if (outTime <= overtimeBoundary) {
+          // Entirely before overtime
+          const diffMs = outTime.getTime() - inTime.getTime()
+          return { regularMinutes: Math.floor(diffMs / (1000 * 60)), overtimeMinutes: 0 }
+        } else if (inTime >= overtimeBoundary) {
+          // Entirely after overtime
+          const diffMs = outTime.getTime() - inTime.getTime()
+          return { regularMinutes: 0, overtimeMinutes: Math.floor(diffMs / (1000 * 60)) }
+        } else {
+          // Crosses overtime boundary
+          const regularMs = overtimeBoundary.getTime() - inTime.getTime()
+          const overtimeMs = outTime.getTime() - overtimeBoundary.getTime()
+          return {
+            regularMinutes: Math.floor(regularMs / (1000 * 60)),
+            overtimeMinutes: Math.floor(overtimeMs / (1000 * 60)),
+          }
+        }
+      }
+    }
+
     // Aggregate by employee
     const employeeTotals = new Map<string, {
       employeeId: string
       employee: any
       totalMinutes: number
+      regularMinutes: number
+      overtimeMinutes: number
       hourlyRate: number
+      overtimeRate: number | null
     }>()
 
     console.log(`[PAYROLL RUN] Processing ${importRows.length} import rows`)
@@ -244,29 +343,36 @@ export async function POST(request: NextRequest) {
 
       linkedCount++
       const employeeId = row.linkedEmployeeId
-      // Calculate minutesWorked - prefer stored value, otherwise calculate from inTime/outTime
-      let minutesWorked = 0
       
-      if (row.minutesWorked !== null && row.minutesWorked !== undefined && row.minutesWorked > 0) {
-        minutesWorked = row.minutesWorked
-      } else if (row.inTime && row.outTime) {
-        // Calculate from inTime and outTime
-        const inTime = new Date(row.inTime)
-        const outTime = new Date(row.outTime)
+      // Get employee overtime settings
+      const overtimeRate = row.linkedEmployee.overtimeRateHourly 
+        ? parseFloat(row.linkedEmployee.overtimeRateHourly.toString())
+        : null
+      const overtimeStartTime = row.linkedEmployee.overtimeStartTime !== null && row.linkedEmployee.overtimeStartTime !== undefined
+        ? parseInt(row.linkedEmployee.overtimeStartTime.toString())
+        : null
+      const overtimeEnabled = row.linkedEmployee.overtimeEnabled === true && overtimeRate !== null && overtimeStartTime !== null
+
+      // Calculate time interval
+      let inTime: Date | null = null
+      let outTime: Date | null = null
+      let workDate: Date | null = null
+      
+      if (row.inTime && row.outTime) {
+        inTime = new Date(row.inTime)
+        outTime = new Date(row.outTime)
+        workDate = new Date(row.workDate)
+        
         // Handle overnight shifts
-        let adjustedOutTime = new Date(outTime)
-        if (adjustedOutTime < inTime) {
-          adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
+        if (outTime < inTime) {
+          outTime.setDate(outTime.getDate() + 1)
         }
-        const diffMs = adjustedOutTime.getTime() - inTime.getTime()
-        if (diffMs > 0) {
-          minutesWorked = Math.floor(diffMs / (1000 * 60))
-        }
-      }
-      
-      // Skip rows with no valid time data
-      if (minutesWorked === 0) {
-        console.log(`[PAYROLL RUN] Skipping row ${row.id} - no valid time data (minutesWorked=${row.minutesWorked}, inTime=${row.inTime}, outTime=${row.outTime})`)
+      } else if (row.minutesWorked !== null && row.minutesWorked !== undefined && row.minutesWorked > 0) {
+        // If we only have minutesWorked, we can't split into regular/overtime without times
+        // Treat all as regular in this case
+        workDate = new Date(row.workDate)
+      } else {
+        console.log(`[PAYROLL RUN] Skipping row ${row.id} - no valid time data`)
         continue
       }
 
@@ -276,20 +382,35 @@ export async function POST(request: NextRequest) {
           ? parseFloat(employeeRates[employeeId])
           : parseFloat(row.linkedEmployee.defaultHourlyRate.toString())
 
-        console.log(`[PAYROLL RUN] Adding employee ${row.linkedEmployee.fullName} (${employeeId}) with rate $${hourlyRate}`)
+        console.log(`[PAYROLL RUN] Adding employee ${row.linkedEmployee.fullName} (${employeeId}) with rate $${hourlyRate}, overtime: ${overtimeEnabled ? `$${overtimeRate} starting at ${overtimeStartTime} minutes` : 'disabled'}`)
 
         employeeTotals.set(employeeId, {
           employeeId,
           employee: row.linkedEmployee,
           totalMinutes: 0,
+          regularMinutes: 0,
+          overtimeMinutes: 0,
           hourlyRate,
+          overtimeRate,
         })
       }
 
       const totals = employeeTotals.get(employeeId)!
-      totals.totalMinutes += minutesWorked
       
-      console.log(`[PAYROLL RUN] Row ${row.id}: employee=${row.linkedEmployee.fullName}, minutes=${minutesWorked}, newTotalMinutes=${totals.totalMinutes}`)
+      if (inTime && outTime && workDate) {
+        // Split time into regular and overtime
+        const split = splitTimeInterval(inTime, outTime, workDate, overtimeStartTime, overtimeEnabled)
+        totals.regularMinutes += split.regularMinutes
+        totals.overtimeMinutes += split.overtimeMinutes
+        totals.totalMinutes += split.regularMinutes + split.overtimeMinutes
+        
+        console.log(`[PAYROLL RUN] Row ${row.id}: employee=${row.linkedEmployee.fullName}, regular=${split.regularMinutes}m, overtime=${split.overtimeMinutes}m`)
+      } else if (row.minutesWorked) {
+        // Fallback: if we only have minutesWorked, treat all as regular
+        totals.regularMinutes += row.minutesWorked
+        totals.totalMinutes += row.minutesWorked
+        console.log(`[PAYROLL RUN] Row ${row.id}: employee=${row.linkedEmployee.fullName}, minutes=${row.minutesWorked} (all regular, no time split available)`)
+      }
     }
 
     console.log(`[PAYROLL RUN] Summary: ${linkedCount} linked rows, ${unlinkedCount} unlinked rows, ${employeeTotals.size} employees with totals`)
@@ -306,24 +427,37 @@ export async function POST(request: NextRequest) {
 
     // Create PayrollRunLine records
     const runLines = Array.from(employeeTotals.values()).map(totals => {
-      // Calculate hours and minutes as integers
-      const hours = Math.floor(totals.totalMinutes / 60)
-      const minutes = totals.totalMinutes % 60
+      // Calculate hours and minutes as integers for regular time
+      const regularHours = Math.floor(totals.regularMinutes / 60)
+      const regularMins = totals.regularMinutes % 60
       
-      // Calculate gross pay: (hours * hourlyRate) + (minutes / 60 * hourlyRate)
-      const grossPay = parseFloat(((hours * totals.hourlyRate) + (minutes / 60 * totals.hourlyRate)).toFixed(2))
+      // Calculate hours and minutes as integers for overtime
+      const overtimeHours = Math.floor(totals.overtimeMinutes / 60)
+      const overtimeMins = totals.overtimeMinutes % 60
       
-      // Store totalHours as decimal for backward compatibility, but we'll display hours/minutes separately
+      // Calculate pay: regular + overtime
+      const regularPay = parseFloat(((regularHours * totals.hourlyRate) + (regularMins / 60 * totals.hourlyRate)).toFixed(2))
+      const overtimePay = totals.overtimeRate && totals.overtimeMinutes > 0
+        ? parseFloat(((overtimeHours * totals.overtimeRate) + (overtimeMins / 60 * totals.overtimeRate)).toFixed(2))
+        : 0
+      const grossPay = parseFloat((regularPay + overtimePay).toFixed(2))
+      
+      // Store totalHours as decimal for backward compatibility
       const totalHoursDecimal = parseFloat((totals.totalMinutes / 60).toFixed(2))
       
-      console.log(`[PAYROLL RUN] Creating line for ${totals.employee.fullName}: totalMinutes=${totals.totalMinutes}, hours=${hours}, minutes=${minutes}, rate=$${totals.hourlyRate}, gross=$${grossPay}`)
+      console.log(`[PAYROLL RUN] Creating line for ${totals.employee.fullName}: regular=${totals.regularMinutes}m (${regularHours}h ${regularMins}m), overtime=${totals.overtimeMinutes}m (${overtimeHours}h ${overtimeMins}m), regularPay=$${regularPay}, overtimePay=$${overtimePay}, gross=$${grossPay}`)
       
       return {
         runId: payrollRun.id,
         employeeId: totals.employeeId,
         hourlyRateUsed: totals.hourlyRate,
         totalMinutes: totals.totalMinutes,
-        totalHours: totalHoursDecimal, // Keep for backward compatibility
+        totalHours: totalHoursDecimal,
+        regularMinutes: totals.regularMinutes,
+        overtimeMinutes: totals.overtimeMinutes,
+        regularPay: regularPay,
+        overtimePay: overtimePay,
+        overtimeRateUsed: totals.overtimeRate,
         grossPay: grossPay,
         amountPaid: 0,
         amountOwed: grossPay,

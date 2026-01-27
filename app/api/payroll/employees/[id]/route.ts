@@ -53,9 +53,36 @@ export async function PUT(
       phone,
       active,
       defaultHourlyRate,
+      overtimeRateHourly,
+      overtimeStartTime,
+      overtimeEnabled,
       scannerExternalId,
       notes,
     } = body
+
+    // Validate overtime fields
+    if (overtimeRateHourly !== null && overtimeRateHourly !== undefined) {
+      const otRate = parseFloat(overtimeRateHourly)
+      if (isNaN(otRate) || otRate <= 0) {
+        return NextResponse.json(
+          { error: 'Overtime rate must be a positive number' },
+          { status: 400 }
+        )
+      }
+      if (overtimeStartTime === null || overtimeStartTime === undefined) {
+        return NextResponse.json(
+          { error: 'Overtime start time is required when overtime rate is set' },
+          { status: 400 }
+        )
+      }
+      const otTime = parseInt(overtimeStartTime)
+      if (isNaN(otTime) || otTime < 0 || otTime >= 1440) {
+        return NextResponse.json(
+          { error: 'Overtime start time must be between 0 and 1439 (minutes since midnight)' },
+          { status: 400 }
+        )
+      }
+    }
 
     const updateData: any = {}
     if (fullName !== undefined) updateData.fullName = fullName.trim()
@@ -63,6 +90,15 @@ export async function PUT(
     if (phone !== undefined) updateData.phone = phone?.trim() || null
     if (active !== undefined) updateData.active = active
     if (defaultHourlyRate !== undefined) updateData.defaultHourlyRate = parseFloat(defaultHourlyRate)
+    if (overtimeRateHourly !== undefined) {
+      updateData.overtimeRateHourly = overtimeRateHourly !== null ? parseFloat(overtimeRateHourly) : null
+    }
+    if (overtimeStartTime !== undefined) {
+      updateData.overtimeStartTime = overtimeStartTime !== null ? parseInt(overtimeStartTime) : null
+    }
+    if (overtimeEnabled !== undefined) {
+      updateData.overtimeEnabled = overtimeEnabled
+    }
     if (scannerExternalId !== undefined) updateData.scannerExternalId = scannerExternalId?.trim() || null
     if (notes !== undefined) updateData.notes = notes?.trim() || null
 

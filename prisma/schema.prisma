@@ -820,6 +820,9 @@ model PayrollEmployee {
   phone             String?
   active            Boolean  @default(true)
   defaultHourlyRate Decimal  @db.Decimal(10, 2)
+  overtimeRateHourly Decimal? @db.Decimal(10, 2)
+  overtimeStartTime Int? // Minutes since midnight (0-1439)
+  overtimeEnabled   Boolean  @default(false)
   scannerExternalId String?
   notes             String?
   createdAt         DateTime @default(now())
@@ -914,6 +917,12 @@ model PayrollRunLine {
   totalMinutes   Int
   totalHours     Decimal  @db.Decimal(10, 2)
   grossPay       Decimal  @db.Decimal(10, 2)
+  // Overtime breakdown
+  regularMinutes Int      @default(0)
+  overtimeMinutes Int    @default(0)
+  regularPay     Decimal  @default(0) @db.Decimal(10, 2)
+  overtimePay    Decimal  @default(0) @db.Decimal(10, 2)
+  overtimeRateUsed Decimal? @db.Decimal(10, 2)
   amountPaid     Decimal  @default(0) @db.Decimal(10, 2)
   amountOwed     Decimal  @db.Decimal(10, 2)
   notes          String?
