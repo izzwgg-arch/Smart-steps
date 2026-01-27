@@ -114,9 +114,13 @@ export async function POST(request: NextRequest) {
     // Check if any employee+date has more than 1 punch (fingerprint scanner pattern)
     const hasMultiplePunchesPerDay = Array.from(employeeDateCounts.values()).some(count => count > 1)
     
+    // ALSO: If IN and OUT are mapped to different columns, it's likely a fingerprint scanner
+    // where each row has one punch (either IN or OUT time)
+    const hasSeparateInOutColumns = mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime
+    
     // FINGERPRINT SCANNER: If multiple punches per day detected, ALWAYS treat as fingerprint scanner
-    // OR if mapping suggests it (same column or only IN time)
-    const isFingerprintScanner = (hasMultiplePunchesPerDay || isFingerprintScannerCandidate) && !hasEventTypeMapping && data.length > 0
+    // OR if mapping suggests it (same column, only IN time, OR separate IN/OUT columns)
+    const isFingerprintScanner = (hasMultiplePunchesPerDay || isFingerprintScannerCandidate || hasSeparateInOutColumns) && !hasEventTypeMapping && data.length > 0
     
     console.log(`[PAYROLL IMPORT] Fingerprint scanner detection:`, {
       hasMultiplePunchesPerDay,
@@ -284,6 +288,8 @@ export async function POST(request: NextRequest) {
       punchesByEmployeeDate.forEach((punches, key) => {
         console.log(`[PAYROLL IMPORT] Fingerprint scanner: Group ${key} has ${punches.length} punches`)
         
+        if (punches.length === 0) return
+        
         // RESTORE PREVIOUS BEHAVIOR: Collect ALL punches, sort chronologically, then pair
         // This matches the original behavior: earliest = IN, latest = OUT (for 2 punches)
         // For more than 2 punches: pair sequentially (1-2, 3-4, etc.)
@@ -297,6 +303,10 @@ export async function POST(request: NextRequest) {
         })
         
         console.log(`[PAYROLL IMPORT] Fingerprint scanner: After sorting, group ${key} has ${punches.length} punches`)
+        console.log(`[PAYROLL IMPORT] Fingerprint scanner: Group ${key} punch times:`, punches.map(p => {
+          const t = parseTimeValue(p.time, p.workDate)
+          return t ? t.toISOString() : 'null'
+        }))
         
         // RESTORE PREVIOUS BEHAVIOR: For 2 punches, use earliest as IN and latest as OUT (ONE row)
         // For more than 2 punches, pair sequentially (1-2, 3-4, etc.) - creates multiple rows
