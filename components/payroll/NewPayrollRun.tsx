@@ -190,7 +190,7 @@ export function NewPayrollRun() {
 
       const data = await response.json()
       toast.success('Payroll run created successfully!')
-      router.push(`/payroll/runs/${data.run.id}`)
+      router.push('/payroll')
     } catch (error: any) {
       console.error('Error creating payroll run:', error)
       const errorData = error.errorData || error.response?.data || {}
