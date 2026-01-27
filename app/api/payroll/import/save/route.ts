@@ -190,66 +190,28 @@ export async function POST(request: NextRequest) {
         
         if (!workDate || isNaN(workDate.getTime())) return
         
-        // CRITICAL FIX: Handle both IN and OUT columns separately
-        // If IN and OUT are in different columns, collect punches from both columns
-        // Each row might have only IN, only OUT, or both
-        const inTimeValue = mapping.inTime ? row[mapping.inTime] : null
-        const outTimeValue = mapping.outTime ? row[mapping.outTime] : null
-        
         const dateKey = `${employeeId}|${workDate.toISOString().split('T')[0]}`
         
         if (!punchesByEmployeeDate.has(dateKey)) {
           punchesByEmployeeDate.set(dateKey, [])
         }
         
-        // If both IN and OUT are mapped to different columns, treat each row as a single punch
-        // Fingerprint scanner files typically have separate rows for IN and OUT punches
-        if (mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime) {
-          // Separate columns: each row typically has ONE punch (either IN or OUT)
-          // Use the column that has a value - if both have values, prefer IN column
-          const hasInValue = inTimeValue !== null && inTimeValue !== undefined && String(inTimeValue).trim() !== ''
-          const hasOutValue = outTimeValue !== null && outTimeValue !== undefined && String(outTimeValue).trim() !== ''
-          
-          if (hasInValue) {
-            // Row has IN time - treat as IN punch
-            punchesByEmployeeDate.get(dateKey)!.push({
-              index,
-              row,
-              time: inTimeValue,
-              workDate,
-              isIn: true,
-              employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
-              employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
-            })
-          } else if (hasOutValue) {
-            // Row has OUT time but no IN time - treat as OUT punch
-            punchesByEmployeeDate.get(dateKey)!.push({
-              index,
-              row,
-              time: outTimeValue,
-              workDate,
-              isIn: false,
-              employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
-              employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
-            })
-          }
-          // If neither has a value, skip this row
-        } else {
-          // Same column or only one column mapped: use single time value
-          const timeColumn = mapping.inTime || mapping.outTime
-          const timeValue = timeColumn ? row[timeColumn] : null
-          if (!timeValue || String(timeValue).trim() === '') return
-          
-          punchesByEmployeeDate.get(dateKey)!.push({
-            index,
-            row,
-            time: timeValue,
-            workDate,
-            isIn: null, // Unknown, will pair sequentially
-            employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
-            employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
-          })
-        }
+        // SIMPLE APPROACH: Each row is ONE punch. Use the time column that's mapped.
+        // If both IN and OUT columns are mapped to different columns, use whichever has a value.
+        // Most fingerprint scanners export one punch per row.
+        const timeColumn = mapping.inTime || mapping.outTime
+        const timeValue = timeColumn ? row[timeColumn] : null
+        
+        if (!timeValue || String(timeValue).trim() === '') return
+        
+        punchesByEmployeeDate.get(dateKey)!.push({
+          index,
+          row,
+          time: timeValue,
+          workDate,
+          employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
+          employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
+        })
       })
       
       // Helper function for parsing time (reuse from event-based logic)
