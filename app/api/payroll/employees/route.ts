@@ -19,20 +19,6 @@ export async function GET(request: NextRequest) {
       const employees = await (prisma as any).payrollEmployee.findMany({
       orderBy: { fullName: 'asc' },
       take: 50, // PERFORMANCE FIX: Reduced from 1000 to 50 (pagination needed)
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        phone: true,
-        active: true,
-        defaultHourlyRate: true,
-        overtimeRateHourly: true,
-        overtimeStartTime: true,
-        overtimeEnabled: true,
-        scannerExternalId: true,
-        createdAt: true,
-        updatedAt: true,
-      },
     })
     endTimer(reqId, 'query')
 
