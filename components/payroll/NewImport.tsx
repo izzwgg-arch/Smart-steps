@@ -42,6 +42,108 @@ export function NewImport() {
   const [periodStart, setPeriodStart] = useState<string>('')
   const [periodEnd, setPeriodEnd] = useState<string>('')
 
+  // Auto-detect column mappings based on common patterns
+  const autoDetectColumns = (columns: string[]): typeof mapping => {
+    const detected: typeof mapping = {
+      workDate: '',
+      employeeName: '',
+      employeeExternalId: '',
+      eventType: '',
+      inTime: '',
+      outTime: '',
+      minutesWorked: '',
+      hoursWorked: '',
+    }
+
+    // Normalize column names for matching (case-insensitive, trim whitespace)
+    const normalizedColumns = columns.map(col => ({
+      original: col,
+      normalized: col.trim().toLowerCase(),
+    }))
+
+    // Work Date patterns
+    const datePatterns = ['date', 'work date', 'workdate', 'day', 'workday', 'd']
+    for (const pattern of datePatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.workDate = match.original
+        break
+      }
+    }
+
+    // Employee Name patterns
+    const namePatterns = ['name', 'employee name', 'employeename', 'employee', 'emp name', 'full name', 'fullname']
+    for (const pattern of namePatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.employeeName = match.original
+        break
+      }
+    }
+
+    // Employee External ID / Scanner ID patterns
+    const idPatterns = ['user id', 'userid', 'user_id', 'scanner id', 'scannerid', 'employee id', 'employeeid', 'emp id', 'empid', 'external id', 'externalid', 'id']
+    for (const pattern of idPatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.employeeExternalId = match.original
+        break
+      }
+    }
+
+    // In Time patterns
+    const inTimePatterns = ['time', 'in time', 'intime', 'in_time', 'clock in', 'clockin', 'punch in', 'punchin', 'start time', 'starttime']
+    for (const pattern of inTimePatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.inTime = match.original
+        break
+      }
+    }
+
+    // Out Time patterns
+    const outTimePatterns = ['att type', 'atttype', 'out time', 'outtime', 'out_time', 'clock out', 'clockout', 'punch out', 'punchout', 'end time', 'endtime']
+    for (const pattern of outTimePatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.outTime = match.original
+        break
+      }
+    }
+
+    // Event Type patterns (for event-based files)
+    const eventTypePatterns = ['event type', 'eventtype', 'event', 'type', 'att type', 'atttype', 'action']
+    for (const pattern of eventTypePatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.eventType = match.original
+        break
+      }
+    }
+
+    // Minutes Worked patterns
+    const minutesPatterns = ['minutes', 'minutes worked', 'minutesworked', 'mins', 'total minutes', 'totalminutes']
+    for (const pattern of minutesPatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.minutesWorked = match.original
+        break
+      }
+    }
+
+    // Hours Worked patterns
+    const hoursPatterns = ['hours', 'hours worked', 'hoursworked', 'hrs', 'total hours', 'totalhours']
+    for (const pattern of hoursPatterns) {
+      const match = normalizedColumns.find(c => c.normalized === pattern || c.normalized.includes(pattern))
+      if (match) {
+        detected.hoursWorked = match.original
+        break
+      }
+    }
+
+    return detected
+  }
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
     if (!selectedFile) return
@@ -86,6 +188,11 @@ export function NewImport() {
       setPreviewRows(data.previewRows)
       setTotalRows(data.totalRows)
       setFileBuffer(JSON.stringify({ type: fileType, buffer: base64 }))
+      
+      // Auto-detect column mappings based on common patterns
+      const autoMapping = autoDetectColumns(data.columns)
+      setMapping(autoMapping)
+      
       setStep('mapping')
     } catch (error: any) {
       console.error('Error previewing file:', error)
