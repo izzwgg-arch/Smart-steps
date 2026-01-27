@@ -418,55 +418,20 @@ export async function POST(request: NextRequest) {
               isIncomplete: true,
             },
           })
-        } else if (false) {
-          // OLD COMPLEX LOGIC - REMOVED
-          // This block is intentionally unreachable to preserve structure
-          const hasSeparateColumns = mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime
-          const inPunches: any[] = []
-          const outPunches: any[] = []
-          const unknownPunches: any[] = []
-          
-          if (hasSeparateColumns) {
-          // Separate IN and OUT punches
-          punches.forEach(punch => {
-            if (punch.isIn === true) {
-              inPunches.push(punch)
-            } else if (punch.isIn === false) {
-              outPunches.push(punch)
-            } else {
-              unknownPunches.push(punch)
-            }
-          })
-          
-          // Sort each group chronologically
-          inPunches.sort((a, b) => {
-            const timeA = parseTimeValue(a.time, a.workDate)
-            const timeB = parseTimeValue(b.time, b.workDate)
-            if (!timeA || !timeB) return 0
-            return timeA.getTime() - timeB.getTime()
-          })
-          
-          outPunches.sort((a, b) => {
-            const timeA = parseTimeValue(a.time, a.workDate)
-            const timeB = parseTimeValue(b.time, b.workDate)
-            if (!timeA || !timeB) return 0
-            return timeA.getTime() - timeB.getTime()
-          })
-          
-          // Pair IN with corresponding OUT (1st IN with 1st OUT, 2nd IN with 2nd OUT, etc.)
-          const maxPairs = Math.max(inPunches.length, outPunches.length)
-          for (let i = 0; i < maxPairs; i++) {
-            const inPunch = inPunches[i]
-            const outPunch = outPunches[i]
-            
-            if (!inPunch) continue // Skip if no IN punch
+        } else {
+          // MORE THAN 2 PUNCHES: Pair sequentially (1-2, 3-4, etc.) - creates multiple rows
+          for (let i = 0; i < punches.length; i += 2) {
+            const inPunch = punches[i]
+            const outPunch = punches[i + 1]
             
             const inTime = parseTimeValue(inPunch.time, inPunch.workDate)
             const outTime = outPunch ? parseTimeValue(outPunch.time, outPunch.workDate) : null
             
+            console.log(`[PAYROLL IMPORT] Fingerprint scanner: Pair ${Math.floor(i/2) + 1} - IN: ${inTime ? inTime.toISOString() : 'null'}, OUT: ${outTime ? outTime.toISOString() : 'null'}`)
+            
             if (!inTime) {
-              console.warn(`[PAYROLL IMPORT] Fingerprint scanner: Skipping pair ${i + 1} - could not parse IN time`)
-              continue
+              console.warn(`[PAYROLL IMPORT] Fingerprint scanner: Skipping pair ${Math.floor(i/2) + 1} - could not parse IN time`)
+              continue // Skip if can't parse IN time
             }
             
             // Calculate hours if both IN and OUT exist
@@ -512,62 +477,7 @@ export async function POST(request: NextRequest) {
               },
             })
           }
-          
-          // Handle any unknown punches (fallback to sequential pairing)
-          if (unknownPunches.length > 0) {
-            unknownPunches.sort((a, b) => {
-              const timeA = parseTimeValue(a.time, a.workDate)
-              const timeB = parseTimeValue(b.time, b.workDate)
-              if (!timeA || !timeB) return 0
-              return timeA.getTime() - timeB.getTime()
-            })
-            
-            for (let i = 0; i < unknownPunches.length; i += 2) {
-              const inPunch = unknownPunches[i]
-              const outPunch = unknownPunches[i + 1]
-              
-              const inTime = parseTimeValue(inPunch.time, inPunch.workDate)
-              const outTime = outPunch ? parseTimeValue(outPunch.time, outPunch.workDate) : null
-              
-              if (!inTime) continue
-              
-              let minutesWorked: number | null = null
-              let hoursWorked: number | null = null
-              
-              if (inTime && outTime) {
-                let adjustedOutTime = new Date(outTime)
-                if (adjustedOutTime < inTime) {
-                  adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
-                }
-                
-                const diffMs = adjustedOutTime.getTime() - inTime.getTime()
-                if (diffMs > 0) {
-                  minutesWorked = Math.floor(diffMs / (1000 * 60))
-                  hoursWorked = parseFloat((minutesWorked / 60).toFixed(2))
-                }
-              }
-              
-              rows.push({
-                importId: payrollImport.id,
-                rowIndex: rowIndex++,
-                employeeNameRaw: inPunch.employeeNameRaw,
-                employeeExternalIdRaw: inPunch.employeeExternalIdRaw,
-                workDate: inPunch.workDate,
-                inTime: inTime,
-                outTime: outTime,
-                minutesWorked: minutesWorked,
-                hoursWorked: hoursWorked,
-                linkedEmployeeId: null,
-                rawJson: {
-                  rawPunches: [inPunch.row, ...(outPunch ? [outPunch.row] : [])],
-                  originalInIndex: inPunch.index,
-                  originalOutIndex: outPunch ? outPunch.index : null,
-                  isIncomplete: !outPunch,
-                },
-              })
-            }
-          }
-        } else {
+        }
           // Same column or single column: pair sequentially
           // Sort punches chronologically by time
           punches.sort((a, b) => {
