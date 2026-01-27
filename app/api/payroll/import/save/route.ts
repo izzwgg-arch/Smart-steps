@@ -190,10 +190,11 @@ export async function POST(request: NextRequest) {
         
         if (!workDate || isNaN(workDate.getTime())) return
         
-        // Use IN time column (or OUT if only OUT is mapped, but typically IN for fingerprint scanners)
-        const timeColumn = mapping.inTime || mapping.outTime
-        const timeValue = timeColumn ? row[timeColumn] : null
-        if (!timeValue) return
+        // CRITICAL FIX: Handle both IN and OUT columns separately
+        // If IN and OUT are in different columns, collect punches from both columns
+        // Each row might have only IN, only OUT, or both
+        const inTimeValue = mapping.inTime ? row[mapping.inTime] : null
+        const outTimeValue = mapping.outTime ? row[mapping.outTime] : null
         
         const dateKey = `${employeeId}|${workDate.toISOString().split('T')[0]}`
         
@@ -201,14 +202,52 @@ export async function POST(request: NextRequest) {
           punchesByEmployeeDate.set(dateKey, [])
         }
         
-        punchesByEmployeeDate.get(dateKey)!.push({
-          index,
-          row,
-          time: timeValue,
-          workDate,
-          employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
-          employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
-        })
+        // If both IN and OUT are mapped to different columns, collect punches from both
+        if (mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime) {
+          // Separate columns: each row can have IN punch, OUT punch, or both
+          // Add IN punch if present (check if value exists and is not empty)
+          const hasInValue = inTimeValue !== null && inTimeValue !== undefined && String(inTimeValue).trim() !== ''
+          if (hasInValue) {
+            punchesByEmployeeDate.get(dateKey)!.push({
+              index,
+              row,
+              time: inTimeValue,
+              workDate,
+              isIn: true,
+              employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
+              employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
+            })
+          }
+          
+          // Add OUT punch if present (check if value exists and is not empty)
+          const hasOutValue = outTimeValue !== null && outTimeValue !== undefined && String(outTimeValue).trim() !== ''
+          if (hasOutValue) {
+            punchesByEmployeeDate.get(dateKey)!.push({
+              index,
+              row,
+              time: outTimeValue,
+              workDate,
+              isIn: false,
+              employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
+              employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
+            })
+          }
+        } else {
+          // Same column or only one column mapped: use single time value
+          const timeColumn = mapping.inTime || mapping.outTime
+          const timeValue = timeColumn ? row[timeColumn] : null
+          if (!timeValue || String(timeValue).trim() === '') return
+          
+          punchesByEmployeeDate.get(dateKey)!.push({
+            index,
+            row,
+            time: timeValue,
+            workDate,
+            isIn: null, // Unknown, will pair sequentially
+            employeeNameRaw: mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null,
+            employeeExternalIdRaw: mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null,
+          })
+        }
       })
       
       // Helper function for parsing time (reuse from event-based logic)
@@ -281,73 +320,223 @@ export async function POST(request: NextRequest) {
       punchesByEmployeeDate.forEach((punches, key) => {
         console.log(`[PAYROLL IMPORT] Fingerprint scanner: Group ${key} has ${punches.length} punches`)
         
-        // Sort punches chronologically by time
-        punches.sort((a, b) => {
-          const timeA = parseTimeValue(a.time, a.workDate)
-          const timeB = parseTimeValue(b.time, b.workDate)
-          if (!timeA || !timeB) return 0
-          return timeA.getTime() - timeB.getTime()
-        })
+        // If IN and OUT are in different columns and punches have isIn flag, separate them
+        const hasSeparateColumns = mapping.inTime && mapping.outTime && mapping.inTime !== mapping.outTime
+        const inPunches: any[] = []
+        const outPunches: any[] = []
+        const unknownPunches: any[] = []
         
-        console.log(`[PAYROLL IMPORT] Fingerprint scanner: After sorting, group ${key} has ${punches.length} punches`)
-        
-        // Pair sequentially: 1st=IN, 2nd=OUT, 3rd=IN, 4th=OUT, etc.
-        for (let i = 0; i < punches.length; i += 2) {
-          const inPunch = punches[i]
-          const outPunch = punches[i + 1]
+        if (hasSeparateColumns) {
+          // Separate IN and OUT punches
+          punches.forEach(punch => {
+            if (punch.isIn === true) {
+              inPunches.push(punch)
+            } else if (punch.isIn === false) {
+              outPunches.push(punch)
+            } else {
+              unknownPunches.push(punch)
+            }
+          })
           
-          const inTime = parseTimeValue(inPunch.time, inPunch.workDate)
-          const outTime = outPunch ? parseTimeValue(outPunch.time, outPunch.workDate) : null
+          // Sort each group chronologically
+          inPunches.sort((a, b) => {
+            const timeA = parseTimeValue(a.time, a.workDate)
+            const timeB = parseTimeValue(b.time, b.workDate)
+            if (!timeA || !timeB) return 0
+            return timeA.getTime() - timeB.getTime()
+          })
           
-          console.log(`[PAYROLL IMPORT] Fingerprint scanner: Pair ${Math.floor(i/2) + 1} - IN: ${inTime ? inTime.toISOString() : 'null'}, OUT: ${outTime ? outTime.toISOString() : 'null'}`)
+          outPunches.sort((a, b) => {
+            const timeA = parseTimeValue(a.time, a.workDate)
+            const timeB = parseTimeValue(b.time, b.workDate)
+            if (!timeA || !timeB) return 0
+            return timeA.getTime() - timeB.getTime()
+          })
           
-          if (!inTime) {
-            console.warn(`[PAYROLL IMPORT] Fingerprint scanner: Skipping pair ${Math.floor(i/2) + 1} - could not parse IN time`)
-            continue // Skip if can't parse IN time
-          }
-          
-          // Calculate hours if both IN and OUT exist
-          let minutesWorked: number | null = null
-          let hoursWorked: number | null = null
-          
-          if (inTime && outTime) {
-            // Handle overnight shifts
-            let adjustedOutTime = new Date(outTime)
-            if (adjustedOutTime < inTime) {
-              adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
+          // Pair IN with corresponding OUT (1st IN with 1st OUT, 2nd IN with 2nd OUT, etc.)
+          const maxPairs = Math.max(inPunches.length, outPunches.length)
+          for (let i = 0; i < maxPairs; i++) {
+            const inPunch = inPunches[i]
+            const outPunch = outPunches[i]
+            
+            if (!inPunch) continue // Skip if no IN punch
+            
+            const inTime = parseTimeValue(inPunch.time, inPunch.workDate)
+            const outTime = outPunch ? parseTimeValue(outPunch.time, outPunch.workDate) : null
+            
+            if (!inTime) {
+              console.warn(`[PAYROLL IMPORT] Fingerprint scanner: Skipping pair ${i + 1} - could not parse IN time`)
+              continue
             }
             
-            const diffMs = adjustedOutTime.getTime() - inTime.getTime()
-            if (diffMs > 0) {
-              minutesWorked = Math.floor(diffMs / (1000 * 60))
-              hoursWorked = parseFloat((minutesWorked / 60).toFixed(2))
+            // Calculate hours if both IN and OUT exist
+            let minutesWorked: number | null = null
+            let hoursWorked: number | null = null
+            
+            if (inTime && outTime) {
+              // Handle overnight shifts
+              let adjustedOutTime = new Date(outTime)
+              if (adjustedOutTime < inTime) {
+                adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
+              }
+              
+              const diffMs = adjustedOutTime.getTime() - inTime.getTime()
+              if (diffMs > 0) {
+                minutesWorked = Math.floor(diffMs / (1000 * 60))
+                hoursWorked = parseFloat((minutesWorked / 60).toFixed(2))
+              }
+            }
+            
+            // Store raw punches in rawJson for data safety
+            const rawPunches = [inPunch.row]
+            if (outPunch) {
+              rawPunches.push(outPunch.row)
+            }
+            
+            rows.push({
+              importId: payrollImport.id,
+              rowIndex: rowIndex++,
+              employeeNameRaw: inPunch.employeeNameRaw,
+              employeeExternalIdRaw: inPunch.employeeExternalIdRaw,
+              workDate: inPunch.workDate,
+              inTime: inTime,
+              outTime: outTime,
+              minutesWorked: minutesWorked,
+              hoursWorked: hoursWorked,
+              linkedEmployeeId: null,
+              rawJson: {
+                rawPunches: rawPunches,
+                originalInIndex: inPunch.index,
+                originalOutIndex: outPunch ? outPunch.index : null,
+                isIncomplete: !outPunch,
+              },
+            })
+          }
+          
+          // Handle any unknown punches (fallback to sequential pairing)
+          if (unknownPunches.length > 0) {
+            unknownPunches.sort((a, b) => {
+              const timeA = parseTimeValue(a.time, a.workDate)
+              const timeB = parseTimeValue(b.time, b.workDate)
+              if (!timeA || !timeB) return 0
+              return timeA.getTime() - timeB.getTime()
+            })
+            
+            for (let i = 0; i < unknownPunches.length; i += 2) {
+              const inPunch = unknownPunches[i]
+              const outPunch = unknownPunches[i + 1]
+              
+              const inTime = parseTimeValue(inPunch.time, inPunch.workDate)
+              const outTime = outPunch ? parseTimeValue(outPunch.time, outPunch.workDate) : null
+              
+              if (!inTime) continue
+              
+              let minutesWorked: number | null = null
+              let hoursWorked: number | null = null
+              
+              if (inTime && outTime) {
+                let adjustedOutTime = new Date(outTime)
+                if (adjustedOutTime < inTime) {
+                  adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
+                }
+                
+                const diffMs = adjustedOutTime.getTime() - inTime.getTime()
+                if (diffMs > 0) {
+                  minutesWorked = Math.floor(diffMs / (1000 * 60))
+                  hoursWorked = parseFloat((minutesWorked / 60).toFixed(2))
+                }
+              }
+              
+              rows.push({
+                importId: payrollImport.id,
+                rowIndex: rowIndex++,
+                employeeNameRaw: inPunch.employeeNameRaw,
+                employeeExternalIdRaw: inPunch.employeeExternalIdRaw,
+                workDate: inPunch.workDate,
+                inTime: inTime,
+                outTime: outTime,
+                minutesWorked: minutesWorked,
+                hoursWorked: hoursWorked,
+                linkedEmployeeId: null,
+                rawJson: {
+                  rawPunches: [inPunch.row, ...(outPunch ? [outPunch.row] : [])],
+                  originalInIndex: inPunch.index,
+                  originalOutIndex: outPunch ? outPunch.index : null,
+                  isIncomplete: !outPunch,
+                },
+              })
             }
           }
-          
-          // Store raw punches in rawJson for data safety
-          const rawPunches = [inPunch.row]
-          if (outPunch) {
-            rawPunches.push(outPunch.row)
-          }
-          
-          rows.push({
-            importId: payrollImport.id,
-            rowIndex: rowIndex++,
-            employeeNameRaw: inPunch.employeeNameRaw,
-            employeeExternalIdRaw: inPunch.employeeExternalIdRaw,
-            workDate: inPunch.workDate,
-            inTime: inTime,
-            outTime: outTime,
-            minutesWorked: minutesWorked,
-            hoursWorked: hoursWorked,
-            linkedEmployeeId: null,
-            rawJson: {
-              rawPunches: rawPunches,
-              originalInIndex: inPunch.index,
-              originalOutIndex: outPunch ? outPunch.index : null,
-              isIncomplete: !outPunch,
-            },
+        } else {
+          // Same column or single column: pair sequentially
+          // Sort punches chronologically by time
+          punches.sort((a, b) => {
+            const timeA = parseTimeValue(a.time, a.workDate)
+            const timeB = parseTimeValue(b.time, b.workDate)
+            if (!timeA || !timeB) return 0
+            return timeA.getTime() - timeB.getTime()
           })
+          
+          console.log(`[PAYROLL IMPORT] Fingerprint scanner: After sorting, group ${key} has ${punches.length} punches`)
+          
+          // Pair sequentially: 1st=IN, 2nd=OUT, 3rd=IN, 4th=OUT, etc.
+          for (let i = 0; i < punches.length; i += 2) {
+            const inPunch = punches[i]
+            const outPunch = punches[i + 1]
+            
+            const inTime = parseTimeValue(inPunch.time, inPunch.workDate)
+            const outTime = outPunch ? parseTimeValue(outPunch.time, outPunch.workDate) : null
+            
+            console.log(`[PAYROLL IMPORT] Fingerprint scanner: Pair ${Math.floor(i/2) + 1} - IN: ${inTime ? inTime.toISOString() : 'null'}, OUT: ${outTime ? outTime.toISOString() : 'null'}`)
+            
+            if (!inTime) {
+              console.warn(`[PAYROLL IMPORT] Fingerprint scanner: Skipping pair ${Math.floor(i/2) + 1} - could not parse IN time`)
+              continue // Skip if can't parse IN time
+            }
+            
+            // Calculate hours if both IN and OUT exist
+            let minutesWorked: number | null = null
+            let hoursWorked: number | null = null
+            
+            if (inTime && outTime) {
+              // Handle overnight shifts
+              let adjustedOutTime = new Date(outTime)
+              if (adjustedOutTime < inTime) {
+                adjustedOutTime.setDate(adjustedOutTime.getDate() + 1)
+              }
+              
+              const diffMs = adjustedOutTime.getTime() - inTime.getTime()
+              if (diffMs > 0) {
+                minutesWorked = Math.floor(diffMs / (1000 * 60))
+                hoursWorked = parseFloat((minutesWorked / 60).toFixed(2))
+              }
+            }
+            
+            // Store raw punches in rawJson for data safety
+            const rawPunches = [inPunch.row]
+            if (outPunch) {
+              rawPunches.push(outPunch.row)
+            }
+            
+            rows.push({
+              importId: payrollImport.id,
+              rowIndex: rowIndex++,
+              employeeNameRaw: inPunch.employeeNameRaw,
+              employeeExternalIdRaw: inPunch.employeeExternalIdRaw,
+              workDate: inPunch.workDate,
+              inTime: inTime,
+              outTime: outTime,
+              minutesWorked: minutesWorked,
+              hoursWorked: hoursWorked,
+              linkedEmployeeId: null,
+              rawJson: {
+                rawPunches: rawPunches,
+                originalInIndex: inPunch.index,
+                originalOutIndex: outPunch ? outPunch.index : null,
+                isIncomplete: !outPunch,
+              },
+            })
+          }
         }
       })
       
