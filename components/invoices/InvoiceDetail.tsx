@@ -392,9 +392,15 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                           allEntries.push(dateEntry)
                         }
 
-                        // Use InvoiceEntry units if matched, otherwise calculate from minutes
+                        // Calculate correct units from minutes (always use this as source of truth)
+                        const calculatedUnits = Math.ceil(tsEntry.minutes / 15)
                         const matchedEntry = invoiceEntryMap.get(tsEntry.id)
-                        const unitsToUse = matchedEntry ? matchedEntry.units : Math.ceil(tsEntry.minutes / 15)
+                        
+                        // Use matched InvoiceEntry units ONLY if they match the calculated units
+                        // This prevents displaying incorrect stored values (e.g., 30 units for 90 minutes)
+                        const unitsToUse = (matchedEntry && Math.abs(matchedEntry.units - calculatedUnits) < 0.1) 
+                          ? matchedEntry.units 
+                          : calculatedUnits
 
                         // Add DR or SV entry
                         if (tsEntry.notes === 'DR') {
