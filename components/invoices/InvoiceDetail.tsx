@@ -329,6 +329,42 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                       svUnits: number
                     }> = []
 
+                    // CRITICAL: Use InvoiceEntry units (stored in database after fix)
+                    // Each InvoiceEntry represents one TimesheetEntry
+                    // Match InvoiceEntry to TimesheetEntry and use InvoiceEntry.units
+                    const invoiceEntryMap = new Map<string, { units: number; amount: number }>()
+                    
+                    // First, try to match InvoiceEntry to TimesheetEntry by amount
+                    invoice.entries.forEach((invoiceEntry) => {
+                      const invoiceEntryUnits = parseFloat(invoiceEntry.units.toString())
+                      const invoiceEntryAmount = parseFloat(invoiceEntry.amount.toString())
+                      const rate = parseFloat(invoiceEntry.rate.toString())
+                      
+                      if (invoiceEntry.timesheet?.entries) {
+                        // Try to find matching timesheet entry
+                        let matched = false
+                        for (const tsEntry of invoiceEntry.timesheet.entries) {
+                          const calculatedUnits = Math.ceil(tsEntry.minutes / 15)
+                          const calculatedAmount = calculatedUnits * rate
+                          
+                          // Match by amount (most reliable)
+                          if (Math.abs(calculatedAmount - invoiceEntryAmount) < 0.01) {
+                            invoiceEntryMap.set(tsEntry.id, { units: invoiceEntryUnits, amount: invoiceEntryAmount })
+                            matched = true
+                            break
+                          }
+                        }
+                        
+                        // If no match, assign to first unmatched entry
+                        if (!matched && invoiceEntry.timesheet.entries.length > 0) {
+                          const firstEntry = invoiceEntry.timesheet.entries[0]
+                          if (!invoiceEntryMap.has(firstEntry.id)) {
+                            invoiceEntryMap.set(firstEntry.id, { units: invoiceEntryUnits, amount: invoiceEntryAmount })
+                          }
+                        }
+                      }
+                    })
+
                     invoice.entries.forEach((invoiceEntry) => {
                       invoiceEntry.timesheet.entries.forEach((tsEntry) => {
                         const entryDate = new Date(tsEntry.date)
@@ -356,23 +392,37 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                           allEntries.push(dateEntry)
                         }
 
+                        // Use InvoiceEntry units if matched, otherwise calculate from minutes
+                        const matchedEntry = invoiceEntryMap.get(tsEntry.id)
+                        const unitsToUse = matchedEntry ? matchedEntry.units : Math.ceil(tsEntry.minutes / 15)
+
                         // Add DR or SV entry
                         if (tsEntry.notes === 'DR') {
                           dateEntry.drFrom = to12Hour(tsEntry.startTime)
                           dateEntry.drTo = to12Hour(tsEntry.endTime)
                           dateEntry.drMinutes = tsEntry.minutes
-                          dateEntry.drUnits = parseFloat(tsEntry.units.toString())
+                          dateEntry.drUnits = unitsToUse
                         } else if (tsEntry.notes === 'SV') {
                           dateEntry.svFrom = to12Hour(tsEntry.startTime)
                           dateEntry.svTo = to12Hour(tsEntry.endTime)
                           dateEntry.svMinutes = tsEntry.minutes
-                          dateEntry.svUnits = parseFloat(tsEntry.units.toString())
+                          dateEntry.svUnits = unitsToUse
                         }
                       })
                     })
 
                     // Sort by date
                     allEntries.sort((a, b) => a.date.getTime() - b.date.getTime())
+
+                    // Calculate totals from line items (not from invoice.entries)
+                    const totalMinutesFromLineItems = allEntries.reduce((sum, e) => sum + e.drMinutes + e.svMinutes, 0)
+                    const totalUnitsFromLineItems = allEntries.reduce((sum, e) => sum + e.drUnits + e.svUnits, 0)
+
+                    // Store totals for use in footer
+                    const invoiceTotals = {
+                      totalMinutes: totalMinutesFromLineItems,
+                      totalUnits: totalUnitsFromLineItems,
+                    }
 
                     return allEntries.map((entry, index) => (
                       <tr key={index}>
@@ -418,22 +468,26 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                     </td>
                     <td className="px-4 py-2 text-sm font-semibold text-right">
                       {(() => {
+                        // Calculate totals from the line items displayed above
+                        // This matches what's shown in the table rows
                         let totalMinutes = 0
-                        invoice.entries.forEach((entry) => {
-                          entry.timesheet.entries.forEach((tsEntry) => {
-                            totalMinutes += tsEntry.minutes
-                          })
+                        invoice.entries.forEach((invoiceEntry) => {
+                          if (invoiceEntry.timesheet?.entries) {
+                            invoiceEntry.timesheet.entries.forEach((tsEntry) => {
+                              totalMinutes += tsEntry.minutes || 0
+                            })
+                          }
                         })
                         return totalMinutes
                       })()}
                     </td>
                     <td className="px-4 py-2 text-sm font-semibold text-right">
                       {(() => {
+                        // Calculate totals from invoice entries (what was actually billed)
+                        // This should match invoice.totalAmount
                         let totalUnits = 0
                         invoice.entries.forEach((entry) => {
-                          entry.timesheet.entries.forEach((tsEntry) => {
-                            totalUnits += parseFloat(tsEntry.units.toString())
-                          })
+                          totalUnits += parseFloat(entry.units.toString())
                         })
                         return totalUnits.toFixed(2)
                       })()}
