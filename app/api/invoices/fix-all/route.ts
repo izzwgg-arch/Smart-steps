@@ -102,7 +102,61 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // Recalculate all entries
+        // Recalculate ALL entries from timesheet data
+        // Strategy: Get all unique timesheets, collect all their entries within date range,
+        // recalculate each, and match/update InvoiceEntries
+        const uniqueTimesheets = new Map<string, any>()
+        invoice.entries.forEach((entry: any) => {
+          if (entry.timesheet && !uniqueTimesheets.has(entry.timesheet.id)) {
+            uniqueTimesheets.set(entry.timesheet.id, entry.timesheet)
+          }
+        })
+
+        // Collect all timesheet entries within invoice date range
+        // IMPORTANT: Include ALL entries, not just those marked as invoiced
+        const allTimesheetEntries: Array<{ entry: any; timesheet: any }> = []
+        uniqueTimesheets.forEach((timesheet) => {
+          if (timesheet.entries) {
+            timesheet.entries.forEach((tsEntry: any) => {
+              const entryDate = new Date(tsEntry.date)
+              // Check if entry falls within invoice date range (inclusive)
+              const entryDateOnly = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate())
+              const startDateOnly = new Date(invoice.startDate.getFullYear(), invoice.startDate.getMonth(), invoice.startDate.getDate())
+              const endDateOnly = new Date(invoice.endDate.getFullYear(), invoice.endDate.getMonth(), invoice.endDate.getDate())
+              
+              if (entryDateOnly >= startDateOnly && entryDateOnly <= endDateOnly) {
+                allTimesheetEntries.push({ entry: tsEntry, timesheet })
+              }
+            })
+          }
+        })
+
+        console.log(`[FIX-ALL] Invoice ${invoice.invoiceNumber}: Found ${allTimesheetEntries.length} timesheet entries from ${uniqueTimesheets.size} timesheets`)
+
+        // Recalculate each timesheet entry
+        const recalculatedEntries: Array<{
+          timesheetEntry: any
+          timesheet: any
+          units: number
+          amount: Decimal
+        }> = []
+
+        for (const { entry: tsEntry, timesheet } of allTimesheetEntries) {
+          const { units, amount } = calculateEntryTotals(
+            tsEntry.minutes,
+            tsEntry.notes,
+            ratePerUnit,
+            !timesheet.isBCBA // isRegularTimesheet
+          )
+          recalculatedEntries.push({
+            timesheetEntry: tsEntry,
+            timesheet,
+            units: units,
+            amount,
+          })
+        }
+
+        // Match InvoiceEntries to recalculated entries (by order or best match)
         let totalRecalculatedAmount = new Decimal(0)
         let totalRecalculatedUnits = 0
         const entryUpdates: Array<{
@@ -110,53 +164,86 @@ export async function POST(request: NextRequest) {
           newUnits: number
           newAmount: Decimal
         }> = []
+        const usedRecalculatedIndices = new Set<number>()
 
-        for (const entry of invoice.entries) {
-          const timesheet = entry.timesheet
-          let entryMinutes: number = 0
+        for (const invoiceEntry of invoice.entries) {
+          // Try to find best matching recalculated entry
+          let bestMatch: { index: number; entry: any } | null = null
+          let bestMatchScore = Infinity
 
-          // InvoiceEntry represents ALL entries from a Timesheet
-          // Sum all timesheet entry minutes for this timesheet
-          if (timesheet?.entries && timesheet.entries.length > 0) {
-            entryMinutes = timesheet.entries.reduce((sum: number, e: any) => {
-              // Only count entries that fall within the invoice date range
-              const entryDate = new Date(e.date)
-              if (entryDate >= invoice.startDate && entryDate <= invoice.endDate) {
-                return sum + (e.minutes || 0)
+          for (let i = 0; i < recalculatedEntries.length; i++) {
+            if (usedRecalculatedIndices.has(i)) continue
+
+            const recalc = recalculatedEntries[i]
+            // Match by timesheet ID first
+            if (recalc.timesheet.id === invoiceEntry.timesheet.id) {
+              // Calculate match score (lower is better)
+              const unitsDiff = Math.abs(recalc.units - invoiceEntry.units.toNumber())
+              const amountDiff = Math.abs(recalc.amount.toNumber() - invoiceEntry.amount.toNumber())
+              const score = unitsDiff + amountDiff
+
+              if (score < bestMatchScore) {
+                bestMatch = { index: i, entry: recalc }
+                bestMatchScore = score
               }
-              return sum
-            }, 0)
+            }
           }
 
-          // Fallback: estimate from stored units if no timesheet entries found
-          if (entryMinutes === 0) {
-            entryMinutes = Math.round(entry.units.toNumber() * unitMinutes)
+          // Use best match, or first available if no match found
+          let recalcEntry = bestMatch?.entry
+          if (!recalcEntry && recalculatedEntries.length > 0) {
+            // Use first unused entry
+            const firstUnused = recalculatedEntries.findIndex((_, i) => !usedRecalculatedIndices.has(i))
+            if (firstUnused >= 0) {
+              recalcEntry = recalculatedEntries[firstUnused]
+              usedRecalculatedIndices.add(firstUnused)
+            }
           }
 
-          const { unitsBilled, amount } = calculateEntryTotals(entryMinutes, ratePerUnit, unitMinutes)
-
-          entryUpdates.push({
-            id: entry.id,
-            newUnits: unitsBilled,
-            newAmount: amount,
-          })
-
-          totalRecalculatedAmount = totalRecalculatedAmount.plus(amount)
-          totalRecalculatedUnits += unitsBilled
+          if (recalcEntry) {
+            if (bestMatch) usedRecalculatedIndices.add(bestMatch.index)
+            entryUpdates.push({
+              id: invoiceEntry.id,
+              newUnits: recalcEntry.units,
+              newAmount: recalcEntry.amount,
+            })
+            totalRecalculatedAmount = totalRecalculatedAmount.plus(recalcEntry.amount)
+            totalRecalculatedUnits += recalcEntry.units
+          } else {
+            // Fallback: estimate from stored units
+            const estimatedMinutes = Math.round(invoiceEntry.units.toNumber() * unitMinutes)
+            const { units, amount } = calculateEntryTotals(estimatedMinutes, null, ratePerUnit, true)
+            entryUpdates.push({
+              id: invoiceEntry.id,
+              newUnits: units,
+              newAmount: amount,
+            })
+            totalRecalculatedAmount = totalRecalculatedAmount.plus(amount)
+            totalRecalculatedUnits += units
+          }
         }
 
         const oldTotal = invoice.totalAmount.toNumber()
         const newTotal = totalRecalculatedAmount.toNumber()
         const oldUnits = invoice.entries.reduce((sum: number, e: any) => sum + e.units.toNumber(), 0)
-        const hasChanges = entryUpdates.some(e => {
-          const oldEntry = invoice.entries.find((ent: any) => ent.id === e.id)
-          return oldEntry && (
-            Math.abs(oldEntry.units.toNumber() - e.newUnits) > 0.001 ||
-            Math.abs(oldEntry.amount.toNumber() - e.newAmount.toNumber()) > 0.01
-          )
-        }) || Math.abs(oldTotal - newTotal) > 0.01
+        
+        // ALWAYS recalculate and update if we have recalculated entries
+        // This ensures all invoices use the correct ceil() logic
+        const hasChanges = entryUpdates.length > 0 && (
+          entryUpdates.some(e => {
+            const oldEntry = invoice.entries.find((ent: any) => ent.id === e.id)
+            if (!oldEntry) return true // New entry, definitely needs update
+            
+            const unitsDiffer = Math.abs(oldEntry.units.toNumber() - e.newUnits) > 0.001
+            const amountDiffers = Math.abs(oldEntry.amount.toNumber() - e.newAmount.toNumber()) > 0.01
+            const hasFractionalUnits = oldEntry.units.toNumber() % 1 !== 0
+            
+            return unitsDiffer || amountDiffers || hasFractionalUnits
+          }) || Math.abs(oldTotal - newTotal) > 0.01
+        )
 
-        if (!hasChanges) {
+        // If no changes detected but we have recalculated data, still update to ensure consistency
+        if (!hasChanges && entryUpdates.length === 0) {
           results.push({
             invoiceNumber: invoice.invoiceNumber,
             fixed: false,

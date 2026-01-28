@@ -198,32 +198,6 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Calculate totals using billing utility (rounds UP to next whole unit)
-      const { totalMinutes, unitsBilled, amount: totalAmount } = calculateInvoiceTotals(
-        allEntries,
-        ratePerUnit,
-        unitMinutes
-      )
-
-      invoiceCounter++
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(invoiceCounter).padStart(4, '0')}`
-
-      console.log(`[BATCH INVOICE GEN] Creating invoice ${invoiceNumber} for client "${client.name}"`)
-      console.log(`[BATCH INVOICE GEN] Calculation breakdown:`)
-      console.log(`  - Total minutes: ${totalMinutes}`)
-      console.log(`  - Units billed (ceil): ${unitsBilled}`)
-      console.log(`  - Rate per unit: $${ratePerUnit.toNumber()}`)
-      console.log(`  - Total amount: $${totalAmount.toNumber()}`)
-      console.log(`  - Date range: ${format(utcToZonedTime(weekStart, 'America/New_York'), 'MMM d, yyyy')} to ${format(utcToZonedTime(weekEnd, 'America/New_York'), 'MMM d, yyyy')}`)
-      console.log(`  - Entries included: ${allEntries.length}`)
-
-      // Create invoice entries (calculate per entry, then sum)
-      // CRITICAL: For regular timesheets, exclude SV (Supervision) entries from total amount
-      // SV entries should be displayed but charged at $0 to prevent double charging
-      const invoiceEntries: any[] = []
-      let entryTotalUnits = 0
-      let entryTotalAmount = new Decimal(0)
-      
       // Check if this is a BCBA timesheet (use BCBA rates if so)
       const isBCBATimesheet = weekTimesheets.some(ts => ts.isBCBA === true)
       const rateToUse = isBCBATimesheet 
@@ -231,38 +205,50 @@ export async function POST(request: NextRequest) {
             ? new Decimal((insurance as any).bcbaRatePerUnit.toString())
             : ratePerUnit) // Fallback to regular rate if BCBA rate not set
         : ratePerUnit
+
+      invoiceCounter++
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(invoiceCounter).padStart(4, '0')}`
+
+      // Create invoice entries (calculate per entry, then sum)
+      // CRITICAL: For regular timesheets, SV entries = $0 (displayed but not charged)
+      // For BCBA timesheets, all entries charged at BCBA rate
+      const invoiceEntries: any[] = []
+      let entryTotalUnits = 0 // All units (for display)
+      let entryTotalAmount = new Decimal(0) // Only charged amount
       
       for (const entry of allEntries) {
         const timesheet = weekTimesheets.find(ts => ts.entries.some(e => e.id === entry.id))
         if (!timesheet) continue
         
-        // Calculate units for this entry (Hours × 4)
-        const { unitsBilled: entryUnits } = calculateEntryTotals(
+        // Calculate units and amount for this entry
+        // Units = Hours × 4, SV on regular = $0
+        const { units, amount: entryAmount } = calculateEntryTotals(
           entry.minutes,
+          entry.notes,
           rateToUse,
-          unitMinutes
+          !timesheet.isBCBA // isRegularTimesheet
         )
         
-        // For regular timesheets: SV entries are displayed but charged at $0
-        // For BCBA timesheets: All entries (including SV) are charged normally
-        const isSVEntry = entry.notes === 'SV'
-        const isRegularTimesheet = !timesheet.isBCBA
-        const entryAmount = (isSVEntry && isRegularTimesheet) 
-          ? new Decimal(0) // SV entries on regular timesheets = $0
-          : new Decimal(entryUnits).times(rateToUse) // Normal calculation
-        
-        entryTotalUnits += entryUnits
-        entryTotalAmount = entryTotalAmount.plus(entryAmount)
+        entryTotalUnits += units // Always add units (for display)
+        entryTotalAmount = entryTotalAmount.plus(entryAmount) // Only charged amount
         
         invoiceEntries.push({
           timesheetId: entry.timesheetId,
           providerId: timesheet.providerId,
           insuranceId: client.insuranceId!,
-          units: new Decimal(entryUnits),
+          units: new Decimal(units),
           rate: rateToUse.toNumber(),
           amount: entryAmount,
         })
       }
+
+      console.log(`[BATCH INVOICE GEN] Creating invoice ${invoiceNumber} for client "${client.name}"`)
+      console.log(`[BATCH INVOICE GEN] Calculation breakdown:`)
+      console.log(`  - Total units (all): ${entryTotalUnits}`)
+      console.log(`  - Rate per unit: $${rateToUse.toNumber()}`)
+      console.log(`  - Total amount (charged): $${entryTotalAmount.toNumber()}`)
+      console.log(`  - Date range: ${format(utcToZonedTime(weekStart, 'America/New_York'), 'MMM d, yyyy')} to ${format(utcToZonedTime(weekEnd, 'America/New_York'), 'MMM d, yyyy')}`)
+      console.log(`  - Entries included: ${allEntries.length}`)
       
       console.log(`[BATCH INVOICE GEN] Entry-level totals: ${entryTotalUnits} units, $${entryTotalAmount.toNumber()}`)
 
@@ -275,7 +261,7 @@ export async function POST(request: NextRequest) {
               clientId,
               startDate: weekStart,
               endDate: weekEnd,
-              totalAmount: entryTotalAmount, // Use sum of entry amounts (may differ slightly from aggregate due to per-entry rounding)
+              totalAmount: entryTotalAmount, // Only charged amount (SV on regular = $0)
               paidAmount: new Decimal(0),
               adjustments: new Decimal(0),
               outstanding: entryTotalAmount,

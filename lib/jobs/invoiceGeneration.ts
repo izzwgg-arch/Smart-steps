@@ -309,35 +309,30 @@ async function generateInvoiceForClient(
 
   for (const timesheet of timesheets) {
     for (const entry of timesheet.entries) {
-      // Use the stored minutes
-      const minutes = entry.minutes
-      
-      // Calculate units using billing utility (Hours × 4)
-      const { unitsBilled } = calculateEntryTotals(minutes, rateToUse, unitMinutes)
-      
-      // For regular timesheets: SV entries are displayed but charged at $0
-      // For BCBA timesheets: All entries (including SV) are charged normally
-      const isSVEntry = entry.notes === 'SV'
-      const isRegularTimesheet = !(timesheet as any).isBCBA
-      const entryAmount = (isSVEntry && isRegularTimesheet) 
-        ? new Decimal(0) // SV entries on regular timesheets = $0
-        : new Decimal(unitsBilled).times(rateToUse) // Normal calculation
+      // Calculate units and amount for this entry
+      // Units = Hours × 4, SV on regular = $0
+      const { units, amount: entryAmount } = calculateEntryTotals(
+        entry.minutes,
+        entry.notes,
+        rateToUse,
+        !(timesheet as any).isBCBA // isRegularTimesheet
+      )
       
       // Guard against NaN
-      if (isNaN(minutes) || isNaN(unitsBilled) || isNaN(entryAmount.toNumber())) {
-        console.error(`[INVOICE GENERATION] Invalid calculation for entry ${entry.id}: minutes=${minutes}, units=${unitsBilled}`)
+      if (isNaN(entry.minutes) || isNaN(units) || isNaN(entryAmount.toNumber())) {
+        console.error(`[INVOICE GENERATION] Invalid calculation for entry ${entry.id}: minutes=${entry.minutes}, units=${units}`)
         throw new Error(`Invalid calculation for timesheet entry ${entry.id}`)
       }
 
       totalAmount = totalAmount.plus(entryAmount)
-      totalMinutes += minutes
-      totalUnits += unitsBilled
+      totalMinutes += entry.minutes
+      totalUnits += units // Always add units (for display)
 
       invoiceEntries.push({
         timesheetId: timesheet.id,
         providerId: timesheet.providerId,
         insuranceId: timesheet.insuranceId,
-        units: new Decimal(unitsBilled),
+        units: new Decimal(units),
         rate: rateToUse, // Snapshot rate per unit
         amount: entryAmount,
       })

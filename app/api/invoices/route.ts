@@ -198,20 +198,14 @@ export async function POST(request: NextRequest) {
       const unitMinutesForTimesheet = (timesheet.insurance as any).regularUnitMinutes || unitMinutes
 
       for (const entry of timesheet.entries) {
-        // Calculate units for this entry (Hours × 4)
-        const { unitsBilled: entryUnits } = calculateEntryTotals(
+        // Calculate units and amount for this entry
+        // Units = Hours × 4, SV on regular = $0
+        const { units, amount: entryAmount } = calculateEntryTotals(
           entry.minutes,
+          entry.notes,
           ratePerUnit,
-          unitMinutesForTimesheet
+          !timesheet.isBCBA // isRegularTimesheet
         )
-        
-        // For regular timesheets: SV entries are displayed but charged at $0
-        // For BCBA timesheets: All entries (including SV) are charged normally
-        const isSVEntry = entry.notes === 'SV'
-        const isRegularTimesheet = !timesheet.isBCBA
-        const entryAmount = (isSVEntry && isRegularTimesheet) 
-          ? new Decimal(0) // SV entries on regular timesheets = $0
-          : new Decimal(entryUnits).times(ratePerUnit) // Normal calculation
         
         totalAmount = totalAmount.plus(entryAmount)
 
@@ -219,7 +213,7 @@ export async function POST(request: NextRequest) {
           timesheetId: timesheet.id,
           providerId: timesheet.providerId,
           insuranceId: timesheet.insuranceId!,
-          units: new Decimal(entryUnits),
+          units: new Decimal(units),
           rate: ratePerUnit.toNumber(),
           amount: entryAmount,
         })

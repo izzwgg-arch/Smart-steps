@@ -81,7 +81,7 @@ export async function GET(
       // Use stored units to calculate minutes, or use timesheet entry minutes if available
       const storedMinutes = entry.units.toNumber() * unitMinutes
       const entryMinutes = timesheetEntry?.minutes || storedMinutes
-      const { unitsBilled, amount } = calculateEntryTotals(entryMinutes, ratePerUnit, unitMinutes)
+      const { units, amount } = calculateEntryTotals(entryMinutes, timesheetEntry?.notes || null, ratePerUnit, true)
 
       return {
         invoiceEntryId: entry.id,
@@ -92,7 +92,7 @@ export async function GET(
         endTime: timesheetEntry?.endTime || 'N/A',
         minutes: entryMinutes,
         unitsRaw: entryMinutes / unitMinutes,
-        unitsBilled,
+        unitsBilled: units,
         ratePerUnit: ratePerUnit.toNumber(),
         amount: amount.toNumber(),
         storedUnits: entry.units.toNumber(),
@@ -103,7 +103,7 @@ export async function GET(
     // Calculate totals
     const totalMinutes = entryBreakdown.reduce((sum, e) => sum + e.minutes, 0)
     const totalUnitsRaw = totalMinutes / unitMinutes
-    const totalUnitsBilled = entryBreakdown.reduce((sum, e) => sum + e.unitsBilled, 0)
+    const totalUnitsBilled = entryBreakdown.reduce((sum, e) => sum + (e.unitsBilled || 0), 0)
     const totalAmount = entryBreakdown.reduce((sum, e) => sum + e.amount, 0)
 
     return NextResponse.json({
