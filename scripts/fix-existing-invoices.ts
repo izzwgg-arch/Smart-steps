@@ -161,11 +161,11 @@ async function fixExistingInvoices() {
           }
 
           // Recalculate using new logic (ceil rounding)
-          const { unitsBilled, amount } = calculateEntryTotals(entryMinutes, ratePerUnit, unitMinutes)
+          const { units, amount } = calculateEntryTotals(entryMinutes, null, ratePerUnit, true)
           
           const oldUnits = entry.units.toNumber()
           const oldAmount = entry.amount.toNumber()
-          const newUnits = unitsBilled
+          const newUnits = units
           const newAmount = amount.toNumber()
 
           // Always check if recalculation differs (even slightly)

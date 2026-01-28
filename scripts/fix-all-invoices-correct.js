@@ -125,12 +125,22 @@ async function fixAllInvoices() {
           }
         })
 
-        // Recalculate each timesheet entry with CORRECT logic
-        let totalRecalculatedAmount = new Decimal(0)
-        let totalRecalculatedUnits = 0
-        const entryUpdates = []
-
+        // CRITICAL: Group timesheet entries by unique key (timesheet + date + notes)
+        // This prevents duplicate InvoiceEntries when multiple timesheets have entries for same dates
+        const uniqueEntryMap = new Map()
+        
         for (const { entry: tsEntry, timesheet } of allTimesheetEntries) {
+          // Create unique key: timesheetId + date + notes
+          const entryDate = new Date(tsEntry.date)
+          const dateKey = entryDate.toISOString().split('T')[0]
+          const uniqueKey = `${timesheet.id}_${dateKey}_${tsEntry.notes || 'DR'}`
+          
+          // If we've already seen this unique entry, skip it (deduplicate)
+          if (uniqueEntryMap.has(uniqueKey)) {
+            console.log(`  Skipping duplicate: ${uniqueKey}`)
+            continue
+          }
+          
           // Calculate units and amount for this entry
           // Units = Hours × 4, SV on regular = $0
           const { units, amount: entryAmount } = calculateEntryTotals(
@@ -140,33 +150,49 @@ async function fixAllInvoices() {
             !timesheet.isBCBA // isRegularTimesheet
           )
           
-          // Try to find existing InvoiceEntry for this specific timesheet entry
+          uniqueEntryMap.set(uniqueKey, {
+            timesheetId: timesheet.id,
+            providerId: timesheet.providerId,
+            insuranceId: insurance.id,
+            units,
+            amount: entryAmount,
+            tsEntryId: tsEntry.id, // Store for matching
+          })
+        }
+
+        // Now create InvoiceEntries from unique entries only
+        let totalRecalculatedAmount = new Decimal(0)
+        let totalRecalculatedUnits = 0
+        const entryUpdates = []
+
+        for (const [uniqueKey, entryData] of uniqueEntryMap) {
+          // Try to find existing InvoiceEntry for this unique entry
           const existingEntry = invoice.entries.find(ie => {
-            if (ie.timesheet?.id !== timesheet.id) return false
-            // Match by similar units or amount
+            if (ie.timesheet?.id !== entryData.timesheetId) return false
+            // Match by similar units
             const ieUnits = parseFloat(ie.units.toString())
-            return Math.abs(ieUnits - units) < 0.1
+            return Math.abs(ieUnits - entryData.units) < 0.1
           })
 
           if (existingEntry) {
             entryUpdates.push({
               id: existingEntry.id,
-              newUnits: units,
-              newAmount: entryAmount,
+              newUnits: entryData.units,
+              newAmount: entryData.amount,
             })
           } else {
             entryUpdates.push({
               id: null, // New entry
-              timesheetId: timesheet.id,
-              providerId: timesheet.providerId,
-              insuranceId: insurance.id,
-              newUnits: units,
-              newAmount: entryAmount,
+              timesheetId: entryData.timesheetId,
+              providerId: entryData.providerId,
+              insuranceId: entryData.insuranceId,
+              newUnits: entryData.units,
+              newAmount: entryData.amount,
             })
           }
 
-          totalRecalculatedAmount = totalRecalculatedAmount.plus(entryAmount)
-          totalRecalculatedUnits += units // Always add units (for display)
+          totalRecalculatedAmount = totalRecalculatedAmount.plus(entryData.amount)
+          totalRecalculatedUnits += entryData.units // Always add units (for display)
         }
 
         const oldTotal = invoice.totalAmount.toNumber()

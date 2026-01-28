@@ -9,16 +9,13 @@ import { Decimal } from '@prisma/client/runtime/library'
 console.log('Testing Billing Calculations\n')
 console.log('=' .repeat(50))
 
-// Test cases
+// Test cases - Updated for Hours × 4 formula
 const testCases = [
-  { minutes: 323, expectedUnits: 22, description: '323 minutes (should round UP to 22 units)' },
-  { minutes: 30, expectedUnits: 2, description: '30 minutes (exactly 2 units)' },
-  { minutes: 15, expectedUnits: 1, description: '15 minutes (exactly 1 unit)' },
-  { minutes: 16, expectedUnits: 2, description: '16 minutes (should round UP to 2 units)' },
-  { minutes: 1, expectedUnits: 1, description: '1 minute (should round UP to 1 unit)' },
-  { minutes: 14, expectedUnits: 1, description: '14 minutes (should round UP to 1 unit)' },
-  { minutes: 29, expectedUnits: 2, description: '29 minutes (should round UP to 2 units)' },
-  { minutes: 45, expectedUnits: 3, description: '45 minutes (exactly 3 units)' },
+  { minutes: 90, expectedUnits: 6, description: '90 minutes = 1.5 hours × 4 = 6 units' },
+  { minutes: 120, expectedUnits: 8, description: '120 minutes = 2 hours × 4 = 8 units' },
+  { minutes: 60, expectedUnits: 4, description: '60 minutes = 1 hour × 4 = 4 units' },
+  { minutes: 30, expectedUnits: 2, description: '30 minutes = 0.5 hours × 4 = 2 units' },
+  { minutes: 15, expectedUnits: 1, description: '15 minutes = 0.25 hours × 4 = 1 unit' },
 ]
 
 const ratePerUnit = new Decimal(50.00) // Example rate
@@ -26,8 +23,8 @@ const ratePerUnit = new Decimal(50.00) // Example rate
 let allPassed = true
 
 for (const testCase of testCases) {
-  const units = minutesToUnits(testCase.minutes, 15)
-  const { amount } = calculateEntryTotals(testCase.minutes, ratePerUnit, 15)
+  const units = minutesToUnits(testCase.minutes)
+  const { amount } = calculateEntryTotals(testCase.minutes, null, ratePerUnit, true)
   const expectedAmount = new Decimal(testCase.expectedUnits).times(ratePerUnit)
   
   const passed = units === testCase.expectedUnits
@@ -51,9 +48,10 @@ console.log(`\nOverall: ${allPassed ? '✅ ALL TESTS PASSED' : '❌ SOME TESTS F
 
 // Verify the formula
 console.log('\nFormula Verification:')
-console.log('  ceil(323 / 15) = ceil(21.5333) = 22 ✅')
-console.log('  ceil(30 / 15) = ceil(2.0) = 2 ✅')
-console.log('  ceil(15 / 15) = ceil(1.0) = 1 ✅')
-console.log('  ceil(16 / 15) = ceil(1.067) = 2 ✅')
+console.log('  Units = Hours × 4')
+console.log('  90 min = 1.5 hours × 4 = 6 units ✅')
+console.log('  120 min = 2 hours × 4 = 8 units ✅')
+console.log('  60 min = 1 hour × 4 = 4 units ✅')
+console.log('  30 min = 0.5 hours × 4 = 2 units ✅')
 
 process.exit(allPassed ? 0 : 1)
