@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
 import { logCreate } from '@/lib/audit'
+import { calculateEntryTotals } from '@/lib/billing'
 
 export async function GET(request: NextRequest) {
   try {
@@ -179,9 +180,10 @@ export async function POST(request: NextRequest) {
       invoiceCount + 1
     ).padStart(5, '0')}`
 
-    // Calculate totals
+    // Calculate totals using billing utility (ceil rounding per entry)
     let totalAmount = new Decimal(0)
     const invoiceEntries: any[] = []
+    const unitMinutes = 15 // Standard unit size
 
     for (const timesheet of timesheets) {
       // Skip BCBA timesheets (they don't have insurance)
@@ -189,19 +191,37 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const rate = parseFloat(timesheet.insurance.ratePerUnit.toString())
+      // Use regular-specific rates, with fallbacks
+      const ratePerUnit = (timesheet.insurance as any).regularRatePerUnit
+        ? new Decimal((timesheet.insurance as any).regularRatePerUnit.toString())
+        : new Decimal(timesheet.insurance.ratePerUnit.toString())
+      const unitMinutesForTimesheet = (timesheet.insurance as any).regularUnitMinutes || unitMinutes
 
       for (const entry of timesheet.entries) {
-        const amount = new Decimal(entry.units.toString()).times(rate)
-        totalAmount = totalAmount.plus(amount)
+        // Calculate units for this entry (Hours × 4)
+        const { unitsBilled: entryUnits } = calculateEntryTotals(
+          entry.minutes,
+          ratePerUnit,
+          unitMinutesForTimesheet
+        )
+        
+        // For regular timesheets: SV entries are displayed but charged at $0
+        // For BCBA timesheets: All entries (including SV) are charged normally
+        const isSVEntry = entry.notes === 'SV'
+        const isRegularTimesheet = !timesheet.isBCBA
+        const entryAmount = (isSVEntry && isRegularTimesheet) 
+          ? new Decimal(0) // SV entries on regular timesheets = $0
+          : new Decimal(entryUnits).times(ratePerUnit) // Normal calculation
+        
+        totalAmount = totalAmount.plus(entryAmount)
 
         invoiceEntries.push({
           timesheetId: timesheet.id,
           providerId: timesheet.providerId,
           insuranceId: timesheet.insuranceId!,
-          units: entry.units,
-          rate: rate,
-          amount: amount,
+          units: new Decimal(entryUnits),
+          rate: ratePerUnit.toNumber(),
+          amount: entryAmount,
         })
       }
     }

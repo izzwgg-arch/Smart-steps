@@ -231,20 +231,38 @@ export async function POST(request: NextRequest) {
       console.log(`  - Entries included: ${allEntries.length}`)
 
       // Create invoice entries (calculate per entry, then sum)
+      // CRITICAL: For regular timesheets, exclude SV (Supervision) entries from total amount
+      // SV entries should be displayed but charged at $0 to prevent double charging
       const invoiceEntries: any[] = []
       let entryTotalUnits = 0
       let entryTotalAmount = new Decimal(0)
+      
+      // Check if this is a BCBA timesheet (use BCBA rates if so)
+      const isBCBATimesheet = weekTimesheets.some(ts => ts.isBCBA === true)
+      const rateToUse = isBCBATimesheet 
+        ? ((insurance as any).bcbaRatePerUnit 
+            ? new Decimal((insurance as any).bcbaRatePerUnit.toString())
+            : ratePerUnit) // Fallback to regular rate if BCBA rate not set
+        : ratePerUnit
       
       for (const entry of allEntries) {
         const timesheet = weekTimesheets.find(ts => ts.entries.some(e => e.id === entry.id))
         if (!timesheet) continue
         
-        // Calculate units and amount for this entry (rounds UP per entry)
-        const { unitsBilled: entryUnits, amount: entryAmount } = calculateEntryTotals(
+        // Calculate units for this entry (Hours × 4)
+        const { unitsBilled: entryUnits } = calculateEntryTotals(
           entry.minutes,
-          ratePerUnit,
+          rateToUse,
           unitMinutes
         )
+        
+        // For regular timesheets: SV entries are displayed but charged at $0
+        // For BCBA timesheets: All entries (including SV) are charged normally
+        const isSVEntry = entry.notes === 'SV'
+        const isRegularTimesheet = !timesheet.isBCBA
+        const entryAmount = (isSVEntry && isRegularTimesheet) 
+          ? new Decimal(0) // SV entries on regular timesheets = $0
+          : new Decimal(entryUnits).times(rateToUse) // Normal calculation
         
         entryTotalUnits += entryUnits
         entryTotalAmount = entryTotalAmount.plus(entryAmount)
@@ -254,7 +272,7 @@ export async function POST(request: NextRequest) {
           providerId: timesheet.providerId,
           insuranceId: client.insuranceId!,
           units: new Decimal(entryUnits),
-          rate: ratePerUnit.toNumber(),
+          rate: rateToUse.toNumber(),
           amount: entryAmount,
         })
       }

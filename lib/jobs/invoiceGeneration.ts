@@ -299,21 +299,37 @@ async function generateInvoiceForClient(
   const invoiceEntries: any[] = []
   const unitMinutes = 15 // Standard unit size
 
+  // Check if this is a BCBA timesheet (use BCBA rates if so)
+  const isBCBATimesheet = timesheets.some(ts => (ts as any).isBCBA === true)
+  const rateToUse = isBCBATimesheet 
+    ? ((insurance as any).bcbaRatePerUnit 
+        ? parseFloat((insurance as any).bcbaRatePerUnit.toString())
+        : ratePerUnit) // Fallback to regular rate if BCBA rate not set
+    : ratePerUnit
+
   for (const timesheet of timesheets) {
     for (const entry of timesheet.entries) {
       // Use the stored minutes
       const minutes = entry.minutes
       
-      // Calculate units using billing utility (rounds UP)
-      const { unitsBilled, amount } = calculateEntryTotals(minutes, ratePerUnit, unitMinutes)
+      // Calculate units using billing utility (Hours × 4)
+      const { unitsBilled } = calculateEntryTotals(minutes, rateToUse, unitMinutes)
+      
+      // For regular timesheets: SV entries are displayed but charged at $0
+      // For BCBA timesheets: All entries (including SV) are charged normally
+      const isSVEntry = entry.notes === 'SV'
+      const isRegularTimesheet = !(timesheet as any).isBCBA
+      const entryAmount = (isSVEntry && isRegularTimesheet) 
+        ? new Decimal(0) // SV entries on regular timesheets = $0
+        : new Decimal(unitsBilled).times(rateToUse) // Normal calculation
       
       // Guard against NaN
-      if (isNaN(minutes) || isNaN(unitsBilled) || isNaN(amount.toNumber())) {
+      if (isNaN(minutes) || isNaN(unitsBilled) || isNaN(entryAmount.toNumber())) {
         console.error(`[INVOICE GENERATION] Invalid calculation for entry ${entry.id}: minutes=${minutes}, units=${unitsBilled}`)
         throw new Error(`Invalid calculation for timesheet entry ${entry.id}`)
       }
 
-      totalAmount = totalAmount.plus(amount)
+      totalAmount = totalAmount.plus(entryAmount)
       totalMinutes += minutes
       totalUnits += unitsBilled
 
@@ -322,8 +338,8 @@ async function generateInvoiceForClient(
         providerId: timesheet.providerId,
         insuranceId: timesheet.insuranceId,
         units: new Decimal(unitsBilled),
-        rate: ratePerUnit, // Snapshot rate per unit
-        amount: amount,
+        rate: rateToUse, // Snapshot rate per unit
+        amount: entryAmount,
       })
     }
   }
