@@ -107,20 +107,20 @@ async function fixAllInvoicesForce() {
             entryMinutes = Math.round(entry.units.toNumber() * unitMinutes)
           }
 
-          // Recalculate with ceil()
-          const { unitsBilled, amount } = calculateEntryTotals(entryMinutes, ratePerUnit, unitMinutes)
+          // Recalculate with Hours × 4
+          const { units, amount } = calculateEntryTotals(entryMinutes, null, ratePerUnit, true)
 
           entryUpdates.push({
             id: entry.id,
             oldUnits: entry.units.toNumber(),
             oldAmount: entry.amount.toNumber(),
-            newUnits: unitsBilled,
+            newUnits: units,
             newAmount: amount,
             minutes: entryMinutes,
           })
 
           totalRecalculatedAmount = totalRecalculatedAmount.plus(amount)
-          totalRecalculatedUnits += unitsBilled
+          totalRecalculatedUnits += units
         }
 
         if (entryUpdates.length === 0) {
