@@ -123,53 +123,44 @@ async function fixAllInvoices() {
           })
         }
 
-        // CRITICAL: InvoiceEntry is per Timesheet, not per TimesheetEntry
-        // Group timesheet entries by timesheet and sum units/amounts per timesheet
-        const timesheetGroups = new Map()
-        
-        for (const { entry: tsEntry, timesheet } of allTimesheetEntries) {
-          const { unitsBilled, amount } = calculateEntryTotals(tsEntry.minutes, ratePerUnit, unitMinutes)
-          
-          if (!timesheetGroups.has(timesheet.id)) {
-            timesheetGroups.set(timesheet.id, {
-              timesheet,
-              totalUnits: 0,
-              totalAmount: new Decimal(0),
-            })
-          }
-          
-          const group = timesheetGroups.get(timesheet.id)
-          group.totalUnits += unitsBilled
-          group.totalAmount = group.totalAmount.plus(amount)
-        }
-
-        // Now create/update InvoiceEntries (one per Timesheet)
+        // CRITICAL: Create one InvoiceEntry per TimesheetEntry
+        // This matches how invoices are created in generate-invoice routes
         let totalRecalculatedAmount = new Decimal(0)
         let totalRecalculatedUnits = 0
         const entryUpdates = []
 
-        for (const [timesheetId, group] of timesheetGroups) {
-          const existingEntry = invoice.entries.find(ie => ie.timesheet?.id === timesheetId)
+        for (const { entry: tsEntry, timesheet } of allTimesheetEntries) {
+          const { unitsBilled, amount } = calculateEntryTotals(tsEntry.minutes, ratePerUnit, unitMinutes)
+          
+          // Try to find existing InvoiceEntry for this specific timesheet entry
+          // Match by timesheet ID and similar amount/units
+          const existingEntry = invoice.entries.find(ie => {
+            if (ie.timesheet?.id !== timesheet.id) return false
+            const ieUnits = parseFloat(ie.units.toString())
+            const ieAmount = parseFloat(ie.amount.toString())
+            // Match if units/amount are close (within 0.1 units or $0.01)
+            return Math.abs(ieUnits - unitsBilled) < 0.1 || Math.abs(ieAmount - amount.toNumber()) < 0.01
+          })
 
           if (existingEntry) {
             entryUpdates.push({
               id: existingEntry.id,
-              newUnits: group.totalUnits,
-              newAmount: group.totalAmount,
+              newUnits: unitsBilled,
+              newAmount: amount,
             })
           } else {
             entryUpdates.push({
               id: null, // New entry
-              timesheetId: group.timesheet.id,
-              providerId: group.timesheet.providerId,
+              timesheetId: timesheet.id,
+              providerId: timesheet.providerId,
               insuranceId: insurance.id,
-              newUnits: group.totalUnits,
-              newAmount: group.totalAmount,
+              newUnits: unitsBilled,
+              newAmount: amount,
             })
           }
 
-          totalRecalculatedAmount = totalRecalculatedAmount.plus(group.totalAmount)
-          totalRecalculatedUnits += group.totalUnits
+          totalRecalculatedAmount = totalRecalculatedAmount.plus(amount)
+          totalRecalculatedUnits += unitsBilled
         }
 
         const oldTotal = invoice.totalAmount.toNumber()
