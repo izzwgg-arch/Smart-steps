@@ -55,7 +55,10 @@ export async function GET(request: NextRequest) {
       }
     } else {
       // Active list: show only non-invoiced AND non-archived timesheets
-      where.invoiceEntries = { none: {} } // No invoice entries = not invoiced
+      // Build AND conditions to ensure all criteria are met
+      const activeConditions: any[] = [
+        { invoiceEntries: { none: {} } }, // No invoice entries = not invoiced
+      ]
       
       // Exclude archived timesheets using raw SQL
       const archivedIds = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`
@@ -67,7 +70,14 @@ export async function GET(request: NextRequest) {
       const archivedIdList = archivedIds.map((r: any) => r.id)
       
       if (archivedIdList.length > 0) {
-        where.id = { notIn: archivedIdList }
+        activeConditions.push({ id: { notIn: archivedIdList } })
+      }
+      
+      // Combine active conditions with existing where clause
+      if (where.AND) {
+        where.AND = [...where.AND, ...activeConditions]
+      } else {
+        where.AND = activeConditions
       }
     }
     const clientId = searchParams.get('clientId')

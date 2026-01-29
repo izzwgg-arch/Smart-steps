@@ -1,125 +1,130 @@
+/**
+ * Find Missing Timesheets
+ * 
+ * Finds timesheets that were recently unarchived but aren't showing in active list
+ * 
+ * Run: node scripts/find-missing-timesheets.js
+ */
+
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
-async function main() {
-  console.log('='.repeat(80))
-  console.log('FINDING MISSING TIMESHEETS FROM DELETED USERS')
-  console.log('='.repeat(80))
-  console.log('')
+async function findMissingTimesheets() {
+  console.log('Searching for timesheets that were unarchived but not showing in active list...\n')
 
-  // Get all invoice entries that reference timesheets
-  console.log('Checking invoice entries for timesheet references...')
-  const invoiceEntries = await prisma.invoiceEntry.findMany({
-    select: {
-      id: true,
-      timesheetId: true,
-      invoiceId: true,
-    },
-    take: 100000,
-  })
+  try {
+    // Find timesheets that:
+    // 1. Are not deleted
+    // 2. Are not archived (archived = false)
+    // 3. Are not invoiced (no invoiceId)
+    // 4. Were updated in the last 7 days (recently unarchived)
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-  console.log(`Found ${invoiceEntries.length} invoice entries`)
-  
-  // Get unique timesheet IDs from invoices
-  const timesheetIdsFromInvoices = new Set()
-  invoiceEntries.forEach(entry => {
-    if (entry.timesheetId) {
-      timesheetIdsFromInvoices.add(entry.timesheetId)
-    }
-  })
-
-  console.log(`Unique timesheet IDs referenced in invoices: ${timesheetIdsFromInvoices.size}`)
-  console.log('')
-
-  // Check which of these timesheets exist
-  const invoiceTimesheetIds = Array.from(timesheetIdsFromInvoices)
-  if (invoiceTimesheetIds.length > 0) {
-    const existingInvoiceTimesheets = await prisma.timesheet.findMany({
+    const missingTimesheets = await prisma.timesheet.findMany({
       where: {
-        id: { in: invoiceTimesheetIds },
+        deletedAt: null,
+        archived: false,
+        invoiceId: null, // Not invoiced
+        updatedAt: {
+          gte: sevenDaysAgo, // Updated in last 7 days
+        },
       },
-      select: {
-        id: true,
-        userId: true,
-        deletedAt: true,
-        createdAt: true,
+      include: {
+        client: {
+          select: { name: true },
+        },
+        provider: {
+          select: { name: true },
+        },
+        bcba: {
+          select: { name: true },
+        },
+        invoiceEntries: {
+          select: {
+            id: true,
+            invoiceId: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: 'desc',
       },
     })
 
-    const existingIds = new Set(existingInvoiceTimesheets.map(t => t.id))
-    const missingIds = invoiceTimesheetIds.filter(id => !existingIds.has(id))
-    const softDeleted = existingInvoiceTimesheets.filter(t => t.deletedAt).map(t => t.id)
+    console.log(`Found ${missingTimesheets.length} timesheets that might be missing:\n`)
 
-    console.log(`Timesheets referenced in invoices:`)
-    console.log(`  - Still exist: ${existingInvoiceTimesheets.length}`)
-    console.log(`  - Soft-deleted: ${softDeleted.length}`)
-    console.log(`  - Hard-deleted (missing): ${missingIds.length}`)
-    console.log('')
+    if (missingTimesheets.length === 0) {
+      console.log('No missing timesheets found.')
+      return
+    }
 
-    if (missingIds.length > 0) {
-      console.log(`Found ${missingIds.length} hard-deleted timesheets referenced in invoices:`)
-      console.log('(These were likely deleted when users were deleted)')
+    for (const ts of missingTimesheets) {
+      const hasInvoiceEntries = ts.invoiceEntries && ts.invoiceEntries.length > 0
+      const status = hasInvoiceEntries ? '⚠️  HAS INVOICE ENTRIES (should be in archive)' : '✅ Should be in active list'
+      
+      console.log(`${status}`)
+      console.log(`  ID: ${ts.id}`)
+      console.log(`  Number: ${ts.timesheetNumber || 'NO ID ASSIGNED'}`)
+      console.log(`  Client: ${ts.client.name}`)
+      console.log(`  Provider: ${ts.provider?.name || 'N/A'}`)
+      console.log(`  BCBA: ${ts.bcba.name}`)
+      console.log(`  Status: ${ts.status}`)
+      console.log(`  Archived: ${ts.archived}`)
+      console.log(`  Invoice ID: ${ts.invoiceId || 'None'}`)
+      console.log(`  Has Invoice Entries: ${hasInvoiceEntries}`)
+      console.log(`  Updated: ${ts.updatedAt}`)
+      console.log(`  Created: ${ts.createdAt}`)
       console.log('')
+    }
+
+    // Also check for timesheets that have invoiceEntries but invoiceId is null
+    const timesheetsWithInvoiceEntriesButNoInvoiceId = await prisma.timesheet.findMany({
+      where: {
+        deletedAt: null,
+        archived: false,
+        invoiceId: null,
+        invoiceEntries: {
+          some: {},
+        },
+      },
+      include: {
+        client: {
+          select: { name: true },
+        },
+        invoiceEntries: {
+          include: {
+            invoice: {
+              select: {
+                invoiceNumber: true,
+                id: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    if (timesheetsWithInvoiceEntriesButNoInvoiceId.length > 0) {
+      console.log(`\n⚠️  Found ${timesheetsWithInvoiceEntriesButNoInvoiceId.length} timesheets with invoice entries but no invoiceId:\n`)
       
-      // Show first 50
-      missingIds.slice(0, 50).forEach(id => {
-        const entries = invoiceEntries.filter(e => e.timesheetId === id)
-        console.log(`  - ${id} (referenced in ${entries.length} invoice entry/ies)`)
-      })
-      
-      if (missingIds.length > 50) {
-        console.log(`  ... and ${missingIds.length - 50} more`)
+      for (const ts of timesheetsWithInvoiceEntriesButNoInvoiceId) {
+        const invoiceNumbers = ts.invoiceEntries.map(e => e.invoice?.invoiceNumber).filter(Boolean)
+        console.log(`  Timesheet: ${ts.timesheetNumber || ts.id}`)
+        console.log(`  Client: ${ts.client.name}`)
+        console.log(`  Status: ${ts.status}`)
+        console.log(`  Invoice Entries: ${ts.invoiceEntries.length}`)
+        console.log(`  Linked to Invoices: ${invoiceNumbers.join(', ') || 'Unknown'}`)
+        console.log(`  Should have invoiceId: ${ts.invoiceEntries[0]?.invoiceId || 'N/A'}`)
+        console.log('')
       }
     }
+
+  } catch (error) {
+    console.error('Error:', error)
+  } finally {
+    await prisma.$disconnect()
   }
-
-  // Also check all soft-deleted timesheets
-  console.log('')
-  console.log('Checking all soft-deleted timesheets...')
-  const allSoftDeleted = await prisma.timesheet.findMany({
-    where: {
-      deletedAt: { not: null },
-    },
-    select: {
-      id: true,
-      userId: true,
-      createdAt: true,
-      deletedAt: true,
-      status: true,
-    },
-    orderBy: { deletedAt: 'desc' },
-  })
-
-  console.log(`Total soft-deleted timesheets: ${allSoftDeleted.length}`)
-  console.log('')
-
-  // Group by deletion date
-  const deletedToday = allSoftDeleted.filter(t => {
-    const deleted = new Date(t.deletedAt)
-    const today = new Date()
-    return deleted.toDateString() === today.toDateString()
-  })
-
-  const deletedYesterday = allSoftDeleted.filter(t => {
-    const deleted = new Date(t.deletedAt)
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    return deleted.toDateString() === yesterday.toDateString()
-  })
-
-  console.log(`Deleted today: ${deletedToday.length}`)
-  console.log(`Deleted yesterday: ${deletedYesterday.length}`)
-  console.log(`Deleted other dates: ${allSoftDeleted.length - deletedToday.length - deletedYesterday.length}`)
-  console.log('')
-
-  if (deletedYesterday.length > 0) {
-    console.log('Timesheets deleted yesterday (can be restored):')
-    deletedYesterday.forEach(ts => {
-      console.log(`  - ${ts.id}: Created ${ts.createdAt}, Deleted ${ts.deletedAt}, Status: ${ts.status}, UserId: ${ts.userId}`)
-    })
-  }
-
-  await prisma.$disconnect()
 }
 
-main().catch(console.error)
+findMissingTimesheets()
