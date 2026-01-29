@@ -506,7 +506,7 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
   }
 
   return (
-    <div className="px-4 py-6 sm:px-0">
+    <div className="px-4 py-6 sm:px-0 w-full">
       <div className="flex justify-between items-center mb-6">
         <div>
           <div className="flex items-center gap-3">
@@ -629,8 +629,8 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
         </div>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="bg-white shadow sm:rounded-md overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: '1200px' }}>
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
