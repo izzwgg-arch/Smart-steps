@@ -32,13 +32,22 @@ export async function GET(
           },
         },
         timesheets: {
-          select: {
-            id: true,
-            timesheetNumber: true,
-            isBCBA: true,
-            status: true,
-            startDate: true,
-            endDate: true,
+          where: {
+            deletedAt: null,
+          },
+          include: {
+            entries: {
+              orderBy: {
+                date: 'asc',
+              },
+            },
+            client: {
+              include: {
+                insurance: true,
+              },
+            },
+            provider: true,
+            bcba: true,
           },
         },
         payments: {

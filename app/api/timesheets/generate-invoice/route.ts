@@ -217,6 +217,11 @@ export async function POST(request: NextRequest) {
             ? new Decimal((insurance as any).bcbaRatePerUnit.toString())
             : ratePerUnit) // Fallback to regular rate if BCBA rate not set
         : ratePerUnit
+      
+      // Get unit duration from Insurance (BCBA vs regular)
+      const unitMinutesToUse = isBCBATimesheet
+        ? ((insurance as any).bcbaUnitMinutes || unitMinutes)
+        : unitMinutes
 
       // Generate invoice number (increment counter for each invoice)
       invoiceCounter++
@@ -233,13 +238,18 @@ export async function POST(request: NextRequest) {
         const timesheet = weekTimesheets.find(ts => ts.entries.some(e => e.id === entry.id))
         if (!timesheet) continue
         
-        // Calculate units and amount for this entry
-        // Units = Hours × 4, SV on regular = $0
+        // Get unit duration for this specific timesheet (in case of mixed BCBA/regular)
+        const entryUnitMinutes = timesheet.isBCBA
+          ? ((insurance as any).bcbaUnitMinutes || unitMinutes)
+          : unitMinutes
+        
+        // Calculate units and amount for this entry using Insurance unit duration
         const { units, amount: entryAmount } = calculateEntryTotals(
           entry.minutes,
           entry.notes,
           rateToUse,
-          !timesheet.isBCBA // isRegularTimesheet
+          !timesheet.isBCBA, // isRegularTimesheet
+          entryUnitMinutes // unitMinutes from Insurance
         )
         
         entryTotalUnits += units // Always add units (for display)

@@ -32,8 +32,26 @@ interface Invoice {
     name: string
     insurance: {
       name: string
+      regularUnitMinutes?: number | null
+      bcbaUnitMinutes?: number | null
     }
   }
+  timesheets?: Array<{
+    id: string
+    timesheetNumber?: string | null
+    isBCBA: boolean
+    entries: Array<{
+      id: string
+      date: string
+      startTime: string
+      endTime: string
+      minutes: number
+      notes: string | null
+    }>
+    provider?: {
+      name: string
+    } | null
+  }>
   entries: Array<{
     id: string
     units: number | string
@@ -304,106 +322,139 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
           <div className="bg-white shadow rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-4">Invoice Line Items</h2>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                      Date
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                      Day
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                      Provider
-                    </th>
-                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
-                      DR From/To
-                    </th>
-                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
-                      SV From/To
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      Minutes
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      Units
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {(() => {
-                    // Flatten all timesheet entries and group by date
-                    const allEntries: Array<{
-                      date: Date
-                      dayName: string
-                      provider: string
-                      drFrom: string | null
-                      drTo: string | null
-                      svFrom: string | null
-                      svTo: string | null
-                      drMinutes: number
-                      svMinutes: number
-                      drUnits: number
-                      svUnits: number
-                    }> = []
+              {(() => {
+                // Calculate allEntries once - used for both display and totals
+                // Use invoice.timesheets directly (not invoice.entries) to ensure all timesheets are included
+                const allEntries: Array<{
+                  date: Date
+                  dayName: string
+                  provider: string
+                  drFrom: string | null
+                  drTo: string | null
+                  svFrom: string | null
+                  svTo: string | null
+                  drMinutes: number
+                  svMinutes: number
+                  drUnits: number
+                  svUnits: number
+                }> = []
 
-                    // Use the new billing logic: minutesToUnits (Hours × 4)
-                    // Determine if timesheet is regular or BCBA for SV rule
-                    // Check if any timesheet is BCBA (if so, all are BCBA for this invoice)
-                    const hasBCBATimesheet = invoice.entries.some(
-                      (entry) => entry.timesheet?.isBCBA === true
+                // Get Insurance unit duration from Client's Insurance
+                const insurance = invoice.client.insurance
+                const unitMinutes = insurance.regularUnitMinutes || 15 // Default to 15 if not set
+                const rate = parseFloat(invoice.entries[0]?.rate?.toString() || '0')
+
+                // Use invoice.timesheets directly - this ensures ALL linked timesheets are included
+                const timesheets = (invoice as any).timesheets || []
+                
+                // Process each timesheet
+                timesheets.forEach((timesheet: any) => {
+                  if (!timesheet || !timesheet.entries || timesheet.entries.length === 0) return
+
+                  // Get unit duration for this timesheet (BCBA vs regular)
+                  const timesheetUnitMinutes = timesheet.isBCBA
+                    ? (insurance.bcbaUnitMinutes || insurance.regularUnitMinutes || 15)
+                    : (insurance.regularUnitMinutes || 15)
+
+                  // Get provider name from timesheet
+                  const providerName = timesheet.provider?.name || 'Unknown'
+
+                  // Process each entry in this timesheet
+                  timesheet.entries.forEach((tsEntry: any) => {
+                    const entryDate = new Date(tsEntry.date)
+                    const dayName = format(entryDate, 'EEE').toLowerCase()
+                    const dateKey = format(entryDate, 'yyyy-MM-dd')
+                    
+                    // Find or create entry for this date
+                    let dateEntry = allEntries.find(
+                      (e) => format(e.date, 'yyyy-MM-dd') === dateKey
                     )
-                    const rate = parseFloat(invoice.entries[0]?.rate?.toString() || '0')
 
-                    invoice.entries.forEach((invoiceEntry) => {
-                      invoiceEntry.timesheet.entries.forEach((tsEntry) => {
-                        const entryDate = new Date(tsEntry.date)
-                        const dayName = format(entryDate, 'EEE').toLowerCase()
-                        
-                        // Find or create entry for this date
-                        let dateEntry = allEntries.find(
-                          (e) => format(e.date, 'yyyy-MM-dd') === format(entryDate, 'yyyy-MM-dd')
-                        )
+                    if (!dateEntry) {
+                      dateEntry = {
+                        date: entryDate,
+                        dayName,
+                        provider: providerName,
+                        drFrom: null,
+                        drTo: null,
+                        svFrom: null,
+                        svTo: null,
+                        drMinutes: 0,
+                        svMinutes: 0,
+                        drUnits: 0,
+                        svUnits: 0,
+                      }
+                      allEntries.push(dateEntry)
+                    }
 
-                        if (!dateEntry) {
-                          dateEntry = {
-                            date: entryDate,
-                            dayName,
-                            provider: invoiceEntry.provider.name,
-                            drFrom: null,
-                            drTo: null,
-                            svFrom: null,
-                            svTo: null,
-                            drMinutes: 0,
-                            svMinutes: 0,
-                            drUnits: 0,
-                            svUnits: 0,
-                          }
-                          allEntries.push(dateEntry)
-                        }
+                    // Calculate units using Insurance unit duration
+                    const unitsToUse = minutesToUnits(tsEntry.minutes, timesheetUnitMinutes)
 
-                        // Use new billing logic: minutesToUnits (Hours × 4)
-                        const unitsToUse = minutesToUnits(tsEntry.minutes)
+                    // Aggregate DR or SV entry (handle multiple entries per date)
+                    if (tsEntry.notes === 'DR') {
+                      // If multiple DR entries on same date, show first time range or combine
+                      if (!dateEntry.drFrom) {
+                        dateEntry.drFrom = to12Hour(tsEntry.startTime)
+                        dateEntry.drTo = to12Hour(tsEntry.endTime)
+                      }
+                      dateEntry.drMinutes += tsEntry.minutes
+                      dateEntry.drUnits += unitsToUse
+                    } else if (tsEntry.notes === 'SV') {
+                      // If multiple SV entries on same date, show first time range or combine
+                      if (!dateEntry.svFrom) {
+                        dateEntry.svFrom = to12Hour(tsEntry.startTime)
+                        dateEntry.svTo = to12Hour(tsEntry.endTime)
+                      }
+                      dateEntry.svMinutes += tsEntry.minutes
+                      dateEntry.svUnits += unitsToUse
+                    } else {
+                      // Entry without DR/SV note - treat as DR
+                      if (!dateEntry.drFrom) {
+                        dateEntry.drFrom = to12Hour(tsEntry.startTime)
+                        dateEntry.drTo = to12Hour(tsEntry.endTime)
+                      }
+                      dateEntry.drMinutes += tsEntry.minutes
+                      dateEntry.drUnits += unitsToUse
+                    }
+                  })
+                })
 
-                        // Add DR or SV entry
-                        if (tsEntry.notes === 'DR') {
-                          dateEntry.drFrom = to12Hour(tsEntry.startTime)
-                          dateEntry.drTo = to12Hour(tsEntry.endTime)
-                          dateEntry.drMinutes = tsEntry.minutes
-                          dateEntry.drUnits = unitsToUse
-                        } else if (tsEntry.notes === 'SV') {
-                          dateEntry.svFrom = to12Hour(tsEntry.startTime)
-                          dateEntry.svTo = to12Hour(tsEntry.endTime)
-                          dateEntry.svMinutes = tsEntry.minutes
-                          dateEntry.svUnits = unitsToUse
-                        }
-                      })
-                    })
+                // Sort by date
+                allEntries.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-                    // Sort by date
-                    allEntries.sort((a, b) => a.date.getTime() - b.date.getTime())
+                // Calculate totals from allEntries
+                const totalMinutes = allEntries.reduce((sum, entry) => sum + entry.drMinutes + entry.svMinutes, 0)
+                const totalUnits = allEntries.reduce((sum, entry) => sum + entry.drUnits + entry.svUnits, 0)
 
-                    return allEntries.map((entry, index) => (
+                return (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Date
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Day
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Provider
+                        </th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
+                          DR From/To
+                        </th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
+                          SV From/To
+                        </th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                          Minutes
+                        </th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                          Units
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {allEntries.map((entry, index) => (
                       <tr key={index}>
                         <td className="px-4 py-2 text-sm">
                           {format(entry.date, 'M/d/yyyy')}
@@ -437,71 +488,40 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                           {(entry.drUnits + entry.svUnits).toFixed(2)}
                         </td>
                       </tr>
-                    ))
-                  })()}
-                </tbody>
-                <tfoot className="bg-gray-50">
-                  <tr>
-                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
-                      Totals:
-                    </td>
-                    <td className="px-4 py-2 text-sm font-semibold text-right">
-                      {(() => {
-                        // Calculate totals from displayed line items by grouping by date
-                        // This matches what's shown in the table rows
-                        const dateMinutes = new Map<string, number>()
-                        invoice.entries.forEach((invoiceEntry) => {
-                          if (invoiceEntry.timesheet?.entries) {
-                            invoiceEntry.timesheet.entries.forEach((tsEntry) => {
-                              const entryDate = new Date(tsEntry.date)
-                              const dateKey = format(entryDate, 'yyyy-MM-dd')
-                              // Sum minutes per date (group by date like display does)
-                              dateMinutes.set(dateKey, (dateMinutes.get(dateKey) || 0) + (tsEntry.minutes || 0))
-                            })
-                          }
-                        })
-                        return Array.from(dateMinutes.values()).reduce((sum, minutes) => sum + minutes, 0)
-                      })()}
-                    </td>
-                    <td className="px-4 py-2 text-sm font-semibold text-right">
-                      {(() => {
-                        // Calculate totals from displayed line items by grouping by date
-                        // This matches what's shown in the table rows and avoids duplication
-                        const dateUnits = new Map<string, number>()
-                        invoice.entries.forEach((invoiceEntry) => {
-                          if (invoiceEntry.timesheet?.entries) {
-                            invoiceEntry.timesheet.entries.forEach((tsEntry) => {
-                              const entryDate = new Date(tsEntry.date)
-                              const dateKey = format(entryDate, 'yyyy-MM-dd')
-                              const units = minutesToUnits(tsEntry.minutes)
-                              // Sum units per date (group by date like display does)
-                              dateUnits.set(dateKey, (dateUnits.get(dateKey) || 0) + units)
-                            })
-                          }
-                        })
-                        const totalUnits = Array.from(dateUnits.values()).reduce((sum, units) => sum + units, 0)
-                        return totalUnits.toFixed(2)
-                      })()}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
-                      Rate per Unit:
-                    </td>
-                    <td colSpan={2} className="px-4 py-2 text-sm font-semibold text-right">
-                      {formatCurrency(invoice.entries[0]?.rate || 0)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
-                      Total Amount Due:
-                    </td>
-                    <td colSpan={2} className="px-4 py-2 text-sm font-bold text-right text-primary-600">
-                      {formatCurrency(invoice.totalAmount)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50">
+                      <tr>
+                        <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
+                          Totals:
+                        </td>
+                        <td className="px-4 py-2 text-sm font-semibold text-right">
+                          {totalMinutes}
+                        </td>
+                        <td className="px-4 py-2 text-sm font-semibold text-right">
+                          {totalUnits.toFixed(2)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
+                          Rate per Unit:
+                        </td>
+                        <td colSpan={2} className="px-4 py-2 text-sm font-semibold text-right">
+                          {formatCurrency(invoice.entries[0]?.rate || 0)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-right">
+                          Total Amount Due:
+                        </td>
+                        <td colSpan={2} className="px-4 py-2 text-sm font-bold text-right text-primary-600">
+                          {formatCurrency(invoice.totalAmount)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )
+              })()}
             </div>
           </div>
 

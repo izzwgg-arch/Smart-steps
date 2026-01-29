@@ -289,15 +289,17 @@ async function generateInvoiceForClient(
     throw new Error(`Invalid insurance rate: ${insurance.ratePerUnit}`)
   }
 
-  // Calculate totals using billing utility (rounds UP to nearest whole unit)
-  // 1 unit = 15 minutes, rounded UP
+  // Get unit duration from Insurance
+  const regularUnitMinutes = (insurance as any).regularUnitMinutes || 15
+  const bcbaUnitMinutes = (insurance as any).bcbaUnitMinutes || regularUnitMinutes
+
+  // Calculate totals using billing utility with Insurance unit duration
   const { calculateEntryTotals } = await import('@/lib/billing')
   
   let totalAmount = new Decimal(0)
   let totalMinutes = 0
   let totalUnits = 0
   const invoiceEntries: any[] = []
-  const unitMinutes = 15 // Standard unit size
 
   // Check if this is a BCBA timesheet (use BCBA rates if so)
   const isBCBATimesheet = timesheets.some(ts => (ts as any).isBCBA === true)
@@ -308,14 +310,19 @@ async function generateInvoiceForClient(
     : ratePerUnit
 
   for (const timesheet of timesheets) {
+    // Get unit duration for this timesheet (BCBA vs regular)
+    const unitMinutesForTimesheet = (timesheet as any).isBCBA
+      ? bcbaUnitMinutes
+      : regularUnitMinutes
+    
     for (const entry of timesheet.entries) {
-      // Calculate units and amount for this entry
-      // Units = Hours × 4, SV on regular = $0
+      // Calculate units and amount for this entry using Insurance unit duration
       const { units, amount: entryAmount } = calculateEntryTotals(
         entry.minutes,
         entry.notes,
         rateToUse,
-        !(timesheet as any).isBCBA // isRegularTimesheet
+        !(timesheet as any).isBCBA, // isRegularTimesheet
+        unitMinutesForTimesheet // unitMinutes from Insurance
       )
       
       // Guard against NaN

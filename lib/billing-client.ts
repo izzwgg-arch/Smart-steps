@@ -4,24 +4,28 @@
  */
 
 /**
- * Convert minutes to units
- * STRICT RULE: 1 Hour = 4 Units
- * Formula: Units = (Minutes / 60) × 4 = Hours × 4
+ * Convert minutes to units based on Insurance unit duration
+ * Formula: Units = Minutes / UnitDuration
  * 
  * @param minutes - Total service minutes
- * @returns Number of units (calculated as Hours × 4, rounded to 2 decimals)
+ * @param unitMinutes - Unit duration in minutes from Insurance (default: 15)
+ * @returns Number of units (rounded to 2 decimals)
  * 
- * Examples:
- * - 90 minutes = 1.5 hours × 4 = 6.00 units
- * - 120 minutes = 2 hours × 4 = 8.00 units
- * - 60 minutes = 1 hour × 4 = 4.00 units
- * - 30 minutes = 0.5 hours × 4 = 2.00 units
+ * Examples (with 15-minute units):
+ * - 90 minutes / 15 = 6.00 units
+ * - 120 minutes / 15 = 8.00 units
+ * - 60 minutes / 15 = 4.00 units
+ * - 30 minutes / 15 = 2.00 units
+ * 
+ * Examples (with 30-minute units):
+ * - 90 minutes / 30 = 3.00 units
+ * - 120 minutes / 30 = 4.00 units
  */
-export function minutesToUnits(minutes: number): number {
+export function minutesToUnits(minutes: number, unitMinutes: number = 15): number {
   if (minutes <= 0) return 0
-  // Formula: Units = Hours × 4
-  const hours = minutes / 60
-  const units = hours * 4
+  if (unitMinutes <= 0) unitMinutes = 15 // Safety fallback
+  // Formula: Units = Minutes / UnitDuration
+  const units = minutes / unitMinutes
   // Round to 2 decimal places
   return Math.round(units * 100) / 100
 }
@@ -33,18 +37,20 @@ export function minutesToUnits(minutes: number): number {
  * @param entryNotes - Notes field ('DR' or 'SV' or null)
  * @param ratePerUnit - Rate per unit from Insurance (as number)
  * @param isRegularTimesheet - True if regular timesheet (SV = $0), false if BCBA (all charged)
+ * @param unitMinutes - Unit duration in minutes from Insurance (default: 15)
  * @returns Object with units and amount for this entry
  */
 export function calculateEntryTotals(
   entryMinutes: number,
   entryNotes: string | null | undefined,
   ratePerUnit: number,
-  isRegularTimesheet: boolean = true
+  isRegularTimesheet: boolean = true,
+  unitMinutes: number = 15
 ): {
   units: number
   amount: number
 } {
-  const units = minutesToUnits(entryMinutes)
+  const units = minutesToUnits(entryMinutes, unitMinutes)
   const isSV = entryNotes === 'SV'
   
   // For regular timesheets: SV entries = $0

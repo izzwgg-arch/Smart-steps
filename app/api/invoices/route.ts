@@ -195,16 +195,19 @@ export async function POST(request: NextRequest) {
       const ratePerUnit = (timesheet.insurance as any).regularRatePerUnit
         ? new Decimal((timesheet.insurance as any).regularRatePerUnit.toString())
         : new Decimal(timesheet.insurance.ratePerUnit.toString())
-      const unitMinutesForTimesheet = (timesheet.insurance as any).regularUnitMinutes || unitMinutes
+      // Get unit duration from Insurance (BCBA vs regular)
+      const unitMinutesForTimesheet = timesheet.isBCBA
+        ? ((timesheet.insurance as any).bcbaUnitMinutes || (timesheet.insurance as any).regularUnitMinutes || 15)
+        : ((timesheet.insurance as any).regularUnitMinutes || 15)
 
       for (const entry of timesheet.entries) {
-        // Calculate units and amount for this entry
-        // Units = Hours × 4, SV on regular = $0
+        // Calculate units and amount for this entry using Insurance unit duration
         const { units, amount: entryAmount } = calculateEntryTotals(
           entry.minutes,
           entry.notes,
           ratePerUnit,
-          !timesheet.isBCBA // isRegularTimesheet
+          !timesheet.isBCBA, // isRegularTimesheet
+          unitMinutesForTimesheet // unitMinutes from Insurance
         )
         
         totalAmount = totalAmount.plus(entryAmount)
