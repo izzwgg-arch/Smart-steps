@@ -70,13 +70,16 @@ export async function POST(request: NextRequest) {
 
     // Update timesheets (only non-deleted, regular timesheets - not BCBA)
     // Use raw SQL since Prisma client may not have archived field yet
+    // Format array properly for PostgreSQL - escape IDs to prevent SQL injection
+    const escapedIds = ids.map(id => `'${id.replace(/'/g, "''")}'`).join(',')
+    const idsArray = `{${escapedIds}}`
     const result = await prisma.$executeRawUnsafe(`
       UPDATE "Timesheet"
-      SET "archived" = $1
-      WHERE id = ANY($2::text[])
+      SET "archived" = ${archived ? 'true' : 'false'}
+      WHERE id = ANY(${idsArray}::text[])
         AND "deletedAt" IS NULL
         AND "isBCBA" = false
-    `, archived, ids)
+    `)
     
     const count = Array.isArray(result) ? result.length : (typeof result === 'number' ? result : ids.length)
 
