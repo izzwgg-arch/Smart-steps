@@ -263,6 +263,7 @@ model InsuranceRateHistory {
 
 model Timesheet {
   id              String          @id @default(cuid())
+  timesheetNumber String?         @unique // T-1001 for regular, BT-1002 for BCBA
   userId          String
   providerId      String
   clientId        String
@@ -308,6 +309,7 @@ model Timesheet {
   @@index([status, deletedAt]) // Index for status filtering
   @@index([invoicedAt]) // Index for invoiced timesheets filtering
   @@index([invoiceId]) // Index for invoice lookup
+  @@index([timesheetNumber]) // Index for timesheet number lookup
   @@index([clientId]) // PERFORMANCE: Index for client filtering
   @@index([providerId]) // PERFORMANCE: Index for provider filtering
   @@index([bcbaId]) // PERFORMANCE: Index for BCBA filtering

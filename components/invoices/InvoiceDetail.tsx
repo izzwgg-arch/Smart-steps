@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { format } from 'date-fns'
 import { to12Hour } from '@/lib/dateUtils'
+import { minutesToUnits } from '@/lib/billing-client'
 
 interface InvoiceDetailProps {
   invoiceId: string
@@ -43,6 +44,7 @@ interface Invoice {
     timesheet: {
       startDate: string
       endDate: string
+      isBCBA?: boolean
       bcba: {
         name: string
       }
@@ -242,6 +244,21 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                 <label className="text-sm text-gray-500">Insurance</label>
                 <p className="font-medium">{invoice.client.insurance.name}</p>
               </div>
+              {(invoice as any).timesheets && (invoice as any).timesheets.length > 0 && (
+                <div className="col-span-2">
+                  <label className="text-sm text-gray-500">Linked Timesheets</label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {(invoice as any).timesheets.map((ts: any) => (
+                      <span
+                        key={ts.id}
+                        className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800"
+                      >
+                        {ts.timesheetNumber || `TS-${ts.id.slice(0, 8)}`}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-sm text-gray-500">Period</label>
                 <p className="font-medium">
@@ -329,41 +346,13 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                       svUnits: number
                     }> = []
 
-                    // CRITICAL: Use InvoiceEntry units (stored in database after fix)
-                    // Each InvoiceEntry represents one TimesheetEntry
-                    // Match InvoiceEntry to TimesheetEntry and use InvoiceEntry.units
-                    const invoiceEntryMap = new Map<string, { units: number; amount: number }>()
-                    
-                    // First, try to match InvoiceEntry to TimesheetEntry by amount
-                    invoice.entries.forEach((invoiceEntry) => {
-                      const invoiceEntryUnits = parseFloat(invoiceEntry.units.toString())
-                      const invoiceEntryAmount = parseFloat(invoiceEntry.amount.toString())
-                      const rate = parseFloat(invoiceEntry.rate.toString())
-                      
-                      if (invoiceEntry.timesheet?.entries) {
-                        // Try to find matching timesheet entry
-                        let matched = false
-                        for (const tsEntry of invoiceEntry.timesheet.entries) {
-                          const calculatedUnits = Math.ceil(tsEntry.minutes / 15)
-                          const calculatedAmount = calculatedUnits * rate
-                          
-                          // Match by amount (most reliable)
-                          if (Math.abs(calculatedAmount - invoiceEntryAmount) < 0.01) {
-                            invoiceEntryMap.set(tsEntry.id, { units: invoiceEntryUnits, amount: invoiceEntryAmount })
-                            matched = true
-                            break
-                          }
-                        }
-                        
-                        // If no match, assign to first unmatched entry
-                        if (!matched && invoiceEntry.timesheet.entries.length > 0) {
-                          const firstEntry = invoiceEntry.timesheet.entries[0]
-                          if (!invoiceEntryMap.has(firstEntry.id)) {
-                            invoiceEntryMap.set(firstEntry.id, { units: invoiceEntryUnits, amount: invoiceEntryAmount })
-                          }
-                        }
-                      }
-                    })
+                    // Use the new billing logic: minutesToUnits (Hours × 4)
+                    // Determine if timesheet is regular or BCBA for SV rule
+                    // Check if any timesheet is BCBA (if so, all are BCBA for this invoice)
+                    const hasBCBATimesheet = invoice.entries.some(
+                      (entry) => entry.timesheet?.isBCBA === true
+                    )
+                    const rate = parseFloat(invoice.entries[0]?.rate?.toString() || '0')
 
                     invoice.entries.forEach((invoiceEntry) => {
                       invoiceEntry.timesheet.entries.forEach((tsEntry) => {
@@ -392,15 +381,8 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                           allEntries.push(dateEntry)
                         }
 
-                        // Calculate correct units from minutes (always use this as source of truth)
-                        const calculatedUnits = Math.ceil(tsEntry.minutes / 15)
-                        const matchedEntry = invoiceEntryMap.get(tsEntry.id)
-                        
-                        // Use matched InvoiceEntry units ONLY if they match the calculated units
-                        // This prevents displaying incorrect stored values (e.g., 30 units for 90 minutes)
-                        const unitsToUse = (matchedEntry && Math.abs(matchedEntry.units - calculatedUnits) < 0.1) 
-                          ? matchedEntry.units 
-                          : calculatedUnits
+                        // Use new billing logic: minutesToUnits (Hours × 4)
+                        const unitsToUse = minutesToUnits(tsEntry.minutes)
 
                         // Add DR or SV entry
                         if (tsEntry.notes === 'DR') {
@@ -419,16 +401,6 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
 
                     // Sort by date
                     allEntries.sort((a, b) => a.date.getTime() - b.date.getTime())
-
-                    // Calculate totals from line items (not from invoice.entries)
-                    const totalMinutesFromLineItems = allEntries.reduce((sum, e) => sum + e.drMinutes + e.svMinutes, 0)
-                    const totalUnitsFromLineItems = allEntries.reduce((sum, e) => sum + e.drUnits + e.svUnits, 0)
-
-                    // Store totals for use in footer
-                    const invoiceTotals = {
-                      totalMinutes: totalMinutesFromLineItems,
-                      totalUnits: totalUnitsFromLineItems,
-                    }
 
                     return allEntries.map((entry, index) => (
                       <tr key={index}>
@@ -474,27 +446,39 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                     </td>
                     <td className="px-4 py-2 text-sm font-semibold text-right">
                       {(() => {
-                        // Calculate totals from the line items displayed above
+                        // Calculate totals from displayed line items by grouping by date
                         // This matches what's shown in the table rows
-                        let totalMinutes = 0
+                        const dateMinutes = new Map<string, number>()
                         invoice.entries.forEach((invoiceEntry) => {
                           if (invoiceEntry.timesheet?.entries) {
                             invoiceEntry.timesheet.entries.forEach((tsEntry) => {
-                              totalMinutes += tsEntry.minutes || 0
+                              const entryDate = new Date(tsEntry.date)
+                              const dateKey = format(entryDate, 'yyyy-MM-dd')
+                              // Sum minutes per date (group by date like display does)
+                              dateMinutes.set(dateKey, (dateMinutes.get(dateKey) || 0) + (tsEntry.minutes || 0))
                             })
                           }
                         })
-                        return totalMinutes
+                        return Array.from(dateMinutes.values()).reduce((sum, minutes) => sum + minutes, 0)
                       })()}
                     </td>
                     <td className="px-4 py-2 text-sm font-semibold text-right">
                       {(() => {
-                        // Calculate totals from invoice entries (what was actually billed)
-                        // This should match invoice.totalAmount
-                        let totalUnits = 0
-                        invoice.entries.forEach((entry) => {
-                          totalUnits += parseFloat(entry.units.toString())
+                        // Calculate totals from displayed line items by grouping by date
+                        // This matches what's shown in the table rows and avoids duplication
+                        const dateUnits = new Map<string, number>()
+                        invoice.entries.forEach((invoiceEntry) => {
+                          if (invoiceEntry.timesheet?.entries) {
+                            invoiceEntry.timesheet.entries.forEach((tsEntry) => {
+                              const entryDate = new Date(tsEntry.date)
+                              const dateKey = format(entryDate, 'yyyy-MM-dd')
+                              const units = minutesToUnits(tsEntry.minutes)
+                              // Sum units per date (group by date like display does)
+                              dateUnits.set(dateKey, (dateUnits.get(dateKey) || 0) + units)
+                            })
+                          }
                         })
+                        const totalUnits = Array.from(dateUnits.values()).reduce((sum, units) => sum + units, 0)
                         return totalUnits.toFixed(2)
                       })()}
                     </td>

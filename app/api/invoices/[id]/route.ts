@@ -31,6 +31,16 @@ export async function GET(
             },
           },
         },
+        timesheets: {
+          select: {
+            id: true,
+            timesheetNumber: true,
+            isBCBA: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+          },
+        },
         payments: {
           orderBy: { paymentDate: 'desc' },
         },

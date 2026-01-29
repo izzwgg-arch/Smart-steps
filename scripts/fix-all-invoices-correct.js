@@ -118,6 +118,10 @@ async function fixAllInvoices() {
               const startDateOnly = new Date(invoice.startDate.getFullYear(), invoice.startDate.getMonth(), invoice.startDate.getDate())
               const endDateOnly = new Date(invoice.endDate.getFullYear(), invoice.endDate.getMonth(), invoice.endDate.getDate())
               
+              // Only include entries within date range
+              // NOTE: We include ALL entries in the date range because this invoice already exists
+              // The original invoice creation logic filters by !e.invoiced, but for fixing existing invoices,
+              // we need to rebuild from the entries that are linked to this invoice
               if (entryDateOnly >= startDateOnly && entryDateOnly <= endDateOnly) {
                 allTimesheetEntries.push({ entry: tsEntry, timesheet })
               }
@@ -125,22 +129,11 @@ async function fixAllInvoices() {
           }
         })
 
-        // CRITICAL: Group timesheet entries by unique key (timesheet + date + notes)
-        // This prevents duplicate InvoiceEntries when multiple timesheets have entries for same dates
-        const uniqueEntryMap = new Map()
+        // CRITICAL: Create one InvoiceEntry per TimesheetEntry (no deduplication)
+        // This matches how invoices are created in generate-invoice routes
+        const entryDataList = []
         
         for (const { entry: tsEntry, timesheet } of allTimesheetEntries) {
-          // Create unique key: timesheetId + date + notes
-          const entryDate = new Date(tsEntry.date)
-          const dateKey = entryDate.toISOString().split('T')[0]
-          const uniqueKey = `${timesheet.id}_${dateKey}_${tsEntry.notes || 'DR'}`
-          
-          // If we've already seen this unique entry, skip it (deduplicate)
-          if (uniqueEntryMap.has(uniqueKey)) {
-            console.log(`  Skipping duplicate: ${uniqueKey}`)
-            continue
-          }
-          
           // Calculate units and amount for this entry
           // Units = Hours × 4, SV on regular = $0
           const { units, amount: entryAmount } = calculateEntryTotals(
@@ -150,47 +143,22 @@ async function fixAllInvoices() {
             !timesheet.isBCBA // isRegularTimesheet
           )
           
-          uniqueEntryMap.set(uniqueKey, {
+          entryDataList.push({
             timesheetId: timesheet.id,
             providerId: timesheet.providerId,
             insuranceId: insurance.id,
             units,
             amount: entryAmount,
-            tsEntryId: tsEntry.id, // Store for matching
+            tsEntryId: tsEntry.id, // Store for reference
           })
         }
 
-        // Now create InvoiceEntries from unique entries only
+        // Now create InvoiceEntries from all timesheet entries
+        // Delete all existing entries and recreate from scratch
         let totalRecalculatedAmount = new Decimal(0)
         let totalRecalculatedUnits = 0
-        const entryUpdates = []
 
-        for (const [uniqueKey, entryData] of uniqueEntryMap) {
-          // Try to find existing InvoiceEntry for this unique entry
-          const existingEntry = invoice.entries.find(ie => {
-            if (ie.timesheet?.id !== entryData.timesheetId) return false
-            // Match by similar units
-            const ieUnits = parseFloat(ie.units.toString())
-            return Math.abs(ieUnits - entryData.units) < 0.1
-          })
-
-          if (existingEntry) {
-            entryUpdates.push({
-              id: existingEntry.id,
-              newUnits: entryData.units,
-              newAmount: entryData.amount,
-            })
-          } else {
-            entryUpdates.push({
-              id: null, // New entry
-              timesheetId: entryData.timesheetId,
-              providerId: entryData.providerId,
-              insuranceId: entryData.insuranceId,
-              newUnits: entryData.units,
-              newAmount: entryData.amount,
-            })
-          }
-
+        for (const entryData of entryDataList) {
           totalRecalculatedAmount = totalRecalculatedAmount.plus(entryData.amount)
           totalRecalculatedUnits += entryData.units // Always add units (for display)
         }
@@ -199,20 +167,13 @@ async function fixAllInvoices() {
         const newTotal = totalRecalculatedAmount.toNumber()
         const oldUnits = invoice.entries.reduce((sum, e) => sum + e.units.toNumber(), 0)
         
-        const hasChanges = entryUpdates.length > 0 && (
-          entryUpdates.some(e => {
-            const oldEntry = invoice.entries.find(ent => ent.id === e.id)
-            if (!oldEntry) return true
-            
-            const unitsDiffer = Math.abs(oldEntry.units.toNumber() - e.newUnits) > 0.001
-            const amountDiffers = Math.abs(oldEntry.amount.toNumber() - e.newAmount.toNumber()) > 0.01
-            
-            return unitsDiffer || amountDiffers
-          }) || Math.abs(oldTotal - newTotal) > 0.01
-        )
+        // Check if there are changes (different entry count or different total)
+        const oldEntryCount = invoice.entries.length
+        const newEntryCount = entryDataList.length
+        const hasChanges = newEntryCount !== oldEntryCount || Math.abs(oldTotal - newTotal) > 0.01
 
-        if (!hasChanges && entryUpdates.length === 0) {
-          console.log(`✓ ${invoice.invoiceNumber}: Already correct`)
+        if (!hasChanges) {
+          console.log(`✓ ${invoice.invoiceNumber}: Already correct (${oldTotal.toFixed(2)})`)
           skippedCount++
           continue
         }
@@ -224,15 +185,15 @@ async function fixAllInvoices() {
             where: { invoiceId: invoice.id },
           })
 
-          // Create ALL new entries from recalculated data
-          const entriesToCreate = entryUpdates.map(e => ({
+          // Create ALL new entries from all timesheet entries
+          const entriesToCreate = entryDataList.map(e => ({
             invoiceId: invoice.id,
-            timesheetId: e.timesheetId || invoice.entries.find(ie => ie.id === e.id)?.timesheetId,
-            providerId: e.providerId || invoice.entries.find(ie => ie.id === e.id)?.providerId,
-            insuranceId: e.insuranceId || insurance.id,
-            units: new Decimal(e.newUnits),
+            timesheetId: e.timesheetId,
+            providerId: e.providerId,
+            insuranceId: e.insuranceId,
+            units: new Decimal(e.units),
             rate: ratePerUnit.toNumber(),
-            amount: e.newAmount instanceof Decimal ? e.newAmount : new Decimal(e.newAmount),
+            amount: e.amount instanceof Decimal ? e.amount : new Decimal(e.amount),
           }))
 
           if (entriesToCreate.length > 0) {
@@ -257,7 +218,7 @@ async function fixAllInvoices() {
         console.log(`✅ Fixed ${invoice.invoiceNumber}:`)
         console.log(`   Total: $${oldTotal.toFixed(2)} → $${newTotal.toFixed(2)}`)
         console.log(`   Units: ${oldUnits.toFixed(2)} → ${totalRecalculatedUnits.toFixed(2)}`)
-        console.log(`   Entries: ${entryUpdates.length}`)
+        console.log(`   Entries: ${oldEntryCount} → ${newEntryCount}`)
         console.log(`   Type: ${isBCBATimesheet ? 'BCBA' : 'Regular'}`)
 
         fixedCount++

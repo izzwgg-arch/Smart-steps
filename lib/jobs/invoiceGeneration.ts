@@ -398,11 +398,11 @@ async function generateInvoiceForClient(
     // Only update timesheets that are not deleted
     const timesheetIds = timesheets.map(ts => ts.id)
     if (timesheetIds.length > 0) {
-      await (tx as any).timesheet.updateMany({
+      await tx.timesheet.updateMany({
         where: {
           id: { in: timesheetIds },
           deletedAt: null, // Only update non-deleted timesheets
-          invoicedAt: null, // Only update timesheets that aren't already invoiced
+          invoiceId: null, // Only update timesheets that aren't already invoiced
         },
         data: {
           invoicedAt: new Date(),

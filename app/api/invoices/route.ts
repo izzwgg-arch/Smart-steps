@@ -264,14 +264,17 @@ export async function POST(request: NextRequest) {
       // Only update timesheets that are not deleted
       const timesheetIds = timesheets.map((t) => t.id)
       if (timesheetIds.length > 0) {
-        // Use raw SQL since Prisma client may not have invoiceId field yet
-        await tx.$executeRawUnsafe(`
-          UPDATE "Timesheet"
-          SET "invoiceId" = $1
-          WHERE id = ANY($2::text[])
-            AND "deletedAt" IS NULL
-            AND ("invoiceId" IS NULL OR "invoiceId" = '')
-        `, newInvoice.id, timesheetIds)
+        await tx.timesheet.updateMany({
+          where: {
+            id: { in: timesheetIds },
+            deletedAt: null,
+            invoiceId: null, // Only update timesheets that aren't already invoiced
+          },
+          data: {
+            invoiceId: newInvoice.id,
+            invoicedAt: new Date(),
+          },
+        })
       }
 
       return newInvoice

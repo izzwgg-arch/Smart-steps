@@ -8,6 +8,7 @@ import { startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns'
 import { parseDateOnly, isSaturdayInTimezone } from '@/lib/dateUtils'
 import { getTimesheetVisibilityScope } from '@/lib/permissions'
 import { startPerfLog } from '@/lib/api-performance'
+import { generateTimesheetNumber } from '@/lib/timesheet-ids'
 
 export async function GET(request: NextRequest) {
   const perf = startPerfLog('GET /api/timesheets')
@@ -161,6 +162,11 @@ export async function GET(request: NextRequest) {
           bcba: true,
           insurance: true,
           entries: true,
+          invoice: {
+            select: {
+              invoiceNumber: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -407,11 +413,15 @@ export async function POST(request: NextRequest) {
       console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
     }
 
+    // Generate timesheet number
+    const timesheetNumber = await generateTimesheetNumber(isBCBA === true)
+
     // Create timesheet
     // Use transaction to create timesheet and then update bcbaInsuranceId if needed (since Prisma client may not recognize it yet)
     const timesheet = await prisma.$transaction(async (tx) => {
       const newTimesheet = await tx.timesheet.create({
         data: {
+          timesheetNumber,
           userId: session.user.id,
           providerId: finalProviderId, // Use placeholder provider for BCBA timesheets
           clientId,
