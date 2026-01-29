@@ -329,6 +329,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                   date: Date
                   dayName: string
                   provider: string
+                  timesheetId: string
                   drFrom: string | null
                   drTo: string | null
                   svFrom: string | null
@@ -349,7 +350,9 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                 
                 // Process each timesheet
                 timesheets.forEach((timesheet: any) => {
-                  if (!timesheet || !timesheet.entries || timesheet.entries.length === 0) return
+                  if (!timesheet || !timesheet.entries || timesheet.entries.length === 0) {
+                    return
+                  }
 
                   // Get unit duration for this timesheet (BCBA vs regular)
                   const timesheetUnitMinutes = timesheet.isBCBA
@@ -365,9 +368,10 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                     const dayName = format(entryDate, 'EEE').toLowerCase()
                     const dateKey = format(entryDate, 'yyyy-MM-dd')
                     
-                    // Find or create entry for this date
+                    // Group by date, provider, AND timesheet to ensure entries from different timesheets are always separate
+                    // This ensures ALL timesheets are visible even if they have entries on the same date with the same provider
                     let dateEntry = allEntries.find(
-                      (e) => format(e.date, 'yyyy-MM-dd') === dateKey
+                      (e) => format(e.date, 'yyyy-MM-dd') === dateKey && e.provider === providerName && e.timesheetId === timesheet.id
                     )
 
                     if (!dateEntry) {
@@ -375,6 +379,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                         date: entryDate,
                         dayName,
                         provider: providerName,
+                        timesheetId: timesheet.id,
                         drFrom: null,
                         drTo: null,
                         svFrom: null,
@@ -390,9 +395,9 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                     // Calculate units using Insurance unit duration
                     const unitsToUse = minutesToUnits(tsEntry.minutes, timesheetUnitMinutes)
 
-                    // Aggregate DR or SV entry (handle multiple entries per date)
+                    // Aggregate DR or SV entry (handle multiple entries per date/provider)
                     if (tsEntry.notes === 'DR') {
-                      // If multiple DR entries on same date, show first time range or combine
+                      // If multiple DR entries on same date/provider, show first time range or combine
                       if (!dateEntry.drFrom) {
                         dateEntry.drFrom = to12Hour(tsEntry.startTime)
                         dateEntry.drTo = to12Hour(tsEntry.endTime)
@@ -400,7 +405,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                       dateEntry.drMinutes += tsEntry.minutes
                       dateEntry.drUnits += unitsToUse
                     } else if (tsEntry.notes === 'SV') {
-                      // If multiple SV entries on same date, show first time range or combine
+                      // If multiple SV entries on same date/provider, show first time range or combine
                       if (!dateEntry.svFrom) {
                         dateEntry.svFrom = to12Hour(tsEntry.startTime)
                         dateEntry.svTo = to12Hour(tsEntry.endTime)
