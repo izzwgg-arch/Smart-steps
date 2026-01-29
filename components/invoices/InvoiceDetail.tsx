@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { format } from 'date-fns'
 import { to12Hour } from '@/lib/dateUtils'
 import { minutesToUnits } from '@/lib/billing-client'
+import { formatInvoiceNumberForDisplay } from '@/lib/timesheet-ids'
 
 interface InvoiceDetailProps {
   invoiceId: string
@@ -171,7 +172,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold" style={{ color: '#ffffff' }}>
-              Invoice {invoice.invoiceNumber}
+              Invoice {formatInvoiceNumberForDisplay(invoice.invoiceNumber)}
             </h1>
             <p className="text-gray-600 mt-1">
               {format(new Date(invoice.startDate), 'MMM d')} -{' '}

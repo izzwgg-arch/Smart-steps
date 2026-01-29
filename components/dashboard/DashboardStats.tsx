@@ -12,6 +12,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { formatCurrency, formatDate, formatDateTime, formatRelativeTime } from '@/lib/utils'
+import { formatInvoiceNumberForDisplay } from '@/lib/timesheet-ids'
 
 interface DashboardStats {
   stats: {
@@ -366,7 +367,7 @@ export function DashboardStats({
                         href={`/invoices/${invoice.id}`}
                         className="text-sm font-medium text-primary-600 hover:text-primary-700"
                       >
-                        {invoice.invoiceNumber}
+                        {formatInvoiceNumberForDisplay(invoice.invoiceNumber)}
                       </Link>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">

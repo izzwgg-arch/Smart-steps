@@ -11,6 +11,7 @@ import { TimesheetPrintPreview } from './TimesheetPrintPreview'
 import { exportToCSV, exportToExcel, formatTimesheetsForExport, formatTimesheetForDetailedExport } from '@/lib/exportUtils'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 import { ConfirmDeleteModal } from '@/components/shared/ConfirmDeleteModal'
+import { formatInvoiceNumberForDisplay } from '@/lib/timesheet-ids'
 
 interface Timesheet {
   id: string
@@ -613,11 +614,11 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
         </div>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="bg-white shadow sm:rounded-md overflow-x-auto">
+        <table className="w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
                 <input
                   type="checkbox"
                   checked={timesheets.length > 0 && timesheets.every(ts => selectedTimesheets.has(ts.id))}
@@ -625,28 +626,28 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 CLIENT
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 BCBA
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 START
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 END
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                 HOURS
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 STATUS
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 ID / INVOICE
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[80px]">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[80px] flex-shrink-0">
                 ACTIONS
               </th>
             </tr>
@@ -654,7 +655,7 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
           <tbody className="bg-white divide-y divide-gray-200">
             {timesheets.map((timesheet) => (
               <tr key={timesheet.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-3 py-2 whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={selectedTimesheets.has(timesheet.id)}
@@ -662,22 +663,22 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                     className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                   />
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900 overflow-hidden text-ellipsis max-w-[200px]">
                   {timesheet.client.name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 overflow-hidden text-ellipsis max-w-[200px]">
                   {timesheet.bcba.name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {formatDate(timesheet.startDate)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {formatDate(timesheet.endDate)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {calculateTotalHours(timesheet)}H
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-3 py-2 whitespace-nowrap">
                   <span
                     className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
                       timesheet.status
@@ -686,7 +687,7 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                     {timesheet.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   <div className="flex flex-col gap-1">
                     {timesheet.timesheetNumber && (
                       <span className="font-mono text-xs">{timesheet.timesheetNumber}</span>
@@ -696,14 +697,14 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                         href={`/invoices/${timesheet.invoiceId}`}
                         className="text-blue-600 hover:text-blue-800 text-xs"
                       >
-                        {timesheet.invoice.invoiceNumber}
+                        {formatInvoiceNumberForDisplay(timesheet.invoice.invoiceNumber)}
                       </Link>
                     ) : (
                       <span className="text-gray-400 text-xs">Unbilled</span>
                     )}
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-[80px] flex-shrink-0">
+                <td className="px-3 py-2 whitespace-nowrap text-xs font-medium w-[80px] flex-shrink-0">
                   <RowActionsMenu>
                     <button
                       onClick={async () => {

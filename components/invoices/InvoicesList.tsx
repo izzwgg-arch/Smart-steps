@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { exportToCSV, exportToExcel, formatInvoicesForExport } from '@/lib/exportUtils'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
+import { formatInvoiceNumberForDisplay } from '@/lib/timesheet-ids'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 
@@ -411,32 +412,32 @@ export function InvoicesList() {
         </select>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="bg-white shadow sm:rounded-md overflow-x-auto">
+        <table className="w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
                 INVOICE #
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 CLIENT
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 AMOUNT
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 FROM
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 TO
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 CHECK #
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 STATUS
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[80px] flex-shrink-0">
                 ACTIONS
               </th>
             </tr>
@@ -444,25 +445,25 @@ export function InvoicesList() {
           <tbody className="bg-white divide-y divide-gray-200">
             {invoices.map((invoice) => (
               <tr key={invoice.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ color: '#000000' }}>
-                  {invoice.invoiceNumber}
+                <td className="px-3 py-2 whitespace-nowrap text-xs font-medium" style={{ color: '#000000' }}>
+                  {formatInvoiceNumberForDisplay(invoice.invoiceNumber)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 overflow-hidden text-ellipsis max-w-[200px]">
                   {invoice.client.name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {formatCurrency(invoice.totalAmount)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {formatDate(invoice.startDate)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {formatDate(invoice.endDate)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {invoice.checkNumber || '-'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-3 py-2 whitespace-nowrap">
                   <span
                     className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
                       invoice.status
@@ -471,7 +472,7 @@ export function InvoicesList() {
                     {invoice.status.replace('_', ' ')}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-3 py-2 whitespace-nowrap text-xs font-medium w-[80px] flex-shrink-0">
                   <RowActionsMenu>
                     <Link
                       href={`/invoices/${invoice.id}`}

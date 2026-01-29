@@ -97,3 +97,35 @@ export function parseTimesheetNumber(timesheetNumber: string): { isBCBA: boolean
   
   return { isBCBA, sequence }
 }
+
+/**
+ * Format an invoice number for display (compressed format)
+ * Converts INV-2026-XXXX to I-XXXX for display purposes
+ * @param invoiceNumber - The full invoice number (e.g., "INV-2026-0001")
+ * @returns Compressed display format (e.g., "I-0001")
+ */
+export function formatInvoiceNumberForDisplay(invoiceNumber: string): string {
+  if (!invoiceNumber) return invoiceNumber
+  
+  // If already in I-XXXX format, return as-is
+  if (/^I-\d+$/.test(invoiceNumber)) {
+    return invoiceNumber
+  }
+  
+  // Extract sequence from INV-YYYY-XXXX format
+  // Matches: INV-2026-0001, INV-2025-0123, etc.
+  const match = invoiceNumber.match(/^INV-\d{4}-(\d+)$/)
+  if (match) {
+    const sequence = match[1]
+    return `I-${sequence}`
+  }
+  
+  // Fallback: try to extract any trailing digits
+  const fallbackMatch = invoiceNumber.match(/(\d+)$/)
+  if (fallbackMatch) {
+    return `I-${fallbackMatch[1]}`
+  }
+  
+  // If no pattern matches, return original
+  return invoiceNumber
+}
