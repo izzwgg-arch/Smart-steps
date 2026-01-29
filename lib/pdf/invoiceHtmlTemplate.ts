@@ -173,7 +173,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
       padding: 10px 12px;
       margin-bottom: 12px;
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 16px;
     }
     
@@ -290,6 +290,56 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
       letter-spacing: 0.5px;
       margin-bottom: 4px;
     }
+    
+    /* Print Styles */
+    @media print {
+      body {
+        padding: 0.3in;
+      }
+      
+      /* Prevent page breaks inside timesheet entry rows */
+      tbody tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      
+      /* Keep header on first page only */
+      .modern-header {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+      
+      /* Keep info card together */
+      .info-card {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+      
+      /* Keep table header with content */
+      thead {
+        display: table-header-group;
+      }
+      
+      /* Keep totals with last entry */
+      .totals {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        page-break-after: auto;
+        break-after: auto;
+      }
+      
+      /* Ensure notes stay with totals if possible */
+      .notes {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      
+      /* Prevent orphaned rows */
+      tbody tr:first-child {
+        page-break-before: avoid;
+        break-before: avoid;
+      }
+    }
   </style>
 </head>
 <body>
@@ -308,7 +358,7 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
     </div>
   </div>
   
-  <!-- Info card with Bill To, Date, Medicaid ID, Description -->
+  <!-- Info card with Bill To, Date, Invoice Number, Medicaid ID, Description -->
   <div class="info-card">
     <div class="info-item">
       <span class="info-label">Bill To</span>
@@ -319,12 +369,20 @@ export function generateInvoiceHTML(invoice: InvoiceForHTML): string {
       <div class="info-value">${monthYear}</div>
     </div>
     <div class="info-item">
+      <span class="info-label">Invoice Number</span>
+      <div class="info-value">${invoice.invoiceNumber || invoice.id}</div>
+    </div>
+    <div class="info-item">
       <span class="info-label">Medicaid ID</span>
       <div class="info-value">${medicaidIdDisplay}</div>
     </div>
     <div class="info-item">
       <span class="info-label">${invoice.class ? 'Class Name' : 'Description'}</span>
       <div class="info-value">${description}</div>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Invoice ID</span>
+      <div class="info-value">${invoice.id}</div>
     </div>
   </div>
   
