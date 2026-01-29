@@ -14,10 +14,15 @@ import { ConfirmDeleteModal } from '@/components/shared/ConfirmDeleteModal'
 
 interface Timesheet {
   id: string
+  timesheetNumber?: string | null
   userId: string
   status: string
   startDate: string
   endDate: string
+  invoiceId?: string | null
+  invoice?: {
+    invoiceNumber: string
+  } | null
   client: { name: string; phone?: string | null; id?: string }
   provider: { name: string; phone?: string | null; signature?: string | null }
   bcba: { name: string }
@@ -638,6 +643,9 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 STATUS
               </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                ID / INVOICE
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[80px]">
                 ACTIONS
               </th>
@@ -677,6 +685,23 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                   >
                     {timesheet.status}
                   </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <div className="flex flex-col gap-1">
+                    {timesheet.timesheetNumber && (
+                      <span className="font-mono text-xs">{timesheet.timesheetNumber}</span>
+                    )}
+                    {timesheet.invoice?.invoiceNumber ? (
+                      <Link
+                        href={`/invoices/${timesheet.invoiceId}`}
+                        className="text-blue-600 hover:text-blue-800 text-xs"
+                      >
+                        {timesheet.invoice.invoiceNumber}
+                      </Link>
+                    ) : (
+                      <span className="text-gray-400 text-xs">Unbilled</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-[80px] flex-shrink-0">
                   <RowActionsMenu>
