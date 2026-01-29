@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { generateInvoiceHTML, InvoiceForHTML } from './invoiceHtmlTemplate'
-import { generatePDFFromHTML } from './playwrightPDF'
+import { generateCommunityInvoicePDF } from './communityInvoicePDFGenerator'
 
 /**
  * Generate Community Invoice PDF from invoiceId
@@ -43,34 +42,32 @@ export async function generateCommunityInvoicePdf(invoiceId: string): Promise<Bu
       className: invoice.class.name,
     })
 
-    // Generate PDF using HTML template with KJ Play Center branding
-    const invoiceForHtml: InvoiceForHTML = {
+    // Generate PDF using old PDFKit-based generator
+    const pdfBuffer = await generateCommunityInvoicePDF({
       id: invoice.id,
-      createdAt: invoice.createdAt,
-      serviceDate: invoice.serviceDate ?? undefined,
       totalAmount: invoice.totalAmount.toNumber(),
       units: invoice.units,
+      ratePerUnit: invoice.class.ratePerUnit?.toNumber() || 0,
       notes: invoice.notes,
+      createdAt: invoice.createdAt.toISOString(),
       client: {
         firstName: invoice.client.firstName,
         lastName: invoice.client.lastName,
+        email: invoice.client.email,
+        phone: invoice.client.phone,
+        address: invoice.client.address,
+        city: invoice.client.city,
+        state: invoice.client.state,
+        zipCode: invoice.client.zipCode,
         medicaidId: invoice.client.medicaidId,
       },
       class: {
         name: invoice.class.name,
+        ratePerUnit: invoice.class.ratePerUnit?.toNumber() || 0,
       },
-      branding: {
-        orgName: 'KJ PLAY CENTER',
-        tagline: 'Where you Discover Intelligence Creativity, Excitement and Fun.',
-        addressLine: 'Address 68 Jefferson St. Highland Mills N.Y.10930',
-        phoneLine: '845-827-9585',
-        emailLine: 'kjplaycanter@gmail.com',
-      },
-    }
+      serviceDate: invoice.serviceDate?.toISOString() || null,
+    })
     
-    // Generate HTML and convert to PDF using Playwright
-    const html = generateInvoiceHTML(invoiceForHtml)
-    const pdfBuffer = await generatePDFFromHTML(html, correlationId)
     const duration = Date.now() - startTime
 
     console.error(`[COMMUNITY_INVOICE_PDF] ${correlationId} PDF generated successfully`, {
