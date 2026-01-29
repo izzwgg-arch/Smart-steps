@@ -72,11 +72,11 @@ export async function POST(request: NextRequest) {
     // Use raw SQL since Prisma client may not have archived field yet
     // Format array properly for PostgreSQL - escape IDs to prevent SQL injection
     const escapedIds = ids.map(id => `'${id.replace(/'/g, "''")}'`).join(',')
-    const idsArray = `{${escapedIds}}`
+    const idsArray = `ARRAY[${escapedIds}]`
     const result = await prisma.$executeRawUnsafe(`
       UPDATE "Timesheet"
       SET "archived" = ${archived ? 'true' : 'false'}
-      WHERE id = ANY(${idsArray}::text[])
+      WHERE id = ANY(${idsArray})
         AND "deletedAt" IS NULL
         AND "isBCBA" = false
     `)
