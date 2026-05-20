@@ -93,6 +93,7 @@ Schemas:
 ### Program / ParentGoal / SubGoal / Target
 - Purpose: ABA goal/target hierarchy.
 - Relationships: targets connect to trials and annotations.
+- Target lifecycle (UI): stored on `Target.phase` string — `NEW` (not yet in active treatment), `ACQUISITION` (in treatment), `MASTERED` (mastered). Also supports legacy phases `BASELINE`, `MAINTENANCE`, `GENERALIZATION`. Default for new targets: `NEW`. Mastered uses existing `phase === "MASTERED"` and `dateMastered`.
 - High-risk warning: target IDs must link correctly to sessions/trials/charts.
 
 ### Session / Trial / BehaviorEvent / IntervalRecording

@@ -26,11 +26,53 @@ export type TargetType =
   | "OTHER";
 
 export type Phase =
+  | "NEW"
   | "BASELINE"
   | "ACQUISITION"
   | "MAINTENANCE"
   | "GENERALIZATION"
   | "MASTERED";
+
+/** Clinician-facing lifecycle mapped to Target.phase */
+export type GoalLifecycleKey = "new" | "in_treatment" | "mastered";
+
+export const GOAL_LIFECYCLE_OPTIONS: ReadonlyArray<{
+  value: GoalLifecycleKey;
+  label: string;
+  phase: Phase;
+}> = [
+  { value: "new", label: "New", phase: "NEW" },
+  { value: "in_treatment", label: "In Treatment", phase: "ACQUISITION" },
+  { value: "mastered", label: "Mastered", phase: "MASTERED" },
+] as const;
+
+export function lifecycleFromPhase(phase: string | null | undefined): GoalLifecycleKey {
+  if (phase === "MASTERED") return "mastered";
+  if (phase === "NEW") return "new";
+  return "in_treatment";
+}
+
+export function phaseFromLifecycle(lifecycle: GoalLifecycleKey): Phase {
+  return GOAL_LIFECYCLE_OPTIONS.find((o) => o.value === lifecycle)?.phase ?? "ACQUISITION";
+}
+
+export function lifecycleDisplayLabel(phase: string | null | undefined): string {
+  if (phase === "NEW") return "New";
+  if (phase === "MASTERED") return "Mastered";
+  if (phase === "ACQUISITION") return "In Treatment";
+  if (phase === "BASELINE") return "Baseline";
+  if (phase === "MAINTENANCE") return "Maintenance";
+  if (phase === "GENERALIZATION") return "Generalization";
+  return "In Treatment";
+}
+
+export function isNewPhase(phase: string | null | undefined): boolean {
+  return phase === "NEW";
+}
+
+export function isMasteredPhase(phase: string | null | undefined): boolean {
+  return phase === "MASTERED";
+}
 
 export type TrialResultKey =
   | "CORRECT"
@@ -68,7 +110,7 @@ export interface LocalTarget {
   operationalDefinition: string;
   baselineLevel?: string;
   requiredPrompts?: string;
-  status?: "active" | "mastered" | "paused";
+  status?: "active" | "mastered" | "paused" | "new";
   targetType: TargetType;
   phase: Phase;
   masteryCriteria: MasteryCriteria;
@@ -144,7 +186,7 @@ export const defaultMastery = (): MasteryCriteria => ({
   minTrialsPerSession: 10,
   firstTrialMustBe: "ANY",
   promptLevelToMaster: 0,
-  masteryType: "AUTOMATIC",
+  masteryType: "MANUAL",
   openedDate: null,
   baselineDate: null,
   masteredDate: null,
