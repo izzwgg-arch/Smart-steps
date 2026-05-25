@@ -305,6 +305,14 @@ function SkillAreaModal({ clientId, category, skill, onClose }: { clientId: stri
       }
       toast.success("Skill area updated");
     } else {
+      // Guard: category must have a server ID before we can link the skill area.
+      // Without it ParentGoal.programId would be NULL in the DB, making the
+      // skill area invisible on every other computer after hydration.
+      if (!category.serverId) {
+        toast.error("Category is still syncing — please wait a moment and try again.");
+        setSaving(false);
+        return;
+      }
       const id = makeId();
       addProgram({
         id,
@@ -318,7 +326,12 @@ function SkillAreaModal({ clientId, category, skill, onClose }: { clientId: stri
       fetch(`/smart-steps/api/clients/${clientId}/goals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: trimmedName, description: trimmedDescription, domain: category.name }),
+        body: JSON.stringify({
+          title: trimmedName,
+          description: trimmedDescription,
+          domain: category.name,
+          programId: category.serverId,
+        }),
       })
         .then((r) => r.json())
         .then((d) => {
@@ -758,6 +771,8 @@ export function ProgramsTab({
   const addTarget = useABAStore((s) => s.addTarget);
   const updateTarget = useABAStore((s) => s.updateTarget);
   const setTargetServerId = useABAStore((s) => s.setTargetServerId);
+  const addCategory = useABAStore((s) => s.addCategory);
+  const addProgram = useABAStore((s) => s.addProgram);
 
   // Select raw arrays (stable Zustand references) then filter via useMemo.
   // NEVER call .filter() inside a useABAStore selector — filter() always returns
@@ -833,6 +848,115 @@ export function ProgramsTab({
       })
       .catch(() => {});
   }, [clientId, setTargetServerId, addTarget]);
+
+  // Cross-device hydration: populate categories (DB: Program) and skill areas
+  // (DB: ParentGoal) + their direct targets from the server so that data created
+  // on Computer A is visible on Computer B with a fresh localStorage.
+  useEffect(() => {
+    const now = new Date().toISOString();
+
+    // 1. Fetch categories
+    fetch(`/smart-steps/api/programs?clientId=${clientId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          programs: Array<{
+            id: string;
+            name: string;
+            description?: string;
+          }> | null,
+        ) => {
+          if (!programs) return;
+          const storeCategories = useABAStore.getState().categories;
+          programs.forEach((p, idx) => {
+            if (storeCategories.some((c) => c.serverId === p.id || c.id === p.id)) return;
+            addCategory({
+              id: p.id,
+              serverId: p.id,
+              clientId,
+              name: p.name,
+              description: p.description ?? "",
+              color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
+              createdAt: now,
+              synced: true,
+            });
+          });
+        },
+      )
+      .catch(() => {});
+
+    // 2. Fetch skill areas (ParentGoals) and their direct targets
+    fetch(`/smart-steps/api/clients/${clientId}/goals`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          serverGoals: Array<{
+            id: string;
+            title: string;
+            description?: string | null;
+            programId?: string | null;
+            createdAt?: string;
+            targets?: Array<{
+              id: string;
+              definition: string;
+              targetType: string;
+              phase: string;
+              isActive: boolean;
+              createdAt?: string;
+              updatedAt?: string;
+            }>;
+          }> | null,
+        ) => {
+          if (!serverGoals) return;
+          const { programs: storePrograms, targets: storeTargets } = useABAStore.getState();
+          for (const sg of serverGoals) {
+            // categoryId = server Program id (used as local Category id after hydration)
+            const categoryId = sg.programId ?? "";
+
+            // Add skill area if not already present
+            if (!storePrograms.some((p) => p.serverId === sg.id || p.id === sg.id)) {
+              addProgram({
+                id: sg.id,
+                serverId: sg.id,
+                clientId,
+                name: sg.title,
+                description: sg.description ?? "",
+                categoryId,
+                createdAt: sg.createdAt ?? now,
+                synced: true,
+              });
+            }
+
+            // Add targets under this skill area with correct hierarchy IDs
+            for (const t of sg.targets ?? []) {
+              if (!t.isActive) continue;
+              if (storeTargets.some((lt) => lt.serverId === t.id || lt.id === t.id)) continue;
+              addTarget({
+                id: t.id,
+                serverId: t.id,
+                clientId,
+                title: t.definition,
+                operationalDefinition: t.definition,
+                targetType: t.targetType as LocalTarget["targetType"],
+                phase: t.phase as LocalTarget["phase"],
+                status: (
+                  t.phase === "MASTERED" ? "mastered" : t.phase === "NEW" ? "new" : "active"
+                ) as LocalTarget["status"],
+                programId: sg.id,   // parent skill area id (ParentGoal.id)
+                categoryId,         // parent category id (Program.id)
+                masteryCriteria: defaultMastery(),
+                promptLevels: defaultPromptLevels(),
+                isActive: true,
+                synced: true,
+                createdAt: t.createdAt ?? now,
+                updatedAt: t.updatedAt ?? now,
+              });
+            }
+          }
+        },
+      )
+      .catch(() => {});
+  }, [clientId, addCategory, addProgram, addTarget]);
 
   const selectedCategory = view.level !== "categories" ? categories.find((item) => item.id === view.categoryId) ?? null : null;
   const selectedSkill = view.level === "goals" || view.level === "goal" ? skills.find((item) => item.id === view.skillId) ?? null : null;
