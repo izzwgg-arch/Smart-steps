@@ -87,6 +87,20 @@ export function sortByCreatedAt<T extends { createdAt: string; id: string }>(arr
   });
 }
 
+/** Palette shared by every category color assignment across all computers. */
+export const CATEGORY_COLOR_PALETTE = [
+  "#06b6d4", "#a855f7", "#ec4899", "#f59e0b", "#10b981",
+  "#3b82f6", "#f97316", "#8b5cf6", "#14b8a6", "#ef4444",
+];
+
+/** Derives a deterministic color from any stable ID string so the same
+ *  category always renders the same color on every computer/session. */
+export function categoryColor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return CATEGORY_COLOR_PALETTE[h % CATEGORY_COLOR_PALETTE.length];
+}
+
 export type TrialResultKey =
   | "CORRECT"
   | "INCORRECT"

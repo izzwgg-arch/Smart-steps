@@ -17,7 +17,7 @@ import {
   type MasteryCriteria, type PromptLevel, type TargetType, type Phase,
   GOAL_LIFECYCLE_OPTIONS, lifecycleFromPhase, lifecycleDisplayLabel,
   phaseFromLifecycle, isNewPhase, isMasteredPhase, type GoalLifecycleKey,
-  sortByCreatedAt,
+  sortByCreatedAt, CATEGORY_COLOR_PALETTE, categoryColor,
 } from "@/store/abaStore";
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
@@ -56,11 +56,6 @@ const PHASE_DOT: Record<Phase, string> = {
   GENERALIZATION: "bg-[var(--accent-purple)]",
   MASTERED: "bg-emerald-400",
 };
-
-const CATEGORY_COLORS = [
-  "#06b6d4", "#a855f7", "#ec4899", "#f59e0b", "#10b981",
-  "#3b82f6", "#f97316", "#8b5cf6", "#14b8a6", "#ef4444",
-];
 
 const CATEGORY_PRESETS = [
   "Language & Communication",
@@ -625,7 +620,7 @@ function CategoryModal({
   const addCategory = useABAStore((s) => s.addCategory);
   const updateCategory = useABAStore((s) => s.updateCategory);
   const [name, setName] = useState(editCat?.name ?? "");
-  const [color, setColor] = useState(editCat?.color ?? CATEGORY_COLORS[0]);
+  const [color, setColor] = useState(editCat?.color ?? categoryColor(editCat?.serverId ?? editCat?.id ?? ""));
   const [description, setDescription] = useState(editCat?.description ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -726,7 +721,7 @@ function CategoryModal({
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-2">Color</label>
             <div className="flex gap-2 flex-wrap">
-              {CATEGORY_COLORS.map((c) => (
+              {CATEGORY_COLOR_PALETTE.map((c) => (
                 <button
                   key={c} type="button" onClick={() => setColor(c)}
                   className={`h-8 w-8 rounded-xl transition-all ${color === c ? "ring-2 ring-white ring-offset-2 ring-offset-[var(--background)] scale-110" : "hover:scale-105"}`}
@@ -1192,7 +1187,7 @@ function CategorySection({
 
         <div
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white text-sm font-bold"
-          style={{ background: category.color ?? CATEGORY_COLORS[0] }}
+          style={{ background: category.color ?? categoryColor(category.serverId ?? category.id) }}
         >
           {(category.name?.trim() || "?").charAt(0).toUpperCase()}
         </div>

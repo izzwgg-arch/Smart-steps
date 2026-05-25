@@ -17,6 +17,8 @@ import {
   type LocalCategory,
   type LocalTarget,
   sortByCreatedAt,
+  categoryColor,
+  CATEGORY_COLOR_PALETTE,
 } from "@/store/abaStore";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -30,11 +32,6 @@ type ClientSummary = {
   progressPct: number;
   isArchived: boolean;
 };
-
-const CATEGORY_COLORS = [
-  "#06b6d4", "#a855f7", "#ec4899", "#f59e0b", "#10b981",
-  "#3b82f6", "#f97316", "#8b5cf6", "#14b8a6", "#ef4444",
-];
 
 const CATEGORY_PRESETS = [
   { name: "Language & Communication", color: "#06b6d4" },
@@ -65,7 +62,7 @@ function QuickCategoryModal({
   const addCategory = useABAStore((s) => s.addCategory);
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const [name, setName] = useState("");
-  const [color, setColor] = useState(CATEGORY_COLORS[0]);
+  const [color, setColor] = useState(CATEGORY_PRESETS[0].color);
   const [saving, setSaving] = useState(false);
 
   async function save(e: React.FormEvent) {
@@ -144,7 +141,7 @@ function QuickCategoryModal({
           <div>
             <label className="block text-sm text-zinc-300 mb-2">Color</label>
             <div className="flex gap-2 flex-wrap">
-              {CATEGORY_COLORS.map((c) => (
+              {CATEGORY_COLOR_PALETTE.map((c) => (
                 <button key={c} type="button" onClick={() => setColor(c)}
                   className={`h-8 w-8 rounded-xl transition-all ${color === c ? "ring-2 ring-white ring-offset-2 ring-offset-[var(--background)] scale-110" : "hover:scale-105"}`}
                   style={{ background: c }}
@@ -205,7 +202,7 @@ function QuickGoalModal({
       catId = localId();
       useABAStore.getState().addCategory({
         id: catId, clientId, name: newCatName.trim(),
-        color: CATEGORY_COLORS[0], createdAt: now, synced: false,
+        color: categoryColor(catId), createdAt: now, synced: false,
       });
     }
 
@@ -390,7 +387,7 @@ function ClientGoalCard({ client, storeTargets, storeCategories }: {
               <span
                 key={cat.id}
                 className="rounded-full px-2.5 py-0.5 text-xs font-medium"
-                style={{ background: `${cat.color ?? "#06b6d4"}20`, color: cat.color ?? "#06b6d4" }}
+                style={{ background: `${cat.color ?? categoryColor(cat.serverId ?? cat.id)}20`, color: cat.color ?? categoryColor(cat.serverId ?? cat.id) }}
               >
                 {cat.name}
               </span>

@@ -38,10 +38,11 @@ import {
   isMasteredPhase,
   type GoalLifecycleKey,
   sortByCreatedAt,
+  CATEGORY_COLOR_PALETTE,
+  categoryColor,
 } from "@/store/abaStore";
 import type { TargetPanelData } from "./TargetDetailPanel";
 
-const CATEGORY_COLORS = ["#06b6d4", "#a855f7", "#ec4899", "#f59e0b", "#10b981", "#3b82f6", "#f97316", "#8b5cf6"];
 const CATEGORY_PRESETS = [
   "Language & Communication",
   "Social Skills",
@@ -201,7 +202,7 @@ function CategoryModal({ clientId, category, onClose }: { clientId: string; cate
   const setCategoryServerId = useABAStore((s) => s.setCategoryServerId);
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
-  const [color, setColor] = useState(category?.color ?? CATEGORY_COLORS[0]);
+  const [color, setColor] = useState(category?.color ?? categoryColor(category?.serverId ?? category?.id ?? ""));
   const [saving, setSaving] = useState(false);
 
   async function onSubmit(e: FormEvent) {
@@ -267,7 +268,7 @@ function CategoryModal({ clientId, category, onClose }: { clientId: string; cate
           <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} className="field-input w-full resize-none" />
         </div>
         <div className="flex flex-wrap gap-2">
-          {CATEGORY_COLORS.map((swatch) => (
+          {CATEGORY_COLOR_PALETTE.map((swatch) => (
             <button key={swatch} type="button" onClick={() => setColor(swatch)} className={`h-8 w-8 rounded-xl ${color === swatch ? "ring-2 ring-white ring-offset-2 ring-offset-[var(--background)]" : ""}`} style={{ background: swatch }} />
           ))}
         </div>
@@ -883,7 +884,7 @@ export function ProgramsTab({
           }> | null,
         ) => {
           if (!programs) return;
-          programs.forEach((p, idx) => {
+          programs.forEach((p) => {
             // Fresh read each iteration so setCategoryServerId updates are visible.
             const current = useABAStore.getState().categories;
             // Already in store with this server id — nothing to do.
@@ -907,7 +908,7 @@ export function ProgramsTab({
               clientId,
               name: p.name,
               description: p.description ?? "",
-              color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
+              color: categoryColor(p.id),
               createdAt: p.createdAt ?? now,
               synced: true,
             });
