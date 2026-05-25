@@ -1,5 +1,5 @@
 // Smart Steps ABA — offline-first service worker
-const CACHE_NAME = "smart-steps-v1";
+const CACHE_NAME = "smart-steps-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
