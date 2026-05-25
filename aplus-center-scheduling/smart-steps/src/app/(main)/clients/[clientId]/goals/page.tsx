@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +17,7 @@ import {
   type MasteryCriteria, type PromptLevel, type TargetType, type Phase,
   GOAL_LIFECYCLE_OPTIONS, lifecycleFromPhase, lifecycleDisplayLabel,
   phaseFromLifecycle, isNewPhase, isMasteredPhase, type GoalLifecycleKey,
+  sortByCreatedAt,
 } from "@/store/abaStore";
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
@@ -1015,8 +1016,10 @@ function ProgramRow({
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [editTarget, setEditTarget] = useState<LocalTarget | null>(null);
 
-  const targets = useABAStore((s) =>
-    s.targets.filter((t) => t.clientId === clientId && t.programId === program.id && t.isActive)
+  const rawProgramTargets = useABAStore((s) => s.targets);
+  const targets = useMemo(
+    () => sortByCreatedAt(rawProgramTargets.filter((t) => t.clientId === clientId && t.programId === program.id && t.isActive)),
+    [rawProgramTargets, clientId, program.id],
   );
   const setTargetPhase = useABAStore((s) => s.setTargetPhase);
   const removeTarget = useABAStore((s) => s.removeTarget);
@@ -1157,8 +1160,10 @@ function CategorySection({
   const [expanded, setExpanded] = useState(true);
   const [showProgramModal, setShowProgramModal] = useState(false);
 
-  const programs = useABAStore((s) =>
-    s.programs.filter((p) => p.categoryId === category.id && p.clientId === clientId)
+  const rawSectionPrograms = useABAStore((s) => s.programs);
+  const programs = useMemo(
+    () => sortByCreatedAt(rawSectionPrograms.filter((p) => p.categoryId === category.id && p.clientId === clientId)),
+    [rawSectionPrograms, category.id, clientId],
   );
   const removeProgram = useABAStore((s) => s.removeProgram);
   const allTargets = useABAStore((s) =>
@@ -1300,8 +1305,10 @@ export default function GoalsPage() {
     }
   }, [clientId, updateTarget]);
 
-  const categories = useABAStore((s) =>
-    s.categories.filter((c) => c.clientId === clientId)
+  const rawPageCategories = useABAStore((s) => s.categories);
+  const categories = useMemo(
+    () => sortByCreatedAt(rawPageCategories.filter((c) => c.clientId === clientId)),
+    [rawPageCategories, clientId],
   );
   const allTargets = useABAStore((s) =>
     s.targets.filter((t) => t.clientId === clientId && t.isActive)

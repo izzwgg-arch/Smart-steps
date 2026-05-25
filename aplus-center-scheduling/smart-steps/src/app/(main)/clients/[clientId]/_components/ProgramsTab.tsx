@@ -37,6 +37,7 @@ import {
   isNewPhase,
   isMasteredPhase,
   type GoalLifecycleKey,
+  sortByCreatedAt,
 } from "@/store/abaStore";
 import type { TargetPanelData } from "./TargetDetailPanel";
 
@@ -796,15 +797,15 @@ export function ProgramsTab({
   const rawTargets = useABAStore((s) => s.targets);
 
   const categories = useMemo(
-    () => (rawCategories ?? []).filter(isCategory).filter((c) => c.clientId === clientId),
+    () => sortByCreatedAt((rawCategories ?? []).filter(isCategory).filter((c) => c.clientId === clientId)),
     [rawCategories, clientId],
   );
   const skills = useMemo(
-    () => (rawPrograms ?? []).filter(isSkill).filter((p) => p.clientId === clientId),
+    () => sortByCreatedAt((rawPrograms ?? []).filter(isSkill).filter((p) => p.clientId === clientId)),
     [rawPrograms, clientId],
   );
   const goals = useMemo(
-    () => (rawTargets ?? []).filter(isGoal).filter((t) => t.clientId === clientId && t.isActive !== false),
+    () => sortByCreatedAt((rawTargets ?? []).filter(isGoal).filter((t) => t.clientId === clientId && t.isActive !== false)),
     [rawTargets, clientId],
   );
   const { data: availableClients = [] } = useQuery<Array<{ id: string; name: string }>>({
@@ -878,6 +879,7 @@ export function ProgramsTab({
             id: string;
             name: string;
             description?: string;
+            createdAt?: string;
           }> | null,
         ) => {
           if (!programs) return;
@@ -906,7 +908,7 @@ export function ProgramsTab({
               name: p.name,
               description: p.description ?? "",
               color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
-              createdAt: now,
+              createdAt: p.createdAt ?? now,
               synced: true,
             });
           });

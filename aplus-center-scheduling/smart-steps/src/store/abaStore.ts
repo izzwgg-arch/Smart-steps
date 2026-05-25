@@ -74,6 +74,19 @@ export function isMasteredPhase(phase: string | null | undefined): boolean {
   return phase === "MASTERED";
 }
 
+/** Deterministic sort for any array that has `createdAt` + `id`.
+ *  Primary: createdAt ascending (oldest first).
+ *  Tiebreaker: id ascending (stable across all computers). */
+export function sortByCreatedAt<T extends { createdAt: string; id: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => {
+    const ta = a.createdAt ?? "";
+    const tb = b.createdAt ?? "";
+    if (ta < tb) return -1;
+    if (ta > tb) return 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
 export type TrialResultKey =
   | "CORRECT"
   | "INCORRECT"

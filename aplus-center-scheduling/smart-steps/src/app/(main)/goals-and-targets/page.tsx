@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -16,6 +16,7 @@ import {
   defaultPromptLevels,
   type LocalCategory,
   type LocalTarget,
+  sortByCreatedAt,
 } from "@/store/abaStore";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -183,7 +184,10 @@ function QuickGoalModal({
   const [targetTitle, setTargetTitle] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const clientCats = storeCategories.filter((c) => c.clientId === clientId);
+  const clientCats = useMemo(
+    () => sortByCreatedAt(storeCategories.filter((c) => c.clientId === clientId)),
+    [storeCategories, clientId],
+  );
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -316,7 +320,10 @@ function ClientGoalCard({ client, storeTargets, storeCategories }: {
   storeCategories: LocalCategory[];
 }) {
   const clientTargets = storeTargets.filter((t) => t.clientId === client.id && t.isActive);
-  const clientCats = storeCategories.filter((c) => c.clientId === client.id);
+  const clientCats = useMemo(
+    () => sortByCreatedAt(storeCategories.filter((c) => c.clientId === client.id)),
+    [storeCategories, client.id],
+  );
   const mastered = clientTargets.filter((t) => t.phase === "MASTERED").length;
   const active = clientTargets.filter((t) => t.phase === "ACQUISITION").length;
   const newGoals = clientTargets.filter((t) => t.phase === "NEW").length;
