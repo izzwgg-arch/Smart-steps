@@ -308,7 +308,20 @@ function SkillAreaModal({ clientId, category, skill, onClose }: { clientId: stri
       // Guard: category must have a server ID before we can link the skill area.
       // Without it ParentGoal.programId would be NULL in the DB, making the
       // skill area invisible on every other computer after hydration.
-      if (!category.serverId) {
+      // Fallback: if this local category has no serverId yet, look for another
+      // store entry with the same name that was hydrated from the server.
+      const resolvedCategoryServerId =
+        category.serverId ??
+        useABAStore
+          .getState()
+          .categories.find(
+            (c) =>
+              c.serverId &&
+              c.clientId === clientId &&
+              c.name.trim().toLowerCase() === category.name.trim().toLowerCase(),
+          )?.serverId ??
+        null;
+      if (!resolvedCategoryServerId) {
         toast.error("Category is still syncing — please wait a moment and try again.");
         setSaving(false);
         return;
@@ -330,7 +343,7 @@ function SkillAreaModal({ clientId, category, skill, onClose }: { clientId: stri
           title: trimmedName,
           description: trimmedDescription,
           domain: category.name,
-          programId: category.serverId,
+          programId: resolvedCategoryServerId,
         }),
       })
         .then((r) => r.json())
@@ -773,6 +786,7 @@ export function ProgramsTab({
   const setTargetServerId = useABAStore((s) => s.setTargetServerId);
   const addCategory = useABAStore((s) => s.addCategory);
   const addProgram = useABAStore((s) => s.addProgram);
+  const setCategoryServerId = useABAStore((s) => s.setCategoryServerId);
 
   // Select raw arrays (stable Zustand references) then filter via useMemo.
   // NEVER call .filter() inside a useABAStore selector — filter() always returns
@@ -867,9 +881,24 @@ export function ProgramsTab({
           }> | null,
         ) => {
           if (!programs) return;
-          const storeCategories = useABAStore.getState().categories;
           programs.forEach((p, idx) => {
-            if (storeCategories.some((c) => c.serverId === p.id || c.id === p.id)) return;
+            // Fresh read each iteration so setCategoryServerId updates are visible.
+            const current = useABAStore.getState().categories;
+            // Already in store with this server id — nothing to do.
+            if (current.some((c) => c.serverId === p.id || c.id === p.id)) return;
+            // Existing local category with same name and no serverId yet — link it
+            // instead of adding a duplicate.
+            const unsyncedMatch = current.find(
+              (c) =>
+                !c.serverId &&
+                c.clientId === clientId &&
+                c.name.trim().toLowerCase() === p.name.trim().toLowerCase(),
+            );
+            if (unsyncedMatch) {
+              setCategoryServerId(unsyncedMatch.id, p.id);
+              return;
+            }
+            // New server category not in store at all — add it.
             addCategory({
               id: p.id,
               serverId: p.id,
@@ -956,7 +985,7 @@ export function ProgramsTab({
         },
       )
       .catch(() => {});
-  }, [clientId, addCategory, addProgram, addTarget]);
+  }, [clientId, addCategory, addProgram, addTarget, setCategoryServerId]);
 
   const selectedCategory = view.level !== "categories" ? categories.find((item) => item.id === view.categoryId) ?? null : null;
   const selectedSkill = view.level === "goals" || view.level === "goal" ? skills.find((item) => item.id === view.skillId) ?? null : null;
