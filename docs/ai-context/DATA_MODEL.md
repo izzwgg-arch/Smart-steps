@@ -107,6 +107,71 @@ Schemas:
 ### ClientAssessment / ClientAssessmentResponse
 - Purpose: assigned/completed assessment responses.
 
+### ReportTemplate / ReportTemplateSection
+- Purpose: document-style ABA clinical report templates (distinct from scoring instruments).
+- Stored in DB as `ReportTemplate` + `ReportTemplateSection`. Not to be confused with `AssessmentTemplate`.
+- Sections have: `id`, `title`, `order`, `content` (HTML with `{{placeholder}}` syntax).
+- Default ABA Assessment template pre-builds 18 sections (Service Period, Biopsychosocial, Why ABA, skill domains, Goals, etc.).
+
+### ClientReport / ClientReportSection
+- Purpose: generated clinical report instances (snapshot per client).
+- Created via `POST /api/report-templates/[templateId]/generate-report` with `{ clientId, title, servicePeriodStart?, servicePeriodEnd? }`.
+- Sections are stored as independent editable HTML; changes do not affect the source template.
+- Status workflow: `DRAFT` → `IN_PROGRESS` → `COMPLETED` → `FINAL`.
+
+#### Report Generation — auto-population (as of 2026-05-25)
+
+Generation fetches: full `Client`, logged-in `User` (session), all active `Program` rows, and all `ParentGoal` + `Target` rows for the client (active phases + mastered within 6 months).
+
+**Expanded placeholder map (`{{key}}` syntax in template HTML):**
+
+| Placeholder | Source |
+|---|---|
+| `{{client_name}}` | `Client.name` |
+| `{{dob}}` | `Client.dob` (MM/DD/YYYY) |
+| `{{age}}` | computed from `Client.dob` |
+| `{{address}}` | `Client.address` |
+| `{{assessment_date}}` | today's date |
+| `{{diagnosis}}` | `Client.diagnosis.join(", ")` |
+| `{{insurance_id}}` | `Client.insuranceId` |
+| `{{guardian_name}}` | `Client.guardianName` |
+| `{{guardian_phone}}` | `Client.guardianPhone` |
+| `{{guardian_email}}` | `Client.guardianEmail` |
+| `{{school}}` | `Client.school` |
+| `{{intake_notes}}` | `Client.intakeNotes` |
+| `{{provider_name}}` | `session.user.name` or email |
+| `{{provider_email}}` | `session.user.email` |
+| `{{provider_role}}` | `session.user.role` |
+| `{{service_period_start}}` | from request body (optional input in modal) |
+| `{{service_period_end}}` | from request body (optional input in modal) |
+
+**Section-type auto-injection** (title keyword matching in `reportGenerationUtils.ts`):
+
+| Section title contains… | Auto-injected content |
+|---|---|
+| "Service Period" / "Provider Info" | Two-column info table with all client + provider fields |
+| "Biopsychosocial" / "Biophysical" | Narrative paragraph: age, diagnosis, school, guardian, intake notes |
+| "Why ABA" / "Why Services Needed" | Rationale paragraph with diagnosis and client name |
+| "Language" / "Communication" | Category summary + progress bar + goals table |
+| "Social" | Category summary + goals table |
+| "Adaptive" / "Daily Living" / "Self-Care" | Category summary + goals table |
+| "Challenging Behavior" / "Behavior Reduction" | Category summary + goals table |
+| "Mastered Goals" | Table of all targets mastered within past 6 months |
+| "Current Goals" / "Goals and Objectives" | Table of all active NEW/ACQUISITION/BASELINE targets |
+| Any other section | Placeholder substitution only (existing template content preserved) |
+
+**Goal inclusion rules:**
+- Included: `Target.phase IN (NEW, ACQUISITION, BASELINE, MAINTENANCE, GENERALIZATION)` AND `isActive = true`
+- Included mastered: `Target.phase = MASTERED` AND `dateMastered >= now - 6 months`
+- Excluded: `isActive = false`, `ParentGoal.status = ARCHIVED`
+
+**Progress bars:** Unicode block characters (`█░`) — no CSS dependencies, survives HTML sanitizer.
+
+**Not auto-populated (leave as editable placeholders):**
+- `[Provider Phone]` — not stored in `User` model
+- `[BCBA Credentials]` — not stored in `User` model
+- Schema change required to auto-fill these fields.
+
 ### ReportTemplate / ReportTemplateSection / ClientReport / ClientReportSection
 - Purpose: narrative clinical report templates and client reports.
 
