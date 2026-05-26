@@ -5,49 +5,15 @@ import Link from 'next/link'
 import { ArrowLeft, Download, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
+import type { EmployeeMonthlyReportPayload } from '@/lib/payroll/employeeMonthlyReportBuilder'
 
 interface EmployeeMonthlyReportProps {
   employeeId: string
   month?: string
 }
 
-interface ReportData {
-  employee: {
-    id: string
-    fullName: string
-    email?: string | null
-    phone?: string | null
-    defaultHourlyRate: number
-  }
-  period: {
-    year: number
-    month: number
-    monthName: string
-  }
-  summary: {
-    totalHours: number
-    hourlyRate: number
-    grossPay: number
-    totalPaid: number
-    totalOwed: number
-  }
-  breakdown: Array<{
-    date: string
-    sourceImport?: string | null
-    hours: number
-    rate: number
-    gross: number
-  }>
-  payments: Array<{
-    date: string
-    amount: number
-    method: string
-    reference?: string | null
-  }>
-}
-
 export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyReportProps) {
-  const [data, setData] = useState<ReportData | null>(null)
+  const [data, setData] = useState<EmployeeMonthlyReportPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
@@ -60,46 +26,21 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
   const fetchReportData = async () => {
     setLoading(true)
     try {
-      // For now, we'll just display a summary - the API route will generate the full report
-      // In a real implementation, we might want an API endpoint to fetch report data for display
-      // For now, we'll show a placeholder with PDF export
-      
-      // Fetch employee data
-      const empResponse = await fetch(`/api/payroll/employees/${employeeId}`)
-      if (empResponse.ok) {
-        const empData = await empResponse.json()
-        
-        // Parse month
-        const [year, monthNum] = month!.split('-').map(Number)
-        const periodStart = new Date(year, monthNum - 1, 1)
-        
-        setData({
-          employee: {
-            id: empData.employee.id,
-            fullName: empData.employee.fullName,
-            email: empData.employee.email,
-            phone: empData.employee.phone,
-            defaultHourlyRate: parseFloat(empData.employee.defaultHourlyRate.toString()),
-          },
-          period: {
-            year,
-            month: monthNum,
-            monthName: format(periodStart, 'MMMM'),
-          },
-          summary: {
-            totalHours: 0,
-            hourlyRate: parseFloat(empData.employee.defaultHourlyRate.toString()),
-            grossPay: 0,
-            totalPaid: 0,
-            totalOwed: 0,
-          },
-          breakdown: [],
-          payments: [],
-        })
+      const response = await fetch(`/api/payroll/reports/employee/${employeeId}?month=${month}`)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to load report data')
       }
-    } catch (error) {
+
+      const report = await response.json()
+      setData(report)
+
+      if (report.validation?.warnings?.length) {
+        console.warn('[EmployeeMonthlyReport] validation warnings:', report.validation.warnings)
+      }
+    } catch (error: any) {
       console.error('Failed to fetch report data:', error)
-      toast.error('Failed to load report data')
+      toast.error(error.message || 'Failed to load report data')
     } finally {
       setLoading(false)
     }
@@ -114,7 +55,7 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
     setExporting(true)
     try {
       const response = await fetch(`/api/payroll/reports/employee/${employeeId}/pdf?month=${month}`)
-      
+
       if (!response.ok) {
         const error = await response.json()
         throw new Error(error.error || 'Failed to generate PDF')
@@ -129,7 +70,7 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-      
+
       toast.success('PDF exported successfully')
     } catch (error: any) {
       console.error('Failed to export PDF:', error)
@@ -147,10 +88,12 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
     }).format(value)
   }
 
+  const formatDate = (value: string) => format(new Date(value), 'MMM d, yyyy')
+
   if (loading) {
     return (
       <div className="px-4 py-6 sm:px-0">
-        <div className="flex items-center justify-center h-64">
+        <div class="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
         </div>
       </div>
@@ -164,6 +107,8 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
       </div>
     )
   }
+
+  const detailHours = data.timeEntries.reduce((sum, entry) => sum + entry.hours, 0)
 
   return (
     <div className="px-4 py-6 sm:px-0">
@@ -198,6 +143,17 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
       <p className="text-gray-600 mb-8">
         {data.employee.fullName} - {data.period.monthName} {data.period.year}
       </p>
+
+      {data.validation.warnings.length > 0 && (
+        <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold mb-2">Report validation warnings</p>
+          <ul className="list-disc pl-5 space-y-1">
+            {data.validation.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Employee Information</h2>
@@ -246,20 +202,77 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
           </div>
           <div className="text-center p-4 bg-gray-50 rounded-lg">
             <div className="text-sm text-gray-600 mb-1">Amount Owed</div>
-            <div className="text-xl font-bold text-orange-600">{formatCurrency(data.summary.totalOwed)}</div>
+            <div className="text-xl font-bold text-orange-600">{formatCurrency(data.summary.amountOwed)}</div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Report Preview</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Click "Export PDF" above to generate a detailed report with breakdown and payment history.
-        </p>
-        <p className="text-xs text-gray-500 italic">
-          Note: Full report data will be calculated and included in the exported PDF.
-        </p>
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Detailed Time Entries</h2>
+        {data.timeEntries.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Out Time</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Hours</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source Import</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {data.timeEntries.map((entry, index) => (
+                  <tr key={`${entry.date}-${entry.inTime ?? 'na'}-${index}`}>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatDate(entry.date)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{entry.inTimeDisplay}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{entry.outTimeDisplay}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-right">{entry.hours.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{entry.sourceImport || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 font-semibold">
+                  <td colSpan={3} className="px-4 py-3 text-sm text-gray-900">Total Hours</td>
+                  <td className="px-4 py-3 text-sm text-gray-900 text-right">{detailHours.toFixed(2)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600">No time entries available for this period.</p>
+        )}
       </div>
+
+      {data.payments.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Payments</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment Date</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {data.payments.map((payment, index) => (
+                  <tr key={`${payment.date}-${index}`}>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatDate(payment.date)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(payment.amount)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{payment.method}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{payment.reference || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

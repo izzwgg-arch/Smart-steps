@@ -13,7 +13,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "create-admin": "tsx scripts/create-admin.ts"
+    "create-admin": "tsx scripts/create-admin.ts",
+    "test:payroll-report": "tsx --test lib/payroll/__tests__/employeeMonthlyReportBuilder.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
