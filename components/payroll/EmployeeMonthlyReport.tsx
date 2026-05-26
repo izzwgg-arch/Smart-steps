@@ -93,7 +93,7 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
   if (loading) {
     return (
       <div className="px-4 py-6 sm:px-0">
-        <div class="flex items-center justify-center h-64">
+        <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
         </div>
       </div>
