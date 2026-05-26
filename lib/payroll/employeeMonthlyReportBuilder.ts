@@ -214,6 +214,63 @@ export function validateEmployeeMonthlyReport(payload: {
   return warnings
 }
 
+export async function fetchImportRowsForEmployeePeriod(
+  employeeId: string,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<
+  Array<{
+    workDate: Date
+    inTime: Date | null
+    outTime: Date | null
+    hoursWorked: unknown
+    minutesWorked: number | null
+    import: { originalFileName: string | null }
+  }>
+> {
+  const rows = await prisma.payrollImportRow.findMany({
+    where: {
+      linkedEmployeeId: employeeId,
+      workDate: {
+        gte: periodStart,
+        lte: periodEnd,
+      },
+    },
+    orderBy: [{ workDate: 'asc' }, { inTime: 'asc' }],
+  })
+
+  if (rows.length === 0) {
+    return []
+  }
+
+  const importIds = [...new Set(rows.map((row) => row.importId))]
+  const imports = await prisma.payrollImport.findMany({
+    where: { id: { in: importIds } },
+    select: { id: true, originalFileName: true },
+  })
+  const importById = new Map(imports.map((entry) => [entry.id, entry]))
+
+  const orphanedCount = rows.filter((row) => !importById.has(row.importId)).length
+  if (orphanedCount > 0) {
+    console.warn(
+      `[EMPLOYEE MONTHLY REPORT] Skipped ${orphanedCount} orphaned PayrollImportRow record(s) for employeeId=${employeeId}`
+    )
+  }
+
+  return rows
+    .filter((row) => importById.has(row.importId))
+    .map((row) => ({
+      workDate: row.workDate,
+      inTime: row.inTime,
+      outTime: row.outTime,
+      hoursWorked: row.hoursWorked,
+      minutesWorked: row.minutesWorked,
+      import: {
+        originalFileName: importById.get(row.importId)?.originalFileName ?? null,
+      },
+    }))
+}
+
 export async function buildEmployeeMonthlyReport(
   employeeId: string,
   monthParam: string
@@ -246,24 +303,7 @@ export async function buildEmployeeMonthlyReport(
     orderBy: { run: { periodStart: 'asc' } },
   })
 
-  const importRows = await prisma.payrollImportRow.findMany({
-    where: {
-      linkedEmployeeId: employeeId,
-      workDate: {
-        gte: periodStart,
-        lte: periodEnd,
-      },
-      import: {},
-    },
-    include: {
-      import: {
-        select: {
-          originalFileName: true,
-        },
-      },
-    },
-    orderBy: [{ workDate: 'asc' }, { inTime: 'asc' }],
-  })
+  const importRows = await fetchImportRowsForEmployeePeriod(employeeId, periodStart, periodEnd)
 
   const defaultHourlyRate = parseFloat(employee.defaultHourlyRate.toString())
   const summary = buildSummaryFromRunLines(runLines, defaultHourlyRate)
