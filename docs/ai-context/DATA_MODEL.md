@@ -115,15 +115,24 @@ Schemas:
 
 ### ClientReport / ClientReportSection
 - Purpose: generated clinical report instances (snapshot per client).
-- Created via `POST /api/report-templates/[templateId]/generate-report` with `{ clientId, title, servicePeriodStart?, servicePeriodEnd? }`.
+- Created via `POST /api/report-templates/[templateId]/generate-report` with `{ clientId, title, assessmentType, bcbaUserId?, servicePeriodStart?, servicePeriodEnd? }`.
 - Sections are stored as independent editable HTML; changes do not affect the source template.
 - Status workflow: `DRAFT` → `IN_PROGRESS` → `COMPLETED` → `FINAL`.
 
-#### Report Generation — auto-population (as of 2026-05-25)
+#### Report Generation — auto-population (as of 2026-05-26)
 
-Generation fetches: full `Client`, logged-in `User` (session), all active `Program` rows, and all `ParentGoal` + `Target` rows for the client (active phases + mastered within 6 months).
+Generation fetches: full `Client`, selected or session `User` (BCBA), all active `Program` rows, all `ParentGoal` + `Target` rows (active + mastered within 6 months), and a batch of recent `Trial` rows (last 30 days, max 500) for computing current performance levels.
 
-**Expanded placeholder map (`{{key}}` syntax in template HTML):**
+**Assessment type** (`assessmentType: "initial" | "reassessment"`):
+- `initial`: no mastered goals; category paragraphs focus on current/future treatment.
+- `reassessment` (default): includes mastered goals, progress summaries, in-treatment targets.
+
+**BCBA selection** (`bcbaUserId?`):
+- If provided: fetches that `User` for name/email/phone/credentials in the Provider Info section.
+- If omitted: falls back to the session user.
+- BCBA options loaded in the modal from `GET /api/clients/{clientId}/assignments` filtered to `role=BCBA`.
+
+**Placeholder map — `{{key}}` syntax in template HTML:**
 
 | Placeholder | Source |
 |---|---|
@@ -139,45 +148,73 @@ Generation fetches: full `Client`, logged-in `User` (session), all active `Progr
 | `{{guardian_email}}` | `Client.guardianEmail` |
 | `{{school}}` | `Client.school` |
 | `{{intake_notes}}` | `Client.intakeNotes` |
-| `{{provider_name}}` | `session.user.name` or email |
-| `{{provider_email}}` | `session.user.email` |
-| `{{provider_role}}` | `session.user.role` |
-| `{{service_period_start}}` | from request body (optional input in modal) |
-| `{{service_period_end}}` | from request body (optional input in modal) |
+| `{{provider_name}}` | selected BCBA name or session user |
+| `{{provider_email}}` | BCBA email |
+| `{{provider_role}}` | BCBA role |
+| `{{provider_phone}}` | `User.phone` (new field) |
+| `{{provider_credentials}}` | `User.credentials` (new field) |
+| `{{service_period_start}}` | from request body |
+| `{{service_period_end}}` | from request body |
 
-**Section-type auto-injection** (title keyword matching in `reportGenerationUtils.ts`):
+**Bracket placeholder replacement** (allow-list, passthrough sections only):
+- Patterns like `(Name)`, `(DOB)`, `[Address]`, `[BCBA]` etc. replaced from same values map.
+- Only exact known field names from allow-list in `replaceBracketPlaceholders()` are replaced.
+- Unknown brackets preserved intact.
 
-| Section title contains… | Auto-injected content |
+**Section-type detection** (keyword matching in `reportGenerationUtils.ts`) — **REPLACE behavior (Option B1)**:
+
+| Section title contains… | Generated content (replaces template) |
 |---|---|
-| "Service Period" / "Provider Info" | Two-column info table with all client + provider fields |
-| "Biopsychosocial" / "Biophysical" | Narrative paragraph: age, diagnosis, school, guardian, intake notes |
+| "Service Period" / "Provider Info" | Two-column info table with all client + BCBA fields |
+| "Biopsychosocial" / "Biophysical" | Narrative paragraph: age, diagnosis, school, guardian, notes |
 | "Why ABA" / "Why Services Needed" | Rationale paragraph with diagnosis and client name |
-| "Language" / "Communication" | Category summary + progress bar + goals table |
-| "Social" | Category summary + goals table |
-| "Adaptive" / "Daily Living" / "Self-Care" | Category summary + goals table |
-| "Challenging Behavior" / "Behavior Reduction" | Category summary + goals table |
-| "Mastered Goals" | Table of all targets mastered within past 6 months |
-| "Current Goals" / "Goals and Objectives" | Table of all active NEW/ACQUISITION/BASELINE targets |
-| Any other section | Placeholder substitution only (existing template content preserved) |
+| "Language" / "Communication" | Written paragraph FIRST, then 8-col active goals table, then mastered table (reassessment) |
+| "Social", "Adaptive", "Behavior", "Executive", etc. | Same category paragraph + goals table pattern |
+| "Mastered Goals" | Mastered goals table (3 cols); initial assessment shows "no mastered goals" note |
+| "Current Goals" / "Goals and Objectives" / "Skill Acquisition" | 8-column active goals table with trial-based current level + progress % |
+| "Parent Goals" | 7-column parent goals table: Behavior, Objective, Introduction Date, Baseline, Current Level, Comments, Carrying Over? |
+| "New Goals" / "Upcoming Goals" | Table of NEW-phase targets only |
+| Any other section | `replacePlaceholders` + `replaceBracketPlaceholders` applied; template content preserved |
+
+**Active/Future Goals table columns:** Behavior/Goal, Objective, Start Date, Baseline Level, Current Level, Progress %, Status, Date Opened
+
+**Mastered Goals table columns:** Behavior/Goal, Objective, Date Mastered
+
+**Parent Goals table columns:** Behavior, Objective, Introduction Date, Baseline Level, Current Level, Comments, Carrying Over?
+
+**Trial-based current level:**
+- Batch query: last 30 days, max 500 trials per generation, grouped by targetId.
+- `correct / total` = Current Level %; shown as "78% (12 trials)" or "—".
+- Only `result IN (CORRECT, INDEPENDENT)` counted as correct.
 
 **Goal inclusion rules:**
 - Included: `Target.phase IN (NEW, ACQUISITION, BASELINE, MAINTENANCE, GENERALIZATION)` AND `isActive = true`
 - Included mastered: `Target.phase = MASTERED` AND `dateMastered >= now - 6 months`
 - Excluded: `isActive = false`, `ParentGoal.status = ARCHIVED`
 
-**Progress bars:** Unicode block characters (`█░`) — no CSS dependencies, survives HTML sanitizer.
+**Print / Export:**
+- `printReport()` in `reports/[id]/page.tsx` is async; fetches `GET /api/organization/settings` before printing.
+- Org letterhead (logo, name, address, phone, email) injected above report header.
+- Org footer injected below all sections.
+- Custom `letterheadHtml` / `footerHtml` from `OrganizationSettings` take precedence over auto-generated blocks.
 
-**Not auto-populated (leave as editable placeholders):**
-- `[Provider Phone]` — not stored in `User` model
-- `[BCBA Credentials]` — not stored in `User` model
-- Schema change required to auto-fill these fields.
+### User (SmartSteps — updated)
+- Added fields (migration `20260526001_user_phone_org_settings`):
+  - `phone String?` — BCBA/provider phone number for reports
+  - `credentials String?` — BCBA credentials (e.g., "BCBA, LBA, MS") for reports
 
-### ReportTemplate / ReportTemplateSection / ClientReport / ClientReportSection
-- Purpose: narrative clinical report templates and client reports.
+### OrganizationSettings (new — migration `20260526001_user_phone_org_settings`)
+- Singleton table (`id = "singleton"`).
+- Fields: `orgName`, `orgAddress`, `orgPhone`, `orgEmail`, `logoUrl`, `letterheadHtml`, `footerHtml`, `createdAt`, `updatedAt`.
+- API: `GET /api/organization/settings` (all roles), `PATCH /api/organization/settings` (ADMIN/BCBA only).
+- Seeded with default row `{ id: "singleton", orgName: "A+ Center" }` on first access.
+- Used in printed report letterhead/footer.
+- UI: Settings page → "Organization" section (editable by BCBA/ADMIN, read-only for RBT).
 
 ### TargetAnnotation / TargetLibraryItem / AuditEntry
 - Purpose: analytics annotations, reusable target library, audit history.
 
 ## Tenant / Organization
-- No Tenant or Organization model was confirmed in A Plus scheduling or SmartSteps schemas from evidence.
-- Cross-tenant isolation rules: `UNKNOWN — verify before changing.`
+- No Tenant model in A Plus scheduling or SmartSteps schemas.
+- Cross-tenant isolation: `UNKNOWN — verify before changing.`
+- `OrganizationSettings` in SmartSteps is a single-org singleton, not multi-tenant.

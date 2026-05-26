@@ -26,15 +26,53 @@ const STATUS_STYLES: Record<string, string> = {
 
 // ── Print / Save as PDF ───────────────────────────────────────────────────────
 
-function printReport(report: Report, sections: Section[]) {
+type OrgSettings = {
+  orgName?: string | null;
+  orgAddress?: string | null;
+  orgPhone?: string | null;
+  orgEmail?: string | null;
+  logoUrl?: string | null;
+  letterheadHtml?: string | null;
+  footerHtml?: string | null;
+};
+
+async function printReport(report: Report, sections: Section[]) {
   const win = window.open("", "_blank");
   if (!win) { toast.error("Pop-up blocked — allow pop-ups and try again."); return; }
+
+  // Fetch org settings for letterhead/footer (non-blocking; fall back gracefully)
+  let org: OrgSettings = {};
+  try {
+    const r = await fetch("/smart-steps/api/organization/settings");
+    if (r.ok) org = await r.json();
+  } catch { /* ignore */ }
 
   const clientName = escapeHtml(report.client?.name ?? "");
   const title      = escapeHtml(report.title);
   const updated    = new Date(report.updatedAt).toLocaleDateString("en-US", {
     month: "long", day: "numeric", year: "numeric",
   });
+
+  // Build letterhead block
+  const letterheadBlock = org.letterheadHtml
+    ? `<div class="org-letterhead">${org.letterheadHtml}</div>`
+    : org.orgName
+    ? `<div class="org-letterhead">
+        ${org.logoUrl ? `<img src="${escapeHtml(org.logoUrl)}" alt="${escapeHtml(org.orgName ?? "")}" class="org-logo">` : ""}
+        <div class="org-info">
+          <strong>${escapeHtml(org.orgName ?? "")}</strong>
+          ${org.orgAddress ? `<span>${escapeHtml(org.orgAddress)}</span>` : ""}
+          ${org.orgPhone   ? `<span>${escapeHtml(org.orgPhone)}</span>`   : ""}
+          ${org.orgEmail   ? `<span>${escapeHtml(org.orgEmail)}</span>`   : ""}
+        </div>
+      </div>`
+    : "";
+
+  const footerBlock = org.footerHtml
+    ? `<div class="org-footer">${org.footerHtml}</div>`
+    : org.orgName
+    ? `<div class="org-footer"><p>${escapeHtml(org.orgName ?? "")}${org.orgAddress ? ` · ${escapeHtml(org.orgAddress)}` : ""}</p></div>`
+    : "";
 
   const sectionsHtml = sections
     .map((s) => `
@@ -61,12 +99,23 @@ function printReport(report: Report, sections: Section[]) {
       max-width: 8.5in;
       margin: 0 auto;
     }
-    .report-header {
+    .org-letterhead {
+      display: flex;
+      align-items: center;
+      gap: 16pt;
+      padding-bottom: 10pt;
+      margin-bottom: 12pt;
       border-bottom: 2px solid #333;
-      padding-bottom: 12pt;
-      margin-bottom: 24pt;
     }
-    .report-header h1 { font-size: 18pt; font-weight: bold; margin-bottom: 6pt; }
+    .org-logo { max-height: 60pt; max-width: 120pt; object-fit: contain; }
+    .org-info { display: flex; flex-direction: column; gap: 2pt; font-size: 10pt; color: #333; }
+    .org-info strong { font-size: 13pt; color: #111; }
+    .report-header {
+      border-bottom: 1px solid #555;
+      padding-bottom: 10pt;
+      margin-bottom: 20pt;
+    }
+    .report-header h1 { font-size: 16pt; font-weight: bold; margin-bottom: 5pt; }
     .report-meta { font-size: 10pt; color: #444; display: flex; gap: 24pt; flex-wrap: wrap; }
     .report-section { margin-bottom: 24pt; page-break-inside: avoid; }
     .report-section h2 {
@@ -90,16 +139,24 @@ function printReport(report: Report, sections: Section[]) {
       width: 100%;
       border-collapse: collapse;
       margin: 10pt 0;
-      font-size: 10pt;
+      font-size: 9.5pt;
       page-break-inside: avoid;
     }
     th, td {
       border: 1px solid #aaa;
-      padding: 5pt 8pt;
+      padding: 4pt 6pt;
       text-align: left;
       vertical-align: top;
     }
     th { background: #f0f0f0; font-weight: bold; }
+    .org-footer {
+      margin-top: 32pt;
+      padding-top: 8pt;
+      border-top: 1px solid #aaa;
+      font-size: 9pt;
+      color: #666;
+      text-align: center;
+    }
     @media print {
       body { padding: 0.5in; }
       .report-section { page-break-inside: avoid; }
@@ -107,6 +164,7 @@ function printReport(report: Report, sections: Section[]) {
   </style>
 </head>
 <body>
+  ${letterheadBlock}
   <div class="report-header">
     <h1>${title}</h1>
     <div class="report-meta">
@@ -116,12 +174,13 @@ function printReport(report: Report, sections: Section[]) {
     </div>
   </div>
   ${sectionsHtml}
+  ${footerBlock}
 </body>
 </html>`);
 
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); }, 300);
+  setTimeout(() => { win.print(); }, 400);
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────

@@ -80,6 +80,8 @@ model User {
   role          Role      @default(RBT)
   image         String?
   emailVerified DateTime?
+  phone         String?
+  credentials   String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   assignedClients ClientAssignment[]
@@ -87,6 +89,7 @@ model User {
   notes         Note[]
   auditEntries  AuditEntry[]
   completedAssessments ClientAssessment[]
+  targetAnnotations TargetAnnotation[]
 }
 
 model Client {
@@ -113,6 +116,7 @@ model Client {
   attachments       Attachment[]
   behaviorPlan      BehaviorPlan?
   clientAssessments ClientAssessment[]
+  clientReports     ClientReport[]
 }
 
 model ClientAssignment {
@@ -191,6 +195,7 @@ model Target {
   masteryRule           Json?       // { thresholdPct, consecutiveDays, promptFade }
   promptHierarchy       String[]    @default([])
   baseline              String?
+  dateMastered          DateTime?
   isActive              Boolean     @default(true)
   inMaintenance         Boolean     @default(false)
   inGeneralization      Boolean     @default(false)
@@ -201,6 +206,7 @@ model Target {
   parentGoal            ParentGoal? @relation(fields: [parentGoalId], references: [id], onDelete: Cascade)
   subGoal               SubGoal?    @relation(fields: [subGoalId], references: [id], onDelete: Cascade)
   trials                Trial[]
+  annotations           TargetAnnotation[]
   @@index([programId])
   @@index([subGoalId])
   @@index([parentGoalId])
@@ -210,6 +216,7 @@ model Session {
   id                 String              @id @default(cuid())
   clientId           String
   userId             String
+  mode               String              @default("DTT")
   startedAt          DateTime            @default(now())
   endedAt            DateTime?
   notes              String?
@@ -231,11 +238,14 @@ model Trial {
   promptLevel String?
   latencyMs   Int?
   notes       String?
+  deletedAt   DateTime?
   createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   session     Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   target      Target      @relation(fields: [targetId], references: [id], onDelete: Cascade)
   @@index([sessionId])
   @@index([targetId])
+  @@index([deletedAt])
 }
 
 model BehaviorEvent {
@@ -264,6 +274,34 @@ model Note {
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([clientId])
+}
+
+model TargetAnnotation {
+  id         String   @id @default(cuid())
+  targetId    String
+  userId      String?
+  note        String
+  annotatedAt DateTime
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  target      Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([targetId, annotatedAt])
+}
+
+model TargetLibraryItem {
+  id                    String   @id @default(cuid())
+  title                 String
+  operationalDefinition String?
+  targetType            String   @default("DISCRETE_TRIAL")
+  masteryRule           Json?
+  promptHierarchy       String[] @default([])
+  baseline              String?
+  notes                 String?
+  createdById           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 model Attachment {
@@ -398,6 +436,60 @@ model ClientAssessmentResponse {
   @@index([clientAssessmentId])
 }
 
+// ─── Clinical Report Template System ────────────────────────────────────────
+// Document-style ABA assessment report templates (Service Period, Biopsychosocial, etc.)
+// Separate from AssessmentTemplate which is for skill-scoring instruments.
+
+model ReportTemplate {
+  id          String                  @id @default(cuid())
+  name        String
+  type        String                  @default("ABA_ASSESSMENT")
+  description String?
+  isActive    Boolean                 @default(true)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  sections    ReportTemplateSection[]
+  reports     ClientReport[]
+}
+
+model ReportTemplateSection {
+  id         String         @id @default(cuid())
+  templateId String
+  title      String
+  order      Int            @default(0)
+  content    String?        @default("")
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  template   ReportTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  @@index([templateId])
+}
+
+model ClientReport {
+  id         String              @id @default(cuid())
+  clientId   String
+  templateId String?
+  title      String
+  status     String              @default("DRAFT")
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  client     Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  template   ReportTemplate?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sections   ClientReportSection[]
+  @@index([clientId])
+}
+
+model ClientReportSection {
+  id        String       @id @default(cuid())
+  reportId  String
+  title     String
+  order     Int          @default(0)
+  content   String?      @default("")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  report    ClientReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  @@index([reportId])
+}
+
 model AuditEntry {
   id         String   @id @default(cuid())
   userId     String
@@ -409,4 +501,20 @@ model AuditEntry {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
   @@index([entityType, entityId])
+}
+
+// ─── Organization Settings ────────────────────────────────────────────────────
+// Singleton row (id = "singleton") for org branding used in print/export.
+
+model OrganizationSettings {
+  id             String   @id @default("singleton")
+  orgName        String   @default("A+ Center")
+  orgAddress     String?
+  orgPhone       String?
+  orgEmail       String?
+  logoUrl        String?
+  letterheadHtml String?
+  footerHtml     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { Moon, Sun, Monitor, Shield, Database, User } from "lucide-react";
+import { Moon, Sun, Monitor, Shield, Database, User, Building2 } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { toast } from "sonner";
+
+type OrgSettings = {
+  orgName: string;
+  orgAddress: string;
+  orgPhone: string;
+  orgEmail: string;
+  logoUrl: string;
+  letterheadHtml: string;
+  footerHtml: string;
+};
 
 export default function SettingsPage() {
   const { theme, setTheme, resolved } = useThemeStore();
@@ -21,12 +31,56 @@ export default function SettingsPage() {
   };
 
   const user = session?.user as { name?: string | null; email?: string | null; role?: string } | undefined;
+  const canEditOrg = user?.role === "ADMIN" || user?.role === "BCBA";
+
+  // ── Org settings state ──────────────────────────────────────────────────────
+  const [org, setOrg]           = useState<OrgSettings>({ orgName: "", orgAddress: "", orgPhone: "", orgEmail: "", logoUrl: "", letterheadHtml: "", footerHtml: "" });
+  const [orgLoading, setOrgLoading] = useState(true);
+  const [orgSaving,  setOrgSaving]  = useState(false);
+
+  const loadOrg = useCallback(async () => {
+    try {
+      const r = await fetch("/smart-steps/api/organization/settings");
+      if (r.ok) {
+        const d = await r.json();
+        setOrg({
+          orgName:        d.orgName        ?? "",
+          orgAddress:     d.orgAddress     ?? "",
+          orgPhone:       d.orgPhone       ?? "",
+          orgEmail:       d.orgEmail       ?? "",
+          logoUrl:        d.logoUrl        ?? "",
+          letterheadHtml: d.letterheadHtml ?? "",
+          footerHtml:     d.footerHtml     ?? "",
+        });
+      }
+    } catch { /* silent */ } finally { setOrgLoading(false); }
+  }, []);
+
+  useEffect(() => { loadOrg(); }, [loadOrg]);
+
+  async function saveOrg(e: React.FormEvent) {
+    e.preventDefault();
+    setOrgSaving(true);
+    try {
+      const r = await fetch("/smart-steps/api/organization/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(org),
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Organization settings saved");
+    } catch {
+      toast.error("Could not save organization settings");
+    } finally {
+      setOrgSaving(false);
+    }
+  }
 
   return (
     <div className="p-6 md:p-8 max-w-2xl">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">Settings</h1>
-        <p className="text-zinc-500 text-sm">Account, appearance, and system info</p>
+        <p className="text-zinc-500 text-sm">Account, appearance, organization, and system info</p>
       </motion.div>
 
       {/* Account */}
@@ -112,9 +166,121 @@ export default function SettingsPage() {
         </div>
       </motion.section>
 
+      {/* Organization branding */}
+      <motion.section
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+        className="glass-card rounded-2xl p-5 mb-4"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <Building2 className="h-5 w-5 text-emerald-400" />
+          <h2 className="font-semibold text-[var(--foreground)]">Organization</h2>
+          {!canEditOrg && (
+            <span className="ml-auto text-[11px] text-zinc-600">View only — BCBA/ADMIN can edit</span>
+          )}
+        </div>
+
+        {orgLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <div key={i} className="h-8 rounded-lg bg-white/5 animate-pulse" />)}
+          </div>
+        ) : (
+          <form onSubmit={saveOrg} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Organization Name</label>
+                <input
+                  className="field-input w-full text-sm"
+                  value={org.orgName}
+                  onChange={(e) => setOrg((p) => ({ ...p, orgName: e.target.value }))}
+                  disabled={!canEditOrg}
+                  placeholder="A+ Center"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Email</label>
+                <input
+                  className="field-input w-full text-sm"
+                  value={org.orgEmail}
+                  onChange={(e) => setOrg((p) => ({ ...p, orgEmail: e.target.value }))}
+                  disabled={!canEditOrg}
+                  placeholder="info@example.com"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Phone</label>
+                <input
+                  className="field-input w-full text-sm"
+                  value={org.orgPhone}
+                  onChange={(e) => setOrg((p) => ({ ...p, orgPhone: e.target.value }))}
+                  disabled={!canEditOrg}
+                  placeholder="(555) 000-0000"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Address</label>
+                <input
+                  className="field-input w-full text-sm"
+                  value={org.orgAddress}
+                  onChange={(e) => setOrg((p) => ({ ...p, orgAddress: e.target.value }))}
+                  disabled={!canEditOrg}
+                  placeholder="123 Main St, City, State"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Logo URL</label>
+              <input
+                className="field-input w-full text-sm"
+                value={org.logoUrl}
+                onChange={(e) => setOrg((p) => ({ ...p, logoUrl: e.target.value }))}
+                disabled={!canEditOrg}
+                placeholder="https://example.com/logo.png"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">
+                Letterhead HTML <span className="normal-case text-zinc-600 font-normal">(used in printed reports)</span>
+              </label>
+              <textarea
+                className="field-input w-full text-sm font-mono"
+                rows={3}
+                value={org.letterheadHtml}
+                onChange={(e) => setOrg((p) => ({ ...p, letterheadHtml: e.target.value }))}
+                disabled={!canEditOrg}
+                placeholder="Leave blank to auto-generate from org name/logo/address above"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">
+                Footer HTML <span className="normal-case text-zinc-600 font-normal">(used in printed reports)</span>
+              </label>
+              <textarea
+                className="field-input w-full text-sm font-mono"
+                rows={2}
+                value={org.footerHtml}
+                onChange={(e) => setOrg((p) => ({ ...p, footerHtml: e.target.value }))}
+                disabled={!canEditOrg}
+                placeholder="Leave blank to auto-generate from org name/address"
+              />
+            </div>
+            {canEditOrg && (
+              <button
+                type="submit"
+                disabled={orgSaving}
+                className="btn-primary rounded-xl px-5 py-2 text-sm font-semibold disabled:opacity-40"
+              >
+                {orgSaving ? "Saving…" : "Save Organization Settings"}
+              </button>
+            )}
+          </form>
+        )}
+      </motion.section>
+
       {/* System info */}
       <motion.section
-        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
         className="glass-card rounded-2xl p-5"
       >
         <div className="flex items-center gap-3 mb-4">

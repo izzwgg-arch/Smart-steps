@@ -113,6 +113,59 @@ export function replacePlaceholders(
   });
 }
 
+/**
+ * Explicit allow-list of bracket placeholder names → value-map keys.
+ * Only these exact patterns are replaced — nothing else is touched.
+ * Matches both (Name) and [Name] forms, case-insensitive.
+ */
+const BRACKET_PLACEHOLDER_MAP: Record<string, string> = {
+  "name":                 "client_name",
+  "client name":          "client_name",
+  "client":               "client_name",
+  "dob":                  "dob",
+  "date of birth":        "dob",
+  "address":              "address",
+  "age":                  "age",
+  "diagnosis":            "diagnosis",
+  "insurance":            "insurance_id",
+  "insurance id":         "insurance_id",
+  "school":               "school",
+  "guardian":             "guardian_name",
+  "guardian name":        "guardian_name",
+  "provider":             "provider_name",
+  "provider name":        "provider_name",
+  "bcba":                 "provider_name",
+  "bcba name":            "provider_name",
+  "provider email":       "provider_email",
+  "provider phone":       "provider_phone",
+  "bcba credentials":     "provider_credentials",
+  "credentials":          "provider_credentials",
+  "assessment date":      "assessment_date",
+  "date":                 "assessment_date",
+  "service period start": "service_period_start",
+  "service period end":   "service_period_end",
+  "intake notes":         "intake_notes",
+};
+
+/**
+ * Replaces bracket placeholders like (Name) or [DOB] using an explicit allow-list.
+ * Does NOT use greedy/global replacement — only exact known field names are replaced.
+ * Safe to run on any template HTML; unknown patterns are preserved.
+ */
+export function replaceBracketPlaceholders(
+  html: string,
+  values: Record<string, string>,
+): string {
+  return html.replace(/[(\[]([\w\s]+?)[)\]]/g, (match, rawKey: string) => {
+    const key = rawKey.trim().toLowerCase();
+    const valueKey = BRACKET_PLACEHOLDER_MAP[key];
+    if (!valueKey) return match;
+    const val = values[valueKey];
+    if (!val) return match;
+    return escapeHtml(val);
+  });
+}
+
 export function formatDate(value: Date | string | null | undefined): string {
   if (!value) return "";
   const d = new Date(value);

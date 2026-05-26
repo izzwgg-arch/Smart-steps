@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -118,6 +118,7 @@ function CreateReportTemplateModal({ onClose, onCreated }: { onClose: () => void
 
 // ── Create Report Modal (pick client) ────────────────────────────────────────
 type Client = { id: string; name: string };
+type BcbaAssignment = { userId: string; userName: string; userEmail: string };
 
 function CreateReportModal({
   template, clients, onClose, onCreated,
@@ -125,11 +126,37 @@ function CreateReportModal({
   template: ReportTemplate; clients: Client[];
   onClose: () => void; onCreated: (id: string) => void;
 }) {
-  const [clientId, setClientId]                 = useState("");
-  const [title, setTitle]                       = useState(template.name);
+  const [clientId, setClientId]                     = useState("");
+  const [title, setTitle]                           = useState(template.name);
   const [servicePeriodStart, setServicePeriodStart] = useState("");
   const [servicePeriodEnd,   setServicePeriodEnd]   = useState("");
-  const [saving, setSaving]                     = useState(false);
+  const [assessmentType, setAssessmentType]         = useState<"initial" | "reassessment">("reassessment");
+  const [bcbaUserId, setBcbaUserId]                 = useState("");
+  const [bcbaOptions, setBcbaOptions]               = useState<BcbaAssignment[]>([]);
+  const [loadingBcba, setLoadingBcba]               = useState(false);
+  const [saving, setSaving]                         = useState(false);
+
+  // Load BCBA assignments when client changes
+  useEffect(() => {
+    if (!clientId) { setBcbaOptions([]); setBcbaUserId(""); return; }
+    setLoadingBcba(true);
+    setBcbaUserId("");
+    fetch(`/smart-steps/api/clients/${clientId}/assignments`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: { role: string; userId: string; name?: string | null; email?: string | null }[]) => {
+        const bcbas = data
+          .filter((a) => a.role === "BCBA")
+          .map((a) => ({
+            userId:    a.userId,
+            userName:  a.name  ?? a.email ?? a.userId,
+            userEmail: a.email ?? "",
+          }));
+        setBcbaOptions(bcbas);
+        if (bcbas.length === 1) setBcbaUserId(bcbas[0].userId);
+      })
+      .catch(() => setBcbaOptions([]))
+      .finally(() => setLoadingBcba(false));
+  }, [clientId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -142,6 +169,8 @@ function CreateReportModal({
         body: JSON.stringify({
           clientId,
           title: title.trim() || template.name,
+          assessmentType,
+          ...(bcbaUserId         && { bcbaUserId }),
           ...(servicePeriodStart && { servicePeriodStart }),
           ...(servicePeriodEnd   && { servicePeriodEnd }),
         }),
@@ -175,6 +204,8 @@ function CreateReportModal({
           </button>
         </div>
         <form onSubmit={submit} className="space-y-4">
+
+          {/* Client */}
           <div>
             <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">Client *</label>
             <select className="field-input w-full" value={clientId} onChange={(e) => setClientId(e.target.value)}>
@@ -182,8 +213,57 @@ function CreateReportModal({
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
+
+          {/* Assessment type */}
           <div>
-            <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">Report Title *</label>
+            <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">Assessment Type *</label>
+            <div className="flex gap-2">
+              {(["initial", "reassessment"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setAssessmentType(t)}
+                  className={`flex-1 rounded-xl border py-2 text-sm font-medium transition-all ${
+                    assessmentType === t
+                      ? "border-[var(--accent-cyan)] bg-[var(--accent-cyan)]/15 text-[var(--accent-cyan)]"
+                      : "border-[var(--glass-border)] bg-[var(--glass-bg)] text-zinc-400 hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  {t === "initial" ? "Initial" : "Reassessment"}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              {assessmentType === "initial"
+                ? "No mastered goals — paragraph summaries focus on current & future treatment."
+                : "Includes mastered goals, progress summaries, and in-treatment targets."}
+            </p>
+          </div>
+
+          {/* BCBA selector */}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">BCBA / Provider</label>
+            {!clientId ? (
+              <p className="text-xs text-zinc-600 italic">Select a client to load assigned BCBAs</p>
+            ) : loadingBcba ? (
+              <p className="text-xs text-zinc-500">Loading BCBAs…</p>
+            ) : bcbaOptions.length === 0 ? (
+              <p className="text-xs text-zinc-600 italic">No BCBA assigned to this client — provider info will show placeholders</p>
+            ) : (
+              <select className="field-input w-full" value={bcbaUserId} onChange={(e) => setBcbaUserId(e.target.value)}>
+                <option value="">Select BCBA…</option>
+                {bcbaOptions.map((b) => (
+                  <option key={b.userId} value={b.userId}>
+                    {b.userName}{b.userEmail ? ` (${b.userEmail})` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Title */}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">Report Title</label>
             <input
               className="field-input w-full"
               value={title}
@@ -191,32 +271,26 @@ function CreateReportModal({
               placeholder="Report title"
             />
           </div>
+
+          {/* Service period */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">Service Period Start</label>
-              <input
-                type="date"
-                className="field-input w-full"
-                value={servicePeriodStart}
-                onChange={(e) => setServicePeriodStart(e.target.value)}
-              />
+              <input type="date" className="field-input w-full" value={servicePeriodStart} onChange={(e) => setServicePeriodStart(e.target.value)} />
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-zinc-400 uppercase tracking-wide">Service Period End</label>
-              <input
-                type="date"
-                className="field-input w-full"
-                value={servicePeriodEnd}
-                onChange={(e) => setServicePeriodEnd(e.target.value)}
-              />
+              <input type="date" className="field-input w-full" value={servicePeriodEnd} onChange={(e) => setServicePeriodEnd(e.target.value)} />
             </div>
           </div>
+
           <p className="text-[11px] text-zinc-500 -mt-1">
-            Goals, client info, and category summaries are auto-populated. Everything remains editable after generation.
+            Client info, BCBA details, category summaries, and goal tables are auto-populated. Everything remains editable after generation.
           </p>
+
           <div className="flex gap-2 pt-1">
             <button type="button" className="btn-secondary flex-1 rounded-xl py-2.5 text-sm" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary flex-1 rounded-xl py-2.5 text-sm" disabled={saving}>
+            <button type="submit" className="btn-primary flex-1 rounded-xl py-2.5 text-sm" disabled={saving || !clientId}>
               {saving ? "Generating…" : "Generate Report"}
             </button>
           </div>
