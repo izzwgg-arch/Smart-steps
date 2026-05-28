@@ -117,7 +117,12 @@ async function printReport(report: Report, sections: Section[]) {
     }
     .report-header h1 { font-size: 16pt; font-weight: bold; margin-bottom: 5pt; }
     .report-meta { font-size: 10pt; color: #444; display: flex; gap: 24pt; flex-wrap: wrap; }
-    .report-section { margin-bottom: 24pt; page-break-inside: avoid; }
+    .report-section {
+      margin-bottom: 24pt;
+      page-break-inside: avoid;
+      orphans: 4;
+      widows: 4;
+    }
     .report-section h2 {
       font-size: 13pt;
       font-weight: bold;
@@ -125,23 +130,29 @@ async function printReport(report: Report, sections: Section[]) {
       border-bottom: 1px solid #ccc;
       padding-bottom: 4pt;
       margin-bottom: 10pt;
+      page-break-after: avoid;
     }
-    .section-content { font-size: 11pt; }
-    p  { margin-bottom: 8pt; }
+    .section-content { font-size: 11pt; font-family: inherit; }
+    p  { margin-bottom: 8pt; orphans: 3; widows: 3; }
     ul, ol { margin: 8pt 0 8pt 20pt; }
     li { margin-bottom: 4pt; }
-    h3 { font-size: 11pt; font-weight: bold; margin: 10pt 0 6pt; }
-    h2 { font-size: 12pt; }
+    h3 { font-size: 11pt; font-weight: bold; margin: 10pt 0 6pt; page-break-after: avoid; }
+    h2 { font-size: 12pt; page-break-after: avoid; }
     strong { font-weight: bold; }
-    em { font-style: italic; }
+    em, i { font-style: italic; }
     u  { text-decoration: underline; }
+    /* Allow large tables to break across pages, but keep individual rows together */
     table {
       width: 100%;
       border-collapse: collapse;
       margin: 10pt 0;
       font-size: 9.5pt;
-      page-break-inside: avoid;
+      page-break-inside: auto;
     }
+    /* Repeat <thead> on every printed page when the table spans multiple pages */
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
     th, td {
       border: 1px solid #aaa;
       padding: 4pt 6pt;
@@ -149,6 +160,7 @@ async function printReport(report: Report, sections: Section[]) {
       vertical-align: top;
     }
     th { background: #f0f0f0; font-weight: bold; }
+    span { /* Inline font-size and font-family from editor preserved as-is */ }
     .org-footer {
       margin-top: 32pt;
       padding-top: 8pt;
@@ -160,6 +172,10 @@ async function printReport(report: Report, sections: Section[]) {
     @media print {
       body { padding: 0.5in; }
       .report-section { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+      h2, h3 { page-break-after: avoid; }
+      a { color: #000; text-decoration: none; }
     }
   </style>
 </head>

@@ -12,6 +12,20 @@ interface Props {
   placeholder?: string;
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const FONT_SIZES = ["10px", "12px", "14px", "16px", "18px", "20px", "24px"] as const;
+
+const FONT_FAMILIES = [
+  "Arial",
+  "Helvetica",
+  "Times New Roman",
+  "Georgia",
+  "Verdana",
+  "Tahoma",
+  "Trebuchet MS",
+] as const;
+
 // ── Toolbar helpers ───────────────────────────────────────────────────────────
 
 function Btn({
@@ -61,6 +75,38 @@ function TableBtn({
   );
 }
 
+/** Select dropdown styled to match the toolbar. Saves selection before the
+ *  editor loses focus to the dropdown, then restores it in `onChange`. */
+function ToolbarSelect({
+  placeholder, options, onSaveSelection, onApply,
+}: {
+  placeholder: string;
+  options: readonly string[];
+  onSaveSelection: () => void;
+  onApply: (value: string) => void;
+}) {
+  return (
+    <select
+      defaultValue=""
+      onMouseDown={onSaveSelection}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v) onApply(v);
+        // Reset so same value can be re-applied
+        e.target.value = "";
+      }}
+      className="rounded border border-[var(--glass-border)] bg-[var(--glass-bg)] px-1.5 py-0.5
+        text-[11px] text-zinc-400 hover:border-[var(--accent-cyan)]/40
+        hover:text-[var(--accent-cyan)] transition-colors cursor-pointer outline-none"
+    >
+      <option value="" disabled>{placeholder}</option>
+      {options.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  );
+}
+
 // ── Default table blocks ──────────────────────────────────────────────────────
 
 const TABLE_BLOCKS = [
@@ -81,14 +127,44 @@ function buildTable(cols: readonly string[]): string {
   return `<table><thead><tr>${heads}</tr></thead><tbody><tr>${cells}</tr></tbody></table><p><br></p>`;
 }
 
+// ── Merge helpers ─────────────────────────────────────────────────────────────
+
+/** Returns the logical column index of `cell` in `row`, accounting for colspans. */
+function getLogicalColIndex(row: HTMLTableRowElement, cell: HTMLTableCellElement): number {
+  let col = 0;
+  for (let i = 0; i < row.cells.length; i++) {
+    if (row.cells[i] === cell) return col;
+    col += (row.cells[i] as HTMLTableCellElement).colSpan || 1;
+  }
+  return col;
+}
+
+/** Returns the cell at `targetCol` logical column in `row`, or null. */
+function findCellAtLogicalCol(
+  row: HTMLTableRowElement,
+  targetCol: number,
+): HTMLTableCellElement | null {
+  let col = 0;
+  for (let i = 0; i < row.cells.length; i++) {
+    if (col === targetCol) return row.cells[i] as HTMLTableCellElement;
+    col += (row.cells[i] as HTMLTableCellElement).colSpan || 1;
+  }
+  return null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function RichTextEditor({ value, onChange, disabled = false, placeholder }: Props) {
-  const editorRef       = useRef<HTMLDivElement>(null);
-  const lastHtmlRef     = useRef("");
-  const activeCellRef   = useRef<HTMLTableCellElement | null>(null);
-  const prevCellRef     = useRef<HTMLTableCellElement | null>(null);
-  const [hasCell, setHasCell] = useState(false);
+  const editorRef      = useRef<HTMLDivElement>(null);
+  const lastHtmlRef    = useRef("");
+  const activeCellRef  = useRef<HTMLTableCellElement | null>(null);
+  const prevCellRef    = useRef<HTMLTableCellElement | null>(null);
+  /** Saved selection range — persists when editor loses focus to toolbar controls. */
+  const savedRangeRef  = useRef<Range | null>(null);
+
+  const [hasCell,      setHasCell]      = useState(false);
+  const [hasMergeRight, setHasMergeRight] = useState(false);
+  const [hasMergeDown,  setHasMergeDown]  = useState(false);
 
   // Sync incoming value → DOM (only when changed externally)
   useEffect(() => {
@@ -129,7 +205,14 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     const el   = editorRef.current;
     const cell = getSelectionCell();
     const next = cell && el?.contains(cell) ? cell : null;
-    // Update DOM class for active-cell highlight (class is stripped by sanitizer on save)
+
+    // Save current selection for font operations (before focus can move to toolbar)
+    const sel = window.getSelection?.();
+    if (sel && sel.rangeCount > 0) {
+      savedRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
+
+    // Update DOM class for active-cell highlight (stripped by sanitizer on save)
     if (prevCellRef.current !== next) {
       prevCellRef.current?.classList.remove("rte-active-cell");
       next?.classList.add("rte-active-cell");
@@ -137,6 +220,27 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     }
     activeCellRef.current = next;
     setHasCell(Boolean(next));
+
+    // Update merge-right availability
+    if (next) {
+      const row   = next.parentElement as HTMLTableRowElement | null;
+      const table = next.closest("table") as HTMLTableElement | null;
+      if (row) {
+        const idx = Array.from(row.cells).indexOf(next);
+        setHasMergeRight(idx < row.cells.length - 1);
+      } else {
+        setHasMergeRight(false);
+      }
+      if (table && row) {
+        const rowIdx = Array.from(table.rows).indexOf(row);
+        setHasMergeDown(rowIdx < table.rows.length - 1);
+      } else {
+        setHasMergeDown(false);
+      }
+    } else {
+      setHasMergeRight(false);
+      setHasMergeDown(false);
+    }
   }
 
   function getActiveCell(): HTMLTableCellElement | null {
@@ -158,6 +262,62 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     emit();
   }
 
+  /**
+   * Applies an inline style to the currently selected text by wrapping it in
+   * a <span style="..."> element.  Uses the saved selection so it works even
+   * after the toolbar control has taken focus from the editor.
+   *
+   * Only font-size and font-family are supported; both are validated by
+   * sanitizeHtml on the next emit so no arbitrary CSS can survive.
+   */
+  function applyInlineStyle(cssProp: "fontSize" | "fontFamily", cssValue: string) {
+    const el = editorRef.current;
+    if (!el || disabled) return;
+
+    // Restore saved selection (editor may have lost focus to toolbar select)
+    const savedRange = savedRangeRef.current;
+    const sel = window.getSelection();
+    if (!sel || !savedRange) return;
+
+    try {
+      if (!el.contains(savedRange.commonAncestorContainer)) return;
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+    } catch { return; }
+
+    if (sel.isCollapsed) return; // nothing selected — silent no-op
+
+    el.focus();
+
+    const range = sel.getRangeAt(0);
+    const span  = document.createElement("span");
+    span.style[cssProp] = cssValue;
+
+    try {
+      const fragment = range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
+      // Re-select the wrapped content
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      savedRangeRef.current = newRange.cloneRange();
+    } catch {
+      return; // safe failure — do not emit
+    }
+
+    emit();
+  }
+
+  /** Save current selection before the toolbar control takes focus. */
+  function saveSelection() {
+    const sel = window.getSelection?.();
+    if (sel && sel.rangeCount > 0) {
+      savedRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
+  }
+
   // ── Table operations ───────────────────────────────────────────────────────
 
   function insertTable(cols: readonly string[]) {
@@ -172,13 +332,13 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
-    // Update active-cell highlight
     prevCellRef.current?.classList.remove("rte-active-cell");
     cell.classList.add("rte-active-cell");
     prevCellRef.current = cell;
     activeCellRef.current = cell;
     setHasCell(true);
     editorRef.current?.focus();
+    syncCell();
   }
 
   function addRowBelow() {
@@ -214,7 +374,7 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
       next.innerHTML = "<br>";
       newRow.appendChild(next);
     });
-    row.parentNode!.insertBefore(newRow, row); // before current row, not after
+    row.parentNode!.insertBefore(newRow, row);
     emit();
     focusCell(newRow.cells[Math.min(cell.cellIndex, newRow.cells.length - 1)] as HTMLTableCellElement);
   }
@@ -249,7 +409,6 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     if (!cell || !table) return;
     const insertIdx = cell.cellIndex + 1;
     Array.from(table.rows).forEach((row) => {
-      // Insert before the cell currently at insertIdx (or append if at end)
       const ref  = insertIdx < row.cells.length ? row.cells[insertIdx] : null;
       const tag  = row.parentElement?.tagName === "THEAD" ? "th" : "td";
       const next = document.createElement(tag) as HTMLTableCellElement;
@@ -265,7 +424,7 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     const cell  = getActiveCell();
     const table = cell?.closest("table") as HTMLTableElement | null;
     if (!cell || !table) return;
-    const insertIdx = cell.cellIndex; // insert AT current index — pushes current cell right
+    const insertIdx = cell.cellIndex;
     Array.from(table.rows).forEach((row) => {
       const ref  = insertIdx < row.cells.length ? row.cells[insertIdx] : null;
       const tag  = row.parentElement?.tagName === "THEAD" ? "th" : "td";
@@ -274,7 +433,6 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
       row.insertBefore(next, ref);
     });
     emit();
-    // New cell lands at insertIdx; current cell shifted to insertIdx+1
     focusCell((cell.parentElement as HTMLTableRowElement | null)?.cells[insertIdx] as HTMLTableCellElement | undefined);
   }
 
@@ -304,6 +462,59 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     focusCell(nextCell);
   }
 
+  /**
+   * Merge Right — combines the active cell with the immediately adjacent right
+   * cell in the same row, increasing colspan and transferring content.
+   * Safe failure: any error leaves the table unchanged.
+   */
+  function mergeRight() {
+    if (disabled) return;
+    const cell = getActiveCell();
+    const row  = cell?.parentElement as HTMLTableRowElement | null;
+    if (!cell || !row) return;
+    try {
+      const idx      = Array.from(row.cells).indexOf(cell);
+      const nextCell = row.cells[idx + 1] as HTMLTableCellElement | undefined;
+      if (!nextCell) return;
+      // Transfer content (with a <br> separator)
+      cell.appendChild(document.createElement("br"));
+      while (nextCell.firstChild) cell.appendChild(nextCell.firstChild);
+      cell.colSpan = (cell.colSpan || 1) + (nextCell.colSpan || 1);
+      nextCell.remove();
+      emit();
+      focusCell(cell);
+    } catch { /* safe failure — table not modified */ }
+  }
+
+  /**
+   * Merge Down — combines the active cell with the cell directly below it in
+   * the next row (identified by logical column index, accounting for existing
+   * colspans).  Increases rowspan and transfers content.
+   * Safe failure: any error leaves the table unchanged.
+   */
+  function mergeDown() {
+    if (disabled) return;
+    const cell  = getActiveCell();
+    const row   = cell?.parentElement as HTMLTableRowElement | null;
+    const table = cell?.closest("table") as HTMLTableElement | null;
+    if (!cell || !row || !table) return;
+    try {
+      const logicalCol = getLogicalColIndex(row, cell);
+      const rowIdx     = Array.from(table.rows).indexOf(row);
+      const nextRow    = table.rows[rowIdx + 1] as HTMLTableRowElement | undefined;
+      if (!nextRow) return;
+      const nextCell = findCellAtLogicalCol(nextRow, logicalCol);
+      if (!nextCell) return;
+      // Transfer content (with a <br> separator)
+      cell.appendChild(document.createElement("br"));
+      while (nextCell.firstChild) cell.appendChild(nextCell.firstChild);
+      cell.rowSpan = (cell.rowSpan || 1) + (nextCell.rowSpan || 1);
+      nextCell.remove();
+      emit();
+      focusCell(cell);
+    } catch { /* safe failure — table not modified */ }
+  }
+
   // ── Paste ──────────────────────────────────────────────────────────────────
 
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
@@ -315,7 +526,6 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
     if (html) {
       clean = sanitizeHtml(html);
     } else if (getSelectionCell()) {
-      // Inside a table cell: use <br> for line breaks instead of wrapping in <p> blocks
       clean = text
         .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
         .replace(/\n/g, "<br>");
@@ -343,13 +553,30 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--glass-border)] bg-white/3 px-3 py-2">
+
         {/* Formatting */}
-        <Btn title="Bold"           onClick={() => cmd("bold")}>Bold</Btn>
-        <Btn title="Underline"      onClick={() => cmd("underline")}>Underline</Btn>
-        <Btn title="Heading"        onClick={() => cmd("formatBlock", "h3")}>Heading</Btn>
-        <Btn title="Paragraph"      onClick={() => cmd("formatBlock", "p")}>Paragraph</Btn>
-        <Btn title="Bulleted list"  onClick={() => cmd("insertUnorderedList")}>• List</Btn>
-        <Btn title="Numbered list"  onClick={() => cmd("insertOrderedList")}>1. List</Btn>
+        <Btn title="Bold (Ctrl+B)"      onClick={() => cmd("bold")}>Bold</Btn>
+        <Btn title="Italic (Ctrl+I)"    onClick={() => cmd("italic")}><em>Italic</em></Btn>
+        <Btn title="Underline (Ctrl+U)" onClick={() => cmd("underline")}>Underline</Btn>
+        <Btn title="Heading"            onClick={() => cmd("formatBlock", "h3")}>Heading</Btn>
+        <Btn title="Paragraph"          onClick={() => cmd("formatBlock", "p")}>Paragraph</Btn>
+        <Btn title="Bulleted list"      onClick={() => cmd("insertUnorderedList")}>• List</Btn>
+        <Btn title="Numbered list"      onClick={() => cmd("insertOrderedList")}>1. List</Btn>
+
+        {/* Font size + family — select text first, then choose */}
+        <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--glass-border)]" />
+        <ToolbarSelect
+          placeholder="Size"
+          options={FONT_SIZES}
+          onSaveSelection={saveSelection}
+          onApply={(v) => applyInlineStyle("fontSize", v)}
+        />
+        <ToolbarSelect
+          placeholder="Font"
+          options={FONT_FAMILIES}
+          onSaveSelection={saveSelection}
+          onApply={(v) => applyInlineStyle("fontFamily", v)}
+        />
 
         {/* Text alignment — persists via sanitizer text-align allowance */}
         <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--glass-border)]" />
@@ -368,14 +595,28 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
           </Btn>
         ))}
 
-        {/* Table row/col controls — only active when cursor is inside a cell */}
+        {/* Table row/col + merge controls — only active when cursor is inside a cell */}
         <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--glass-border)]" />
-        <TableBtn title="Add row below" disabled={disabled || !hasCell} onClick={addRowBelow}>+Row↓</TableBtn>
-        <TableBtn title="Add row above" disabled={disabled || !hasCell} onClick={addRowAbove}>+Row↑</TableBtn>
-        <TableBtn title="Delete row"    disabled={disabled || !hasCell} onClick={deleteCurrentRow}>−Row</TableBtn>
+        <TableBtn title="Add row below"    disabled={disabled || !hasCell} onClick={addRowBelow}>+Row↓</TableBtn>
+        <TableBtn title="Add row above"    disabled={disabled || !hasCell} onClick={addRowAbove}>+Row↑</TableBtn>
+        <TableBtn title="Delete row"       disabled={disabled || !hasCell} onClick={deleteCurrentRow}>−Row</TableBtn>
         <TableBtn title="Add column right" disabled={disabled || !hasCell} onClick={addColumnRight}>+Col→</TableBtn>
         <TableBtn title="Add column left"  disabled={disabled || !hasCell} onClick={addColumnLeft}>+Col←</TableBtn>
         <TableBtn title="Delete column"    disabled={disabled || !hasCell} onClick={deleteCurrentColumn}>−Col</TableBtn>
+        <TableBtn
+          title="Merge with cell to the right (increases colspan)"
+          disabled={disabled || !hasMergeRight}
+          onClick={mergeRight}
+        >
+          Merge→
+        </TableBtn>
+        <TableBtn
+          title="Merge with cell below (increases rowspan)"
+          disabled={disabled || !hasMergeDown}
+          onClick={mergeDown}
+        >
+          Merge↓
+        </TableBtn>
       </div>
 
       {/* Editable area */}

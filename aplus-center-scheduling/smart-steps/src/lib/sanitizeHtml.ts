@@ -6,8 +6,8 @@
 const MAX_CONTENT_LENGTH = 150_000;
 
 const ALLOWED_TAGS = new Set([
-  "a", "b", "blockquote", "br", "div", "em",
-  "h2", "h3", "h4", "li", "ol", "p", "strong",
+  "a", "b", "blockquote", "br", "div", "em", "i",
+  "h2", "h3", "h4", "li", "ol", "p", "span", "strong",
   "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
 ]);
 
@@ -17,6 +17,45 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
   th: new Set(["colspan", "rowspan"]),
 };
 
+// ── Style allowlists ──────────────────────────────────────────────────────────
+
+/**
+ * Safe font-size values only.
+ * Allows: 10px, 1.5em, 12pt, small, large, etc.
+ * Rejects: calc(), expression(), url(), negative values, percentages, arbitrary lengths.
+ */
+const SAFE_FONT_SIZE_RE =
+  /^(\d{1,2}(?:\.\d{1,2})?(?:px|pt|em)|x-small|small|medium|large|x-large|xx-large)$/i;
+
+/**
+ * Exact allowlist of safe font families.
+ * Key: lowercased canonical name. Value: display form preserved in output.
+ */
+const SAFE_FONT_FAMILIES = new Map<string, string>([
+  ["arial",           "Arial"],
+  ["helvetica",       "Helvetica"],
+  ["times new roman", "Times New Roman"],
+  ["georgia",         "Georgia"],
+  ["verdana",         "Verdana"],
+  ["tahoma",          "Tahoma"],
+  ["trebuchet ms",    "Trebuchet MS"],
+]);
+
+/**
+ * Validates a raw font-family value against the allowlist.
+ * Strips quotes, takes the first family in a comma-separated stack,
+ * checks case-insensitively, returns the canonical form or null.
+ */
+function safeFontFamily(raw: string): string | null {
+  const first = raw
+    .replace(/['"]/g, "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return SAFE_FONT_FAMILIES.get(first) ?? null;
+}
+
 function escapeAttrValue(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -25,6 +64,16 @@ function escapeAttrValue(value: string): string {
     .replace(/>/g,  "&gt;");
 }
 
+/**
+ * Sanitizes attributes for an allowed tag.
+ *
+ * Style properties allowed (all others stripped):
+ *   - text-align:  left | center | right | justify
+ *   - font-size:   safe values matching SAFE_FONT_SIZE_RE
+ *   - font-family: canonical name from SAFE_FONT_FAMILIES allowlist
+ *
+ * No arbitrary CSS values, no url(), expression(), javascript, calc(), etc.
+ */
 function sanitizeAttrs(tagName: string, rawAttrs: string): string {
   const allowed = ALLOWED_ATTRS[tagName] ?? new Set<string>();
   const attrs   = new Map<string, string>();
@@ -35,12 +84,34 @@ function sanitizeAttrs(tagName: string, rawAttrs: string): string {
     const name = m[1].toLowerCase();
     const val  = m[2] ?? m[3] ?? m[4] ?? "";
     if (name.startsWith("on")) continue;
-    // Allow only text-align from style attributes — everything else in style is stripped
+
     if (name === "style") {
+      const parts: string[] = [];
+
+      // text-align (existing)
       const align = val.match(/\btext-align\s*:\s*(left|center|right|justify)\b/i)?.[1];
-      if (align) attrs.set("style", `text-align:${align.toLowerCase()}`);
+      if (align) parts.push(`text-align:${align.toLowerCase()}`);
+
+      // font-size (new — strict allowlist via regex)
+      const sizeMatch = val.match(/\bfont-size\s*:\s*([^;,"'<>]+)/i);
+      if (sizeMatch) {
+        const sizeVal = sizeMatch[1].trim();
+        if (SAFE_FONT_SIZE_RE.test(sizeVal)) {
+          parts.push(`font-size:${sizeVal.toLowerCase()}`);
+        }
+      }
+
+      // font-family (new — exact allowlist, no arbitrary families)
+      const familyMatch = val.match(/\bfont-family\s*:\s*([^;]+)/i);
+      if (familyMatch) {
+        const canonical = safeFontFamily(familyMatch[1]);
+        if (canonical) parts.push(`font-family:${canonical}`);
+      }
+
+      if (parts.length) attrs.set("style", parts.join(";"));
       continue;
     }
+
     if (!allowed.has(name)) continue;
     if ((name === "href" || name === "src") && /^\s*javascript:/i.test(val)) continue;
     if ((name === "colspan" || name === "rowspan") && !/^\d{1,2}$/.test(val)) continue;
