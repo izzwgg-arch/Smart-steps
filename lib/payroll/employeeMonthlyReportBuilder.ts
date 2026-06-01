@@ -135,6 +135,38 @@ export function buildTimeEntryFromImportRow(row: {
   }
 }
 
+/** Calendar month key for matching payroll run periodStart to a report month. */
+export function calendarMonthKey(date: Date): number {
+  return date.getFullYear() * 12 + date.getMonth()
+}
+
+/**
+ * Pick run lines for an employee monthly report.
+ * - Only runs whose periodStart falls in the requested calendar month (avoids prior-month pay periods that end on the 1st).
+ * - When duplicate runs share the same period window, keep the newest by createdAt.
+ */
+export function selectRunLinesForCalendarMonth<
+  T extends {
+    run: { periodStart: Date; periodEnd: Date; createdAt: Date }
+  },
+>(runLines: T[], year: number, month: number): T[] {
+  const targetKey = year * 12 + (month - 1)
+  const startingInMonth = runLines.filter(
+    (line) => calendarMonthKey(line.run.periodStart) === targetKey
+  )
+
+  const byPeriod = new Map<string, T>()
+  for (const line of startingInMonth) {
+    const key = `${line.run.periodStart.toISOString()}|${line.run.periodEnd.toISOString()}`
+    const existing = byPeriod.get(key)
+    if (!existing || line.run.createdAt > existing.run.createdAt) {
+      byPeriod.set(key, line)
+    }
+  }
+
+  return [...byPeriod.values()]
+}
+
 export function buildSummaryFromRunLines(
   runLines: Array<{
     totalHours: unknown
@@ -286,7 +318,7 @@ export async function buildEmployeeMonthlyReport(
     throw new Error('Employee not found')
   }
 
-  const runLines = await prisma.payrollRunLine.findMany({
+  const overlappingRunLines = await prisma.payrollRunLine.findMany({
     where: {
       employeeId,
       run: {
@@ -302,6 +334,17 @@ export async function buildEmployeeMonthlyReport(
     },
     orderBy: { run: { periodStart: 'asc' } },
   })
+
+  const runLines = selectRunLinesForCalendarMonth(overlappingRunLines, year, month)
+
+  if (overlappingRunLines.length > runLines.length) {
+    console.warn('[EMPLOYEE MONTHLY REPORT] Filtered duplicate/overlapping payroll runs for summary:', {
+      employeeId,
+      month: monthParam,
+      overlappingCount: overlappingRunLines.length,
+      selectedCount: runLines.length,
+    })
+  }
 
   const importRows = await fetchImportRowsForEmployeePeriod(employeeId, periodStart, periodEnd)
 

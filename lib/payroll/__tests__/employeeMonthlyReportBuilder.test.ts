@@ -6,6 +6,7 @@ import {
   getImportRowHours,
   buildTimeEntryFromImportRow,
   buildSummaryFromRunLines,
+  selectRunLinesForCalendarMonth,
   validateEmployeeMonthlyReport,
 } from '../employeeMonthlyReportBuilder'
 
@@ -65,6 +66,98 @@ test('buildTimeEntryFromImportRow shows missing punch status for hours-only row'
   assert.equal(entry.punchStatus, 'missing')
   assert.equal(entry.inTimeDisplay, 'Missing punch data')
   assert.equal(entry.outTimeDisplay, 'Missing punch data')
+})
+
+test('selectRunLinesForCalendarMonth excludes prior-month runs that bleed into the 1st', () => {
+  const aprilRun = {
+    totalHours: 55.82,
+    run: {
+      periodStart: new Date(2026, 3, 12),
+      periodEnd: new Date(2026, 4, 1, 3, 59, 59, 999),
+      createdAt: new Date(2026, 3, 15),
+    },
+  }
+  const mayRun = {
+    totalHours: 90.48,
+    run: {
+      periodStart: new Date(2026, 4, 4),
+      periodEnd: new Date(2026, 5, 1, 3, 59, 59, 999),
+      createdAt: new Date(2026, 4, 10),
+    },
+  }
+
+  const selected = selectRunLinesForCalendarMonth([aprilRun, mayRun], 2026, 5)
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0].totalHours, 90.48)
+})
+
+test('selectRunLinesForCalendarMonth dedupes identical pay periods and keeps newest run', () => {
+  const olderDuplicate = {
+    totalHours: 90.48,
+    run: {
+      periodStart: new Date(2026, 4, 4),
+      periodEnd: new Date(2026, 5, 1, 3, 59, 59, 999),
+      createdAt: new Date(2026, 4, 10, 10, 0, 0),
+    },
+  }
+  const newerDuplicate = {
+    totalHours: 90.48,
+    run: {
+      periodStart: new Date(2026, 4, 4),
+      periodEnd: new Date(2026, 5, 1, 3, 59, 59, 999),
+      createdAt: new Date(2026, 4, 10, 12, 0, 0),
+    },
+  }
+
+  const selected = selectRunLinesForCalendarMonth(
+    [olderDuplicate, newerDuplicate, olderDuplicate, newerDuplicate],
+    2026,
+    5
+  )
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0].run.createdAt.getTime(), newerDuplicate.run.createdAt.getTime())
+})
+
+test('selectRunLinesForCalendarMonth May 2026 Brach scenario yields 90.48 not 361.92', () => {
+  const makeMayRun = (createdAt: Date) => ({
+    totalHours: 90.48,
+    hourlyRateUsed: 25,
+    grossPay: 2262.08,
+    amountPaid: 0,
+    run: {
+      periodStart: new Date(2026, 4, 4),
+      periodEnd: new Date(2026, 5, 1, 3, 59, 59, 999),
+      createdAt,
+    },
+  })
+
+  const aprilRun = {
+    totalHours: 55.82,
+    hourlyRateUsed: 25,
+    grossPay: 1395.42,
+    amountPaid: 0,
+    run: {
+      periodStart: new Date(2026, 3, 12),
+      periodEnd: new Date(2026, 4, 1, 3, 59, 59, 999),
+      createdAt: new Date(2026, 3, 15),
+    },
+  }
+
+  const runLines = selectRunLinesForCalendarMonth(
+    [
+      aprilRun,
+      makeMayRun(new Date(2026, 4, 10, 10, 0, 0)),
+      makeMayRun(new Date(2026, 4, 10, 11, 0, 0)),
+      makeMayRun(new Date(2026, 4, 10, 12, 0, 0)),
+      makeMayRun(new Date(2026, 4, 10, 13, 0, 0)),
+    ],
+    2026,
+    5
+  )
+
+  const summary = buildSummaryFromRunLines(runLines, 25)
+  assert.equal(Number(summary.totalHours.toFixed(2)), 90.48)
+  assert.equal(Number(summary.grossPay.toFixed(2)), 2262.08)
 })
 
 test('buildSummaryFromRunLines matches April 2026 payroll totals', () => {
