@@ -51,6 +51,8 @@ Representative routes under `aplus-center-scheduling/smart-steps/src/app/api`:
 - `clients/[clientId]/goals`
 - `clients/[clientId]/goals/[goalId]`
 - `clients/[clientId]/targets`
+- `clients/[clientId]/assessments` — scoring assessments list/create
+- `clients/[clientId]/reports` — **NEW** (Pass 2): `GET` returns `ClientReport[]` for a client (title, status, template, createdAt, updatedAt, sections count)
 - `sessions`
 - `sessions/[sessionId]`
 - `trials`
@@ -58,9 +60,10 @@ Representative routes under `aplus-center-scheduling/smart-steps/src/app/api`:
 - `programs`
 - `programs/[programId]/targets`
 - `assessments/templates`
-- `clients/[clientId]/assessments`
 - `report-templates`
+- `report-templates/[templateId]/generate-report` — accepts `bcbaManualName`, `bcbaManualEmail`, `bcbaManualCredentials` (Pass 1); no session-user fallback when no BCBA selected
 - `client-reports`
+- `organization/settings`
 - `parent/[clientId]`
 - `parent/generate-token`
 - `sync`

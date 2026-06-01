@@ -37,6 +37,10 @@ export async function POST(
     servicePeriodEnd?: string;
     assessmentType?: "initial" | "reassessment";
     bcbaUserId?: string;
+    /** Manual provider entry — used when no system user is selected */
+    bcbaManualName?: string;
+    bcbaManualEmail?: string;
+    bcbaManualCredentials?: string;
   };
   const {
     clientId,
@@ -45,6 +49,9 @@ export async function POST(
     servicePeriodEnd,
     assessmentType = "reassessment",
     bcbaUserId,
+    bcbaManualName,
+    bcbaManualEmail,
+    bcbaManualCredentials,
   } = body;
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
@@ -85,6 +92,7 @@ export async function POST(
           select: {
             id: true, definition: true, phase: true, targetType: true,
             baseline: true, dateMastered: true, notes: true, createdAt: true,
+            masteryRule: true,
           },
         },
       },
@@ -129,9 +137,8 @@ export async function POST(
   }
 
   // ── BCBA / provider info ───────────────────────────────────────────────────
-  // Use selected BCBA if provided; fall back to session user only if no bcbaUserId given.
-  const sessionUser = session.user as { name?: string | null; email?: string | null; role?: string };
-
+  // Priority: selected system user → manual entry → placeholders.
+  // Deliberately do NOT fall back to the session (logged-in) user.
   let providerName: string;
   let providerEmail: string;
   let providerRole: string;
@@ -144,13 +151,15 @@ export async function POST(
     providerRole        = bcbaUser.role ?? "BCBA";
     providerPhone       = bcbaUser.phone ?? null;
     providerCredentials = bcbaUser.credentials ?? null;
-  } else if (!bcbaUserId) {
-    // No BCBA selected — use session user as fallback
-    providerName  = sessionUser.name  ?? sessionUser.email ?? "";
-    providerEmail = sessionUser.email ?? "";
-    providerRole  = sessionUser.role  ?? "";
+  } else if (bcbaManualName?.trim()) {
+    // Manual provider entry — external BCBA, contractor, or non-system clinician
+    providerName        = bcbaManualName.trim();
+    providerEmail       = bcbaManualEmail?.trim() ?? "";
+    providerRole        = "BCBA";
+    providerCredentials = bcbaManualCredentials?.trim() ?? null;
+    providerPhone       = null;
   } else {
-    // bcbaUserId was given but user not found
+    // No BCBA selected or entered — use placeholders; do NOT use session user
     providerName  = "[BCBA Name]";
     providerEmail = "[BCBA Email]";
     providerRole  = "BCBA";

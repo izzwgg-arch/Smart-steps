@@ -178,9 +178,34 @@ Generation fetches: full `Client`, selected or session `User` (BCBA), all active
 
 **Active/Future Goals table columns:** Behavior/Goal, Objective, Start Date, Baseline Level, Current Level, Progress %, Status, Date Opened
 
+- **Start Date** uses `Target.masteryRule.openedDate` when present (Pass 1), falls back to `Target.createdAt`.
+- **Date Opened** uses `ParentGoal.createdAt` (parent goal introduction date).
+- **Category group headers** inserted as full-width `<th colspan>` rows when goals span multiple categories (Pass 1).
+
 **Mastered Goals table columns:** Behavior/Goal, Objective, Date Mastered
+- Grouped by category with category header rows when multiple categories (Pass 1).
 
 **Parent Goals table columns:** Behavior, Objective, Introduction Date, Baseline Level, Current Level, Comments, Carrying Over?
+- Grouped by category with category header rows when multiple categories (Pass 1).
+
+**Category paragraph summaries** (Pass 1 — richer clinical narrative):
+- Initial assessment: opens with baseline rationale, lists active targets by name, mentions new/upcoming goals, closes with treatment plan language.
+- Reassessment: opens with progress review, names mastered goals (up to 3), describes maintenance/generalization phase if present, names active targets, names new goals, closes with future treatment direction.
+- Uses client name throughout; avoids pronouns (uses "the client" / client name).
+- Written in clinical paragraph narrative (NOT bullet lists).
+- Covers: strengths, deficits, skill acquisition progress, mastered areas, areas still needing intervention, current treatment focus, future direction, behavioral trends, clinical observations.
+
+**BCBA / Provider resolution** (Pass 1):
+1. `bcbaUserId` → system user from DB (phone + credentials populated).
+2. No `bcbaUserId` + `bcbaManualName` provided → manual entry fields used.
+3. Neither → `[BCBA Name]` / `[BCBA Email]` placeholders. Does NOT fall back to session user.
+
+Manual BCBA fields accepted by `generate-report` route: `bcbaManualName`, `bcbaManualEmail`, `bcbaManualCredentials`.
+
+**Client Profile → Assessments page** (Pass 2 — `clients/[clientId]/assessments/page.tsx`):
+- Now shows two sections: "Scoring Assessments" (unchanged) and "Clinical Reports" (new).
+- Clinical Reports fetched from `GET /api/clients/[clientId]/reports`.
+- Each report shows: title, status badge (Draft / Final / Archived), template type badge, sections count, created date, link to `/smart-steps/assessments/reports/[id]` (opens in new tab).
 
 **Trial-based current level:**
 - Batch query: last 30 days, max 500 trials per generation, grouped by targetId.

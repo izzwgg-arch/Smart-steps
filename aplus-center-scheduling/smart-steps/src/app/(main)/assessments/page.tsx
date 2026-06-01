@@ -134,6 +134,10 @@ function CreateReportModal({
   const [bcbaUserId, setBcbaUserId]                 = useState("");
   const [bcbaOptions, setBcbaOptions]               = useState<BcbaAssignment[]>([]);
   const [loadingBcba, setLoadingBcba]               = useState(false);
+  const [showManualProvider, setShowManualProvider] = useState(false);
+  const [bcbaManualName, setBcbaManualName]         = useState("");
+  const [bcbaManualEmail, setBcbaManualEmail]       = useState("");
+  const [bcbaManualCreds, setBcbaManualCreds]       = useState("");
   const [saving, setSaving]                         = useState(false);
 
   // Load BCBA assignments when client changes
@@ -170,9 +174,12 @@ function CreateReportModal({
           clientId,
           title: title.trim() || template.name,
           assessmentType,
-          ...(bcbaUserId         && { bcbaUserId }),
-          ...(servicePeriodStart && { servicePeriodStart }),
-          ...(servicePeriodEnd   && { servicePeriodEnd }),
+          ...(bcbaUserId                  && { bcbaUserId }),
+          ...(bcbaManualName.trim()       && { bcbaManualName: bcbaManualName.trim() }),
+          ...(bcbaManualEmail.trim()      && { bcbaManualEmail: bcbaManualEmail.trim() }),
+          ...(bcbaManualCreds.trim()      && { bcbaManualCredentials: bcbaManualCreds.trim() }),
+          ...(servicePeriodStart          && { servicePeriodStart }),
+          ...(servicePeriodEnd            && { servicePeriodEnd }),
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -248,7 +255,7 @@ function CreateReportModal({
             ) : loadingBcba ? (
               <p className="text-xs text-zinc-500">Loading BCBAs…</p>
             ) : bcbaOptions.length === 0 ? (
-              <p className="text-xs text-zinc-600 italic">No BCBA assigned to this client — provider info will show placeholders</p>
+              <p className="text-xs text-zinc-600 italic">No BCBA assigned to this client — enter manually below or leave blank for placeholders</p>
             ) : (
               <select className="field-input w-full" value={bcbaUserId} onChange={(e) => setBcbaUserId(e.target.value)}>
                 <option value="">Select BCBA…</option>
@@ -258,6 +265,44 @@ function CreateReportModal({
                   </option>
                 ))}
               </select>
+            )}
+          </div>
+
+          {/* Manual provider entry */}
+          <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-3">
+            <button
+              type="button"
+              onClick={() => setShowManualProvider((v) => !v)}
+              className="flex w-full items-center justify-between text-xs font-semibold text-zinc-400 uppercase tracking-wide"
+            >
+              <span>Manual Provider Entry {bcbaManualName.trim() ? `— ${bcbaManualName.trim()}` : "(optional)"}</span>
+              <span className="text-zinc-600">{showManualProvider ? "▲" : "▼"}</span>
+            </button>
+            {showManualProvider && (
+              <div className="mt-3 space-y-2">
+                <p className="text-[11px] text-zinc-500">
+                  For external BCBAs, contractors, or non-system providers.
+                  {bcbaUserId ? " A selected BCBA above takes priority." : " Leave blank to use placeholders."}
+                </p>
+                <input
+                  className="field-input w-full"
+                  placeholder="Provider name"
+                  value={bcbaManualName}
+                  onChange={(e) => setBcbaManualName(e.target.value)}
+                />
+                <input
+                  className="field-input w-full"
+                  placeholder="Provider email (optional)"
+                  value={bcbaManualEmail}
+                  onChange={(e) => setBcbaManualEmail(e.target.value)}
+                />
+                <input
+                  className="field-input w-full"
+                  placeholder="Credentials e.g. BCBA, LBA, MS (optional)"
+                  value={bcbaManualCreds}
+                  onChange={(e) => setBcbaManualCreds(e.target.value)}
+                />
+              </div>
             )}
           </div>
 

@@ -63,6 +63,8 @@ export interface ReportTarget {
   dateMastered?: Date | null;
   notes?: string | null;
   createdAt?: Date | string | null;
+  /** Raw JSON from Target.masteryRule — may contain openedDate, masteredDate, etc. */
+  masteryRule?: unknown;
 }
 
 export interface ReportParentGoal {
@@ -180,6 +182,24 @@ function phaseLabel(phase: string): string {
   }
 }
 
+/** Extracts Date Opened from masteryRule.openedDate, falls back to createdAt. */
+function getTargetStartDate(t: ReportTarget): string {
+  const mr = (t.masteryRule != null && typeof t.masteryRule === "object" && !Array.isArray(t.masteryRule))
+    ? (t.masteryRule as Record<string, unknown>)
+    : null;
+  const openedDate = mr?.openedDate;
+  if (openedDate && typeof openedDate === "string") return formatDate(openedDate);
+  if (t.createdAt) {
+    return formatDate(t.createdAt instanceof Date ? t.createdAt : new Date(String(t.createdAt)));
+  }
+  return "—";
+}
+
+function dateOrDash(d: Date | string | null | undefined): string {
+  if (!d) return "—";
+  return formatDate(d instanceof Date ? d : new Date(String(d)));
+}
+
 /**
  * Computes current performance level from recent trial batch.
  * Returns percentage string like "78%" or "—" when no data.
@@ -207,12 +227,16 @@ export function computeProgressPct(
   return `${pct}% (${s.total} trial${s.total !== 1 ? "s" : ""})`;
 }
 
-// ── Paragraph generator ───────────────────────────────────────────────────────
+// ── Clinical paragraph generator ─────────────────────────────────────────────
 
 /**
- * Generates a written clinical paragraph for a given category domain.
- * Initial assessment: current + future focus only.
- * Reassessment: includes mastery progress.
+ * Generates a multi-sentence clinical narrative paragraph for a given category domain.
+ * Covers: strengths, deficits, skill acquisition progress, mastered areas,
+ * areas still needing intervention, current treatment focus, future direction,
+ * behavioral trends, and clinical observations.
+ *
+ * Initial assessment: establishes baseline, current targets, future planning.
+ * Reassessment: includes mastery progress, maintenance phase, updated targets.
  */
 function buildCategoryParagraph(
   clientName: string,
@@ -220,75 +244,170 @@ function buildCategoryParagraph(
   goals: ReportParentGoal[],
   assessmentType: AssessmentType,
 ): string {
-  const allTargets  = goals.flatMap((g) => g.targets);
-  const activeTs    = allTargets.filter((t) => ["ACQUISITION", "BASELINE"].includes(t.phase));
-  const newTs       = allTargets.filter((t) => t.phase === "NEW");
-  const masteredTs  = allTargets.filter((t) => t.phase === "MASTERED");
-  const maintTs     = allTargets.filter((t) => ["MAINTENANCE", "GENERALIZATION"].includes(t.phase));
+  const name      = clientName || "The client";
+  const allTs     = goals.flatMap((g) => g.targets);
+  const activeTs  = allTs.filter((t) => ["ACQUISITION", "BASELINE"].includes(t.phase));
+  const newTs     = allTs.filter((t) => t.phase === "NEW");
+  const masteredTs = allTs.filter((t) => t.phase === "MASTERED");
+  const maintTs   = allTs.filter((t) => ["MAINTENANCE", "GENERALIZATION"].includes(t.phase));
 
-  if (allTargets.length === 0) {
+  if (allTs.length === 0) {
     return `<p>No goals have been identified in the ${escapeHtml(categoryName)} domain at this time.</p>`;
   }
 
-  const parts: string[] = [];
+  const sentences: string[] = [];
 
+  // ── Initial assessment ────────────────────────────────────────────────────
   if (assessmentType === "initial") {
+    sentences.push(
+      `${escapeHtml(name)}'s ${escapeHtml(categoryName)} skills were assessed as part of this initial comprehensive ABA evaluation to establish a clinical baseline for individualized treatment planning.`,
+    );
+
     if (activeTs.length > 0) {
-      const names = activeTs.slice(0, 3).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
-      parts.push(
-        `${escapeHtml(clientName)} is currently working on ${activeTs.length} objective${activeTs.length !== 1 ? "s" : ""} in the ${escapeHtml(categoryName)} domain, including: ${names}${activeTs.length > 3 ? ", and others" : ""}.`,
+      const list = activeTs.slice(0, 4)
+        .map((t) => `<em>${escapeHtml(t.definition)}</em>`).join(", ");
+      sentences.push(
+        `Assessment findings indicate that ${escapeHtml(name)} presents with skill deficits in this domain that would benefit from structured behavioral programming. ` +
+        `${activeTs.length} objective${activeTs.length !== 1 ? "s have" : " has"} been identified as priority targets for the current service period, including ${list}${activeTs.length > 4 ? ", among others" : ""}. ` +
+        `These represent areas of emerging skill development where systematic instruction, evidence-based prompting hierarchies, and consistent reinforcement across settings are indicated to support acquisition and functional generalization.`,
       );
     } else {
-      parts.push(`${escapeHtml(categoryName)} goals have been identified for ${escapeHtml(clientName)}.`);
+      sentences.push(
+        `Assessment findings in the ${escapeHtml(categoryName)} domain indicate foundational skills are present, with specific objectives to be introduced as treatment progresses.`,
+      );
     }
 
     if (newTs.length > 0) {
-      const newNames = newTs.slice(0, 2).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
-      parts.push(
-        `Newly introduced objectives include: ${newNames}${newTs.length > 2 ? ", among others" : ""}.`,
+      const list = newTs.slice(0, 2).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
+      sentences.push(
+        `Additionally, ${newTs.length} upcoming objective${newTs.length !== 1 ? "s have" : " has"} been incorporated into the treatment plan as introductory targets: ${list}${newTs.length > 2 ? ", among others" : ""}. ` +
+        `These goals will be formally introduced as prerequisite foundational skills are established and ${escapeHtml(name)}'s readiness for new programming is confirmed by progress data.`,
       );
     }
 
-    parts.push(
-      `ABA intervention in this domain will target skill acquisition, functional use, and generalization as clinically indicated.`,
+    sentences.push(
+      `ABA intervention in the ${escapeHtml(categoryName)} domain will employ direct instruction, naturalistic teaching strategies, incidental learning opportunities, and caregiver training to facilitate skill acquisition across home, school, and community settings. ` +
+      `Ongoing data collection will inform clinical decision-making and ensure that programming remains responsive to ${escapeHtml(name)}'s rate of progress, individual learning profile, and functional needs.`,
     );
+
+  // ── Reassessment ─────────────────────────────────────────────────────────
   } else {
-    // Reassessment
+    sentences.push(
+      `${escapeHtml(name)}'s progress in the ${escapeHtml(categoryName)} domain has been reviewed and summarized as part of this reassessment period.`,
+    );
+
     if (masteredTs.length > 0) {
-      const mastNames = masteredTs.slice(0, 2).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
-      parts.push(
-        `${escapeHtml(clientName)} has demonstrated mastery of ${masteredTs.length} objective${masteredTs.length !== 1 ? "s" : ""} in the ${escapeHtml(categoryName)} domain since the previous assessment period, including: ${mastNames}${masteredTs.length > 2 ? ", among others" : ""}.`,
+      const list = masteredTs.slice(0, 3).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
+      sentences.push(
+        `${escapeHtml(name)} has demonstrated clinical mastery of ${masteredTs.length} objective${masteredTs.length !== 1 ? "s" : ""} in this domain during the current service period, including ${list}${masteredTs.length > 3 ? ", among others" : ""}. ` +
+        `This progress reflects a positive response to ABA programming, effective implementation of behavioral strategies, and ${escapeHtml(name)}'s capacity for meaningful skill acquisition within a structured intervention framework.`,
       );
     } else {
-      parts.push(
-        `${escapeHtml(clientName)} continues to make progress in the ${escapeHtml(categoryName)} domain.`,
+      sentences.push(
+        `${escapeHtml(name)} continues to receive targeted ABA intervention in the ${escapeHtml(categoryName)} domain, with measurable progress documented across the current service period. ` +
+        `While formal mastery criteria have not yet been achieved for current targets, data indicate consistent skill-building that supports continued programming.`,
       );
-    }
-
-    if (activeTs.length > 0) {
-      const names = activeTs.slice(0, 3).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
-      parts.push(`Goals currently in treatment include: ${names}${activeTs.length > 3 ? ", and others" : ""}.`);
     }
 
     if (maintTs.length > 0) {
-      parts.push(
-        `${maintTs.length} objective${maintTs.length !== 1 ? "s are" : " is"} currently in maintenance or generalization.`,
+      sentences.push(
+        `${maintTs.length} previously mastered skill${maintTs.length !== 1 ? "s are" : " is"} currently in the maintenance and generalization phase, with ongoing data collection monitoring performance across novel settings, varied materials, and different communication partners. ` +
+        `These skills are being tracked to ensure long-term retention, functional application, and carryover across natural environments.`,
+      );
+    }
+
+    if (activeTs.length > 0) {
+      const list = activeTs.slice(0, 4).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
+      sentences.push(
+        `${activeTs.length} objective${activeTs.length !== 1 ? "s remain" : " remains"} in active treatment, including ${list}${activeTs.length > 4 ? ", among others" : ""}. ` +
+        `These targets represent areas of continued need where ${escapeHtml(name)} demonstrates emerging but inconsistent performance, requiring structured instruction, systematic prompting, and differential reinforcement to support independent, reliable skill demonstration.`,
       );
     }
 
     if (newTs.length > 0) {
-      const newNames = newTs.slice(0, 2).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
-      parts.push(
-        `Newly introduced objectives include: ${newNames}${newTs.length > 2 ? ", among others" : ""}.`,
+      const list = newTs.slice(0, 2).map((t) => `<em>${escapeHtml(t.definition)}</em>`).join("; ");
+      sentences.push(
+        `${newTs.length} new objective${newTs.length !== 1 ? "s have" : " has"} been introduced for the upcoming service period: ${list}${newTs.length > 2 ? ", among others" : ""}. ` +
+        `These targets were selected based on updated assessment findings, functional relevance, developmental sequencing, and hierarchical skill progression within the ${escapeHtml(categoryName)} domain.`,
       );
     }
 
-    parts.push(
-      `Continued treatment will address skill maintenance, generalization across environments, and introduction of new objectives as clinically appropriate.`,
+    sentences.push(
+      `Continued ABA intervention in this domain will prioritize generalization of established skills across natural environments, ongoing systematic instruction for current acquisition targets, and introduction of new objectives as clinically indicated by progress data and caregiver input. ` +
+      `Treatment decisions will be guided by individualized clinical judgment, empirical data review, and collaboration with ${escapeHtml(name)}'s family and educational team to ensure that programming remains effective, meaningful, and responsive to changing needs.`,
     );
   }
 
-  return `<p>${parts.join(" ")}</p>`;
+  return sentences.map((s) => `<p>${s}</p>`).join("\n");
+}
+
+// ── Shared row helpers ────────────────────────────────────────────────────────
+
+/**
+ * Builds table rows for active (non-mastered) goals.
+ * Uses masteryRule.openedDate for Start Date when available, falls back to createdAt.
+ */
+function _buildActiveGoalsRows(
+  goals: ReportParentGoal[],
+  trialStats: Map<string, TrialStats>,
+): string[] {
+  return goals.flatMap((g) => {
+    const goalIntroDate = dateOrDash(g.createdAt);
+
+    if (g.targets.length === 0) {
+      return [
+        `<tr><td>${escapeHtml(g.title)}</td>` +
+        `<td colspan="7"><em>No targets defined</em></td></tr>`,
+      ];
+    }
+
+    return g.targets
+      .filter((t) => t.phase !== "MASTERED")
+      .map((t, idx) => {
+        const startDate    = getTargetStartDate(t);
+        const currentLevel = computeCurrentLevel(t.id, trialStats);
+        const progressPct  = computeProgressPct(t.id, trialStats);
+        return (
+          `<tr>` +
+          `<td>${idx === 0 ? escapeHtml(g.title) : ""}</td>` +
+          `<td>${escapeHtml(t.definition)}</td>` +
+          `<td>${startDate}</td>` +
+          `<td>${t.baseline ? escapeHtml(t.baseline) : "—"}</td>` +
+          `<td>${currentLevel}</td>` +
+          `<td>${progressPct}</td>` +
+          `<td>${phaseLabel(t.phase)}</td>` +
+          `<td>${goalIntroDate}</td>` +
+          `</tr>`
+        );
+      });
+  });
+}
+
+/**
+ * Groups goals by category name. Returns ordered [categoryName, goals[]] pairs.
+ * Category name resolved from: goal.program.name → programMap → goal.domain → "General"
+ */
+function _groupByCategory(
+  goals: ReportParentGoal[],
+  programMap: Map<string, string>,
+): [string, ReportParentGoal[]][] {
+  const order: string[] = [];
+  const groups = new Map<string, ReportParentGoal[]>();
+
+  for (const g of goals) {
+    const cat =
+      g.program?.name ??
+      (g.programId ? programMap.get(g.programId) : undefined) ??
+      g.domain ??
+      "General";
+    if (!groups.has(cat)) {
+      order.push(cat);
+      groups.set(cat, []);
+    }
+    groups.get(cat)!.push(g);
+  }
+
+  return order.map((c) => [c, groups.get(c)!]);
 }
 
 // ── HTML builders ─────────────────────────────────────────────────────────────
@@ -375,7 +494,6 @@ export function buildBiopsychosocialHtml(
 
 /**
  * Why ABA Services Are Needed section.
- * Replaces template with a brief rationale paragraph.
  */
 export function buildWhyAbaHtml(
   client: ReportClient,
@@ -397,7 +515,10 @@ export function buildWhyAbaHtml(
 
 /**
  * Category-specific goals section (Language, Social, Adaptive, etc.).
- * Structure: written paragraph FIRST, then goals table, then mastered table (reassessment).
+ * Structure:
+ *   1. Elaborate clinical narrative paragraph (FIRST)
+ *   2. Active + future goals table with category group headers
+ *   3. Mastered goals table (reassessment only)
  * Returns null if no matching goals exist.
  */
 export function buildCategoryGoalsHtml(
@@ -434,7 +555,6 @@ export function buildCategoryGoalsHtml(
 
   const paragraph = buildCategoryParagraph(clientName, categoryName, matchingGoals, assessmentType);
 
-  // Active + future goals table
   const activeGoals = matchingGoals.filter(
     (g) => g.status !== "MASTERED" && g.status !== "ARCHIVED",
   );
@@ -456,9 +576,20 @@ export function buildCategoryGoalsHtml(
     );
   }
 
-  // Mastered goals table — reassessment only
+  // Mastered goals mini-table — reassessment only
   if (assessmentType === "reassessment") {
-    const masteredRows = _buildMasteredGoalsRows(matchingGoals);
+    const masteredRows = matchingGoals.flatMap((g) =>
+      g.targets
+        .filter((t) => t.phase === "MASTERED")
+        .map((t) =>
+          `<tr>` +
+          `<td>${escapeHtml(g.title)}</td>` +
+          `<td>${escapeHtml(t.definition)}</td>` +
+          `<td>${t.dateMastered ? formatDate(t.dateMastered) : "—"}</td>` +
+          `</tr>`,
+        ),
+    );
+
     if (masteredRows.length > 0) {
       parts.push(
         `<h3>Mastered Objectives</h3>`,
@@ -474,66 +605,9 @@ export function buildCategoryGoalsHtml(
   return parts.join("\n");
 }
 
-// ── Shared row helpers ────────────────────────────────────────────────────────
-
-function _buildActiveGoalsRows(
-  goals: ReportParentGoal[],
-  trialStats: Map<string, TrialStats>,
-): string[] {
-  return goals.flatMap((g) => {
-    const goalOpenDate = g.createdAt ? formatDate(g.createdAt instanceof Date ? g.createdAt : new Date(g.createdAt)) : "—";
-
-    if (g.targets.length === 0) {
-      return [
-        `<tr>` +
-        `<td>${escapeHtml(g.title)}</td>` +
-        `<td colspan="7"><em>No targets defined</em></td>` +
-        `</tr>`,
-      ];
-    }
-
-    return g.targets
-      .filter((t) => t.phase !== "MASTERED")
-      .map((t, idx) => {
-        const startDate    = t.createdAt ? formatDate(t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)) : "—";
-        const currentLevel = computeCurrentLevel(t.id, trialStats);
-        const progressPct  = computeProgressPct(t.id, trialStats);
-        return (
-          `<tr>` +
-          `<td>${idx === 0 ? escapeHtml(g.title) : ""}</td>` +
-          `<td>${escapeHtml(t.definition)}</td>` +
-          `<td>${startDate}</td>` +
-          `<td>${t.baseline ? escapeHtml(t.baseline) : "—"}</td>` +
-          `<td>${currentLevel}</td>` +
-          `<td>${progressPct}</td>` +
-          `<td>${phaseLabel(t.phase)}</td>` +
-          `<td>${goalOpenDate}</td>` +
-          `</tr>`
-        );
-      });
-  });
-}
-
-function _buildMasteredGoalsRows(goals: ReportParentGoal[]): string[] {
-  return goals.flatMap((g) =>
-    g.targets
-      .filter((t) => t.phase === "MASTERED")
-      .map((t) =>
-        `<tr>` +
-        `<td>${escapeHtml(g.title)}</td>` +
-        `<td>${escapeHtml(t.definition)}</td>` +
-        `<td>${t.dateMastered ? formatDate(t.dateMastered) : "—"}</td>` +
-        `</tr>`,
-      ),
-  );
-}
-
-// ── Full-report section builders ──────────────────────────────────────────────
-
 /**
- * Mastered Goals and Objectives section.
- * For initial assessments: shows a "no mastered goals" note.
- * For reassessments: shows all targets mastered in the past 6 months.
+ * Mastered Goals and Objectives section — full report-level table, grouped by category.
+ * Initial assessment: shows note only. Reassessment: full grouped table.
  */
 export function buildMasteredGoalsHtml(
   allGoals: ReportParentGoal[],
@@ -550,23 +624,49 @@ export function buildMasteredGoalsHtml(
 
   const programMap = new Map(programs.map((p) => [p.id, p.name]));
 
-  const masteredGoals = allGoals.filter((g) =>
-    g.targets.some((t) => t.phase === "MASTERED"),
-  );
+  // Collect mastered entries grouped by category
+  const catOrder: string[] = [];
+  const catGroups = new Map<string, { goalTitle: string; target: ReportTarget }[]>();
 
-  if (masteredGoals.length === 0) {
+  for (const g of allGoals) {
+    const cat =
+      g.program?.name ??
+      (g.programId ? programMap.get(g.programId) : undefined) ??
+      g.domain ??
+      "General";
+
+    const masteredTs = g.targets.filter((t) => t.phase === "MASTERED");
+    if (masteredTs.length === 0) continue;
+
+    if (!catGroups.has(cat)) {
+      catOrder.push(cat);
+      catGroups.set(cat, []);
+    }
+    for (const t of masteredTs) {
+      catGroups.get(cat)!.push({ goalTitle: g.title, target: t });
+    }
+  }
+
+  if (catOrder.length === 0) {
     return `<p><em>No goals were mastered in the reporting period.</em></p>`;
   }
 
+  const multiCat = catOrder.length > 1;
   const rows: string[] = [];
-  for (const g of masteredGoals) {
-    const category = g.programId
-      ? (programMap.get(g.programId) ?? g.domain ?? "—")
-      : (g.domain ?? "—");
-    for (const t of g.targets.filter((t) => t.phase === "MASTERED")) {
+  let total = 0;
+
+  for (const cat of catOrder) {
+    const entries = catGroups.get(cat)!;
+    total += entries.length;
+    if (multiCat) {
+      rows.push(
+        `<tr><th colspan="3" style="text-align:left"><strong>${escapeHtml(cat.toUpperCase())}</strong></th></tr>`,
+      );
+    }
+    for (const { goalTitle, target: t } of entries) {
       rows.push(
         `<tr>` +
-        `<td>${escapeHtml(g.title)}</td>` +
+        `<td>${escapeHtml(goalTitle)}</td>` +
         `<td>${escapeHtml(t.definition)}</td>` +
         `<td>${t.dateMastered ? formatDate(t.dateMastered) : "—"}</td>` +
         `</tr>`,
@@ -574,10 +674,8 @@ export function buildMasteredGoalsHtml(
     }
   }
 
-  const totalMastered = rows.length;
-
   return [
-    `<p><strong>${totalMastered} objective${totalMastered !== 1 ? "s" : ""} mastered in the reporting period.</strong></p>`,
+    `<p><strong>${total} objective${total !== 1 ? "s" : ""} mastered in the reporting period.</strong></p>`,
     `<table>`,
     `<thead><tr><th>Behavior / Goal</th><th>Objective</th><th>Date Mastered</th></tr></thead>`,
     `<tbody>`,
@@ -588,7 +686,8 @@ export function buildMasteredGoalsHtml(
 
 /**
  * Current Goals and Objectives / Skill Acquisition section.
- * 8-column table for active + future goals, with trial-based current level.
+ * 8-column table for active + future goals, grouped by category with header rows.
+ * Uses trial-based current level; masteryRule.openedDate for Start Date.
  */
 export function buildCurrentGoalsHtml(
   allGoals: ReportParentGoal[],
@@ -597,15 +696,27 @@ export function buildCurrentGoalsHtml(
   trialStats: Map<string, TrialStats> = new Map(),
   assessmentType: AssessmentType = "reassessment",
 ): string {
-  const activeGoals = allGoals.filter(
-    (g) => g.status !== "ARCHIVED",
-  );
+  const programMap = new Map(programs.map((p) => [p.id, p.name]));
+
+  const activeGoals = allGoals.filter((g) => g.status !== "ARCHIVED");
 
   if (activeGoals.length === 0) {
     return `<p><em>No active goals or targets were found for this client as of ${escapeHtml(generationDate)}.</em></p>`;
   }
 
-  const rows = _buildActiveGoalsRows(activeGoals, trialStats);
+  const grouped = _groupByCategory(activeGoals, programMap);
+  const multiCat = grouped.length > 1;
+  const allRows: string[] = [];
+
+  for (const [cat, catGoals] of grouped) {
+    if (multiCat) {
+      allRows.push(
+        `<tr><th colspan="8" style="text-align:left"><strong>${escapeHtml(cat.toUpperCase())}</strong></th></tr>`,
+      );
+    }
+    allRows.push(..._buildActiveGoalsRows(catGoals, trialStats));
+  }
+
   const totalTargets = activeGoals.reduce(
     (n, g) => n + g.targets.filter((t) => t.phase !== "MASTERED").length,
     0,
@@ -621,15 +732,14 @@ export function buildCurrentGoalsHtml(
     `<th>Progress %</th><th>Status</th><th>Date Opened</th>`,
     `</tr></thead>`,
     `<tbody>`,
-    ...rows,
+    ...allRows,
     `</tbody></table>`,
   ].join("\n");
 }
 
 /**
- * Parent Goals section.
- * Shows high-level skill areas with introduction date, baseline, current level,
- * notes/comments, and a "Carrying Over?" column for manual entry.
+ * Parent Goals section — 7-column table grouped by category.
+ * Start date uses masteryRule.openedDate when available.
  */
 export function buildParentGoalsHtml(
   allGoals: ReportParentGoal[],
@@ -638,32 +748,45 @@ export function buildParentGoalsHtml(
   trialStats: Map<string, TrialStats> = new Map(),
 ): string {
   const programMap = new Map(programs.map((p) => [p.id, p.name]));
-
   const relevantGoals = allGoals.filter((g) => g.status !== "ARCHIVED");
 
   if (relevantGoals.length === 0) {
     return `<p><em>No parent goals found as of ${escapeHtml(generationDate)}.</em></p>`;
   }
 
-  const rows = relevantGoals.map((g) => {
-    const introDate     = g.createdAt ? formatDate(g.createdAt instanceof Date ? g.createdAt : new Date(g.createdAt)) : "—";
-    const firstTarget   = g.targets[0];
-    const baseline      = firstTarget?.baseline ?? "—";
-    const currentLevel  = firstTarget ? computeCurrentLevel(firstTarget.id, trialStats) : "—";
-    const objective     = firstTarget ? escapeHtml(firstTarget.definition) : (g.description ? escapeHtml(g.description) : "—");
+  const grouped  = _groupByCategory(relevantGoals, programMap);
+  const multiCat = grouped.length > 1;
+  const rows: string[] = [];
 
-    return (
-      `<tr>` +
-      `<td>${escapeHtml(g.title)}</td>` +
-      `<td>${objective}</td>` +
-      `<td>${introDate}</td>` +
-      `<td>${baseline !== "—" ? escapeHtml(baseline) : "—"}</td>` +
-      `<td>${currentLevel}</td>` +
-      `<td>${g.notes ? escapeHtml(g.notes) : "—"}</td>` +
-      `<td></td>` +
-      `</tr>`
-    );
-  });
+  for (const [cat, catGoals] of grouped) {
+    if (multiCat) {
+      rows.push(
+        `<tr><th colspan="7" style="text-align:left"><strong>${escapeHtml(cat.toUpperCase())}</strong></th></tr>`,
+      );
+    }
+
+    for (const g of catGoals) {
+      const introDate    = dateOrDash(g.createdAt);
+      const firstTarget  = g.targets[0];
+      const baseline     = firstTarget?.baseline ?? "—";
+      const currentLevel = firstTarget ? computeCurrentLevel(firstTarget.id, trialStats) : "—";
+      const objective    = firstTarget
+        ? escapeHtml(firstTarget.definition)
+        : (g.description ? escapeHtml(g.description) : "—");
+
+      rows.push(
+        `<tr>` +
+        `<td>${escapeHtml(g.title)}</td>` +
+        `<td>${objective}</td>` +
+        `<td>${introDate}</td>` +
+        `<td>${baseline !== "—" ? escapeHtml(baseline) : "—"}</td>` +
+        `<td>${currentLevel}</td>` +
+        `<td>${g.notes ? escapeHtml(g.notes) : "—"}</td>` +
+        `<td></td>` +
+        `</tr>`,
+      );
+    }
+  }
 
   return [
     `<table>`,
@@ -679,8 +802,7 @@ export function buildParentGoalsHtml(
 }
 
 /**
- * New Goals section.
- * Shows only targets with phase = "NEW" — targets recently introduced but not yet in active treatment.
+ * New Goals section — only NEW-phase targets, grouped by category.
  */
 export function buildNewGoalsHtml(
   allGoals: ReportParentGoal[],
@@ -689,17 +811,49 @@ export function buildNewGoalsHtml(
 ): string {
   const programMap = new Map(programs.map((p) => [p.id, p.name]));
 
-  const newRows: string[] = [];
+  const catOrder: string[] = [];
+  const catGroups = new Map<string, { goalTitle: string; target: ReportTarget }[]>();
+
   for (const g of allGoals) {
-    const category = g.programId
-      ? (programMap.get(g.programId) ?? g.domain ?? "—")
-      : (g.domain ?? "—");
-    for (const t of g.targets.filter((t) => t.phase === "NEW")) {
-      const startDate = t.createdAt ? formatDate(t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)) : "—";
-      newRows.push(
+    const cat =
+      g.program?.name ??
+      (g.programId ? programMap.get(g.programId) : undefined) ??
+      g.domain ??
+      "General";
+
+    const newTs = g.targets.filter((t) => t.phase === "NEW");
+    if (newTs.length === 0) continue;
+
+    if (!catGroups.has(cat)) {
+      catOrder.push(cat);
+      catGroups.set(cat, []);
+    }
+    for (const t of newTs) {
+      catGroups.get(cat)!.push({ goalTitle: g.title, target: t });
+    }
+  }
+
+  if (catOrder.length === 0) {
+    return `<p><em>No newly introduced goals at this time (${escapeHtml(generationDate)}).</em></p>`;
+  }
+
+  const multiCat = catOrder.length > 1;
+  const rows: string[] = [];
+  let total = 0;
+
+  for (const cat of catOrder) {
+    const entries = catGroups.get(cat)!;
+    total += entries.length;
+    if (multiCat) {
+      rows.push(
+        `<tr><th colspan="4" style="text-align:left"><strong>${escapeHtml(cat.toUpperCase())}</strong></th></tr>`,
+      );
+    }
+    for (const { goalTitle, target: t } of entries) {
+      const startDate = getTargetStartDate(t);
+      rows.push(
         `<tr>` +
-        `<td>${escapeHtml(category)}</td>` +
-        `<td>${escapeHtml(g.title)}</td>` +
+        `<td>${escapeHtml(goalTitle)}</td>` +
         `<td>${escapeHtml(t.definition)}</td>` +
         `<td>${t.baseline ? escapeHtml(t.baseline) : "—"}</td>` +
         `<td>${startDate}</td>` +
@@ -708,19 +862,15 @@ export function buildNewGoalsHtml(
     }
   }
 
-  if (newRows.length === 0) {
-    return `<p><em>No newly introduced goals at this time (${escapeHtml(generationDate)}).</em></p>`;
-  }
-
   return [
-    `<p><strong>${newRows.length} newly introduced objective${newRows.length !== 1 ? "s" : ""}.</strong></p>`,
+    `<p><strong>${total} newly introduced objective${total !== 1 ? "s" : ""}.</strong></p>`,
     `<table>`,
     `<thead><tr>`,
-    `<th>Category</th><th>Behavior / Goal</th><th>Objective</th>`,
+    `<th>Behavior / Goal</th><th>Objective</th>`,
     `<th>Baseline</th><th>Introduced</th>`,
     `</tr></thead>`,
     `<tbody>`,
-    ...newRows,
+    ...rows,
     `</tbody></table>`,
   ].join("\n");
 }
