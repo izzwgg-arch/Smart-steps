@@ -160,7 +160,8 @@ async function printReport(report: Report, sections: Section[]) {
       vertical-align: top;
     }
     th { background: #f0f0f0; font-weight: bold; }
-    span { /* Inline font-size and font-family from editor preserved as-is */ }
+    span { /* Inline font-size, font-family, color, background-color from editor preserved as-is */ }
+    hr { border: none; border-top: 1px solid #ccc; margin: 14pt 0; }
     .org-footer {
       margin-top: 32pt;
       padding-top: 8pt;

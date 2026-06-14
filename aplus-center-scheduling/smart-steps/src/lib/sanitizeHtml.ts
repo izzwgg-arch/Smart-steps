@@ -6,7 +6,7 @@
 const MAX_CONTENT_LENGTH = 150_000;
 
 const ALLOWED_TAGS = new Set([
-  "a", "b", "blockquote", "br", "div", "em", "i",
+  "a", "b", "blockquote", "br", "div", "em", "hr", "i",
   "h2", "h3", "h4", "li", "ol", "p", "span", "strong",
   "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
 ]);
@@ -40,6 +40,14 @@ const SAFE_FONT_FAMILIES = new Map<string, string>([
   ["tahoma",          "Tahoma"],
   ["trebuchet ms",    "Trebuchet MS"],
 ]);
+
+/**
+ * Safe color values: #rgb, #rrggbb, named CSS colors (letters only),
+ * or rgb(r,g,b) with integer components (browser-normalized form).
+ * Rejects: expression(), url(), calc(), arbitrary strings with special chars.
+ */
+const SAFE_COLOR_RE =
+  /^(#[0-9a-f]{3}([0-9a-f]{3})?|[a-z]+|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))$/i;
 
 /**
  * Validates a raw font-family value against the allowlist.
@@ -106,6 +114,20 @@ function sanitizeAttrs(tagName: string, rawAttrs: string): string {
       if (familyMatch) {
         const canonical = safeFontFamily(familyMatch[1]);
         if (canonical) parts.push(`font-family:${canonical}`);
+      }
+
+      // color — negative lookbehind prevents matching background-color
+      const colorMatch = val.match(/(?<![a-zA-Z-])color\s*:\s*([^;<>"']+)/i);
+      if (colorMatch) {
+        const colorVal = colorMatch[1].trim();
+        if (SAFE_COLOR_RE.test(colorVal)) parts.push(`color:${colorVal}`);
+      }
+
+      // background-color
+      const bgColorMatch = val.match(/\bbackground-color\s*:\s*([^;<>"']+)/i);
+      if (bgColorMatch) {
+        const bgVal = bgColorMatch[1].trim();
+        if (SAFE_COLOR_RE.test(bgVal)) parts.push(`background-color:${bgVal}`);
       }
 
       if (parts.length) attrs.set("style", parts.join(";"));

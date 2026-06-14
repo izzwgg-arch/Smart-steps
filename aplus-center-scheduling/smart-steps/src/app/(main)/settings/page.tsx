@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { Moon, Sun, Monitor, Shield, Database, User, Building2 } from "lucide-react";
+import { Moon, Sun, Monitor, Shield, Database, User, Building2, Upload } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { toast } from "sonner";
 
@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [org, setOrg]           = useState<OrgSettings>({ orgName: "", orgAddress: "", orgPhone: "", orgEmail: "", logoUrl: "", letterheadHtml: "", footerHtml: "" });
   const [orgLoading, setOrgLoading] = useState(true);
   const [orgSaving,  setOrgSaving]  = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const loadOrg = useCallback(async () => {
     try {
@@ -74,6 +75,24 @@ export default function SettingsPage() {
     } finally {
       setOrgSaving(false);
     }
+  }
+
+  function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 300_000) {
+      toast.error("Logo file must be under 300 KB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setOrg((p) => ({ ...p, logoUrl: dataUrl }));
+      toast.success("Logo loaded — save to apply");
+    };
+    reader.readAsDataURL(file);
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = "";
   }
 
   return (
@@ -230,13 +249,56 @@ export default function SettingsPage() {
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">Logo URL</label>
+              <label className="mb-1 block text-[11px] font-semibold text-zinc-500 uppercase tracking-wide">
+                Logo <span className="normal-case text-zinc-600 font-normal">(upload image or paste URL)</span>
+              </label>
+              {/* File upload — converts to base64 data URL, stored in logoUrl */}
+              {canEditOrg && (
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
+                    className="hidden"
+                    onChange={handleLogoFile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    className="flex items-center gap-1.5 rounded-lg border border-[var(--glass-border)] bg-white/5 px-3 py-1.5 text-xs text-zinc-400 hover:border-[var(--accent-cyan)]/40 hover:text-[var(--accent-cyan)] transition-colors"
+                  >
+                    <Upload className="h-3.5 w-3.5" /> Upload Image
+                  </button>
+                  <span className="text-[10px] text-zinc-600">PNG, JPG, SVG — max 300 KB</span>
+                </div>
+              )}
+              {/* Logo preview */}
+              {org.logoUrl && (
+                <div className="mb-2 flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={org.logoUrl}
+                    alt="Logo preview"
+                    className="h-10 max-w-[120px] rounded object-contain border border-[var(--glass-border)] bg-white/5 p-1"
+                  />
+                  {canEditOrg && (
+                    <button
+                      type="button"
+                      onClick={() => setOrg((p) => ({ ...p, logoUrl: "" }))}
+                      className="text-[11px] text-zinc-600 hover:text-red-400 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              )}
+              {/* URL fallback */}
               <input
                 className="field-input w-full text-sm"
-                value={org.logoUrl}
+                value={org.logoUrl.startsWith("data:") ? "" : org.logoUrl}
                 onChange={(e) => setOrg((p) => ({ ...p, logoUrl: e.target.value }))}
                 disabled={!canEditOrg}
-                placeholder="https://example.com/logo.png"
+                placeholder="Or paste image URL (https://...)"
               />
             </div>
             <div>

@@ -26,6 +26,25 @@ const FONT_FAMILIES = [
   "Trebuchet MS",
 ] as const;
 
+const TEXT_COLORS = [
+  { label: "Default",   value: "#111111" },
+  { label: "Gray",      value: "#666666" },
+  { label: "Red",       value: "#cc0000" },
+  { label: "Dark Blue", value: "#003399" },
+  { label: "Blue",      value: "#0055cc" },
+  { label: "Green",     value: "#006600" },
+  { label: "Purple",    value: "#660099" },
+  { label: "Orange",    value: "#cc5500" },
+] as const;
+
+const HIGHLIGHT_COLORS = [
+  { label: "Yellow",  value: "#ffff00" },
+  { label: "Cyan",    value: "#ccffff" },
+  { label: "Green",   value: "#ccffcc" },
+  { label: "Pink",    value: "#ffcccc" },
+  { label: "Tan",     value: "#fff0cc" },
+] as const;
+
 // ── Toolbar helpers ───────────────────────────────────────────────────────────
 
 function Btn({
@@ -102,6 +121,36 @@ function ToolbarSelect({
       <option value="" disabled>{placeholder}</option>
       {options.map((o) => (
         <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  );
+}
+
+/** Color select dropdown — accepts labeled {label,value} options. */
+function ColorSelect({
+  placeholder, options, onSaveSelection, onApply,
+}: {
+  placeholder: string;
+  options: readonly { label: string; value: string }[];
+  onSaveSelection: () => void;
+  onApply: (value: string) => void;
+}) {
+  return (
+    <select
+      defaultValue=""
+      onMouseDown={onSaveSelection}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v) onApply(v);
+        e.target.value = "";
+      }}
+      className="rounded border border-[var(--glass-border)] bg-[var(--glass-bg)] px-1.5 py-0.5
+        text-[11px] text-zinc-400 hover:border-[var(--accent-cyan)]/40
+        hover:text-[var(--accent-cyan)] transition-colors cursor-pointer outline-none"
+    >
+      <option value="" disabled>{placeholder}</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
       ))}
     </select>
   );
@@ -267,10 +316,15 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
    * a <span style="..."> element.  Uses the saved selection so it works even
    * after the toolbar control has taken focus from the editor.
    *
-   * Only font-size and font-family are supported; both are validated by
-   * sanitizeHtml on the next emit so no arbitrary CSS can survive.
+   * Supports: fontSize, fontFamily (via span.style[prop]), and
+   * color / backgroundColor (via setAttribute to preserve hex values —
+   * the DOM would otherwise normalize hex to rgb()).
+   * All values are validated by sanitizeHtml on the next emit.
    */
-  function applyInlineStyle(cssProp: "fontSize" | "fontFamily", cssValue: string) {
+  function applyInlineStyle(
+    cssProp: "fontSize" | "fontFamily" | "color" | "backgroundColor",
+    cssValue: string,
+  ) {
     const el = editorRef.current;
     if (!el || disabled) return;
 
@@ -291,7 +345,15 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
 
     const range = sel.getRangeAt(0);
     const span  = document.createElement("span");
-    span.style[cssProp] = cssValue;
+
+    // Use setAttribute for colors to preserve hex (DOM normalizes to rgb())
+    if (cssProp === "color") {
+      span.setAttribute("style", `color:${cssValue}`);
+    } else if (cssProp === "backgroundColor") {
+      span.setAttribute("style", `background-color:${cssValue}`);
+    } else {
+      span.style[cssProp] = cssValue;
+    }
 
     try {
       const fragment = range.extractContents();
@@ -563,6 +625,17 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
         <Btn title="Bulleted list"      onClick={() => cmd("insertUnorderedList")}>• List</Btn>
         <Btn title="Numbered list"      onClick={() => cmd("insertOrderedList")}>1. List</Btn>
 
+        {/* Undo / Redo */}
+        <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--glass-border)]" />
+        <Btn title="Undo (Ctrl+Z)" onClick={() => cmd("undo")}>↩ Undo</Btn>
+        <Btn title="Redo (Ctrl+Y)" onClick={() => cmd("redo")}>↪ Redo</Btn>
+
+        {/* Indent / Outdent / HR */}
+        <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--glass-border)]" />
+        <Btn title="Indent"          onClick={() => cmd("indent")}>→ Indent</Btn>
+        <Btn title="Outdent"         onClick={() => cmd("outdent")}>← Outdent</Btn>
+        <Btn title="Horizontal rule" onClick={() => cmd("insertHorizontalRule")}>─ HR</Btn>
+
         {/* Font size + family — select text first, then choose */}
         <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--glass-border)]" />
         <ToolbarSelect
@@ -576,6 +649,20 @@ export default function RichTextEditor({ value, onChange, disabled = false, plac
           options={FONT_FAMILIES}
           onSaveSelection={saveSelection}
           onApply={(v) => applyInlineStyle("fontFamily", v)}
+        />
+
+        {/* Text color + highlight */}
+        <ColorSelect
+          placeholder="Color"
+          options={TEXT_COLORS}
+          onSaveSelection={saveSelection}
+          onApply={(v) => applyInlineStyle("color", v)}
+        />
+        <ColorSelect
+          placeholder="Highlight"
+          options={HIGHLIGHT_COLORS}
+          onSaveSelection={saveSelection}
+          onApply={(v) => applyInlineStyle("backgroundColor", v)}
         />
 
         {/* Text alignment — persists via sanitizer text-align allowance */}

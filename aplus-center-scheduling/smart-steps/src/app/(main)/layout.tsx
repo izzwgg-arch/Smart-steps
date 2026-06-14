@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, FileBarChart, Settings, Wifi, WifiOff,
   RefreshCw, ClipboardList, Target, ChevronDown, Plus, Zap, Menu, X,
-  ArrowLeft,
+  ArrowLeft, UserCheck,
 } from "lucide-react";
 
 const APLUS_CENTER_URL = "https://app.apluscenterinc.org/aplus";
@@ -23,6 +23,7 @@ const NAV = [
   { href: "/goals-and-targets", label: "Goals & Targets", icon: Target },
   { href: "/assessments", label: "Assessments", icon: ClipboardList },
   { href: "/reports", label: "Reports", icon: FileBarChart },
+  { href: "/staff", label: "Staff", icon: UserCheck },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
