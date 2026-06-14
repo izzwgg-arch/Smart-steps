@@ -136,6 +136,7 @@ async function printReport(report: Report, sections: Section[]) {
     p  { margin-bottom: 8pt; orphans: 3; widows: 3; }
     ul, ol { margin: 8pt 0 8pt 20pt; }
     li { margin-bottom: 4pt; }
+    h4 { font-size: 10pt; font-weight: bold; font-style: italic; margin: 8pt 0 4pt; page-break-after: avoid; }
     h3 { font-size: 11pt; font-weight: bold; margin: 10pt 0 6pt; page-break-after: avoid; }
     h2 { font-size: 12pt; page-break-after: avoid; }
     strong { font-weight: bold; }

@@ -169,26 +169,36 @@ export async function POST(
   const age            = computeAge(client.dob);
 
   // ── Placeholder map ({{key}} and (bracket) forms) ─────────────────────────
+  // Rule: if data exists, use actual value; if missing, use a clean editable
+  // placeholder (truthy string) so replacePlaceholders() replaces instead of
+  // leaving the raw {{key}} token in the generated text.
   const values: Record<string, string> = {
-    client_name:          client.name,
-    dob:                  formatDate(client.dob),
-    address:              client.address ?? "",
-    assessment_date:      generationDate,
-    provider_name:        providerName,
-    age:                  String(age),
-    diagnosis:            client.diagnosis.join(", "),
-    insurance_id:         client.insuranceId ?? "",
-    guardian_name:        client.guardianName ?? "",
-    guardian_phone:       client.guardianPhone ?? "",
-    guardian_email:       client.guardianEmail ?? "",
-    school:               client.school ?? "",
-    intake_notes:         client.intakeNotes ?? "",
-    provider_email:       providerEmail,
-    provider_role:        providerRole,
-    provider_phone:       providerPhone ?? "",
-    provider_credentials: providerCredentials ?? "",
-    service_period_start: servicePeriodStart ?? "",
-    service_period_end:   servicePeriodEnd   ?? "",
+    client_name:                 client.name,
+    dob:                         formatDate(client.dob),
+    address:                     client.address                || "[Client Address]",
+    assessment_date:             generationDate,
+    provider_name:               providerName,
+    bcba_name:                   providerName,                   // alias
+    age:                         String(age),
+    diagnosis:                   client.diagnosis.join(", ")   || "[Diagnosis]",
+    insurance_id:                client.insuranceId            || "[Insurance ID]",
+    guardian_name:               client.guardianName           || "[Guardian / Parent Name]",
+    guardian_phone:              client.guardianPhone          || "[Guardian Phone]",
+    guardian_email:              client.guardianEmail          || "[Guardian Email]",
+    school:                      client.school                 || "[School / Program]",
+    intake_notes:                client.intakeNotes            || "[Intake notes]",
+    // biopsychosocial / biophysical — map to intakeNotes if present, else editable placeholder
+    biopsychosocial_information: client.intakeNotes            || "[Biopsychosocial information — edit here]",
+    biophysical_information:                                      "[Biophysical information — edit here]",
+    provider_email:              providerEmail                 || "[BCBA Email]",
+    bcba_email:                  providerEmail                 || "[BCBA Email]",   // alias
+    provider_role:               providerRole,
+    provider_phone:              providerPhone                 || "[BCBA Phone]",
+    bcba_phone:                  providerPhone                 || "[BCBA Phone]",   // alias
+    provider_credentials:        providerCredentials           || "[BCBA Credentials]",
+    bcba_credentials:            providerCredentials           || "[BCBA Credentials]", // alias
+    service_period_start:        servicePeriodStart            || "[Service Period Start]",
+    service_period_end:          servicePeriodEnd              || "[Service Period End]",
   };
 
   const reportClient: ReportClient = { ...client };
