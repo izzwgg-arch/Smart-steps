@@ -7,27 +7,17 @@ export async function GET() {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const role = (session.user as { role?: string }).role;
-    const isAdmin = role === "ADMIN" || role === "BCBA";
-    const userId = session.user.id;
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Sessions today (for this user or all if admin)
+    // Sessions today (all therapists)
     const sessionsToday = await prisma.session.count({
-      where: {
-        startedAt: { gte: today },
-        ...(isAdmin ? {} : { userId }),
-      },
+      where: { startedAt: { gte: today } },
     });
 
     // Total active clients
     const totalClients = await prisma.client.count({
-      where: {
-        isArchived: false,
-        ...(isAdmin ? {} : { assignments: { some: { userId } } }),
-      },
+      where: { isArchived: false },
     });
 
     // Active targets
@@ -35,12 +25,6 @@ export async function GET() {
       where: {
         isActive: true,
         phase: { not: "MASTERED" },
-        ...(isAdmin ? {} : {
-          OR: [
-            { program: { client: { assignments: { some: { userId } } } } },
-            { parentGoal: { client: { assignments: { some: { userId } } } } },
-          ],
-        }),
       },
     });
 
@@ -49,9 +33,7 @@ export async function GET() {
 
     // Recent sessions (last 5)
     const recentSessions = await prisma.session.findMany({
-      where: {
-        ...(isAdmin ? {} : { userId }),
-      },
+      where: {},
       take: 5,
       orderBy: { startedAt: "desc" },
       include: {
@@ -63,10 +45,7 @@ export async function GET() {
 
     // Assessments in progress
     const assessmentsInProgress = await prisma.clientAssessment.count({
-      where: {
-        status: "IN_PROGRESS",
-        ...(isAdmin ? {} : { completedById: userId }),
-      },
+      where: { status: "IN_PROGRESS" },
     });
 
     return NextResponse.json({

@@ -9,15 +9,9 @@ export async function GET() {
   }
 
   try {
-    const role = (session.user as { role?: string }).role;
-    const isAdmin = role === "ADMIN" || role === "BCBA";
-
     const clients = await prisma.client.findMany({
       where: {
         isArchived: false,
-        ...(isAdmin
-          ? {}
-          : { assignments: { some: { userId: session.user!.id } } }),
       },
       orderBy: { updatedAt: "desc" },
       include: {
