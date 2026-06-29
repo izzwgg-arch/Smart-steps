@@ -7,8 +7,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { db, queueTrial, queueBehavior } from "@/lib/dexie";
 import { toast } from "sonner";
-import { ArrowLeft, Pause, Play, Timer, Plus, Minus, RefreshCcw, Save, CloudOff } from "lucide-react";
+import { ArrowLeft, Pause, Play, Timer, Plus, Minus, RefreshCcw, Save, CloudOff, ChevronDown, AlertTriangle } from "lucide-react";
 import { useABAStore } from "@/store/abaStore";
+import { useSession as useAuthSession } from "next-auth/react";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -101,6 +102,40 @@ export default function SessionNewPage() {
   const storeTargets = useABAStore((s) => s.targets.filter((t) => t.clientId === clientId && t.isActive));
   const [storeLocalSessionId, setStoreLocalSessionId] = useState<string | null>(null);
 
+  /* Auth */
+  const { data: authSession } = useAuthSession();
+  const loggedInUserId   = (authSession?.user as { id?: string })?.id ?? "";
+  const loggedInUserName = authSession?.user?.name ?? "";
+
+  /* Pre-session setup form */
+  const todayStr   = new Date().toISOString().slice(0, 10);
+  const nowTimeStr = new Date().toTimeString().slice(0, 5);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [setupForm, setSetupForm] = useState({
+    sessionDate: todayStr,
+    timeIn: nowTimeStr,
+    timeOut: "",
+    providerId: "",
+    providerName: "",
+  });
+
+  useEffect(() => {
+    if (loggedInUserId && !setupForm.providerId) {
+      setSetupForm((f) => ({ ...f, providerId: loggedInUserId, providerName: loggedInUserName }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedInUserId]);
+
+  const { data: providerList = [] } = useQuery<{id: string; name: string | null; role: string; displayRole: string | null}[]>({
+    queryKey: ["providers-dropdown"],
+    queryFn: async () => {
+      const res = await fetch("/smart-steps/api/users?forDropdown=1");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
   /* session state */
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null); // epoch ms
@@ -187,17 +222,15 @@ export default function SessionNewPage() {
 
   /* ─── Session init ─────────────────────────────────────────────────────── */
 
-  const createSession = useCallback(async () => {
+  const createSession = useCallback(async (setup?: { startedAt?: string; endedAt?: string; providerId?: string }) => {
     // Check if there's an unfinished active session in the store for this client
     const stored = useABAStore.getState().activeSession;
-    if (stored && stored.clientId === clientId && !stored.saved) {
+    if (!setup && stored && stored.clientId === clientId && !stored.saved) {
       // Restore existing in-progress session
       const localId = storeStartSession(clientId, stored.serverId);
       setStoreLocalSessionId(localId);
       setSessionId(stored.serverId ?? localId);
       setStartedAt(stored.startedAt);
-      // Restore trials — map store shape → page TrialEntry shape
-      // Store uses numeric promptLevel; page uses string union — drop promptLevel on restore
       const restoredTrials: TrialEntry[] = stored.trials.map((t) => ({
         targetId: t.targetId,
         targetLabel: t.targetTitle,
@@ -221,7 +254,12 @@ export default function SessionNewPage() {
       const res = await fetch("/smart-steps/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId }),
+        body: JSON.stringify({
+          clientId,
+          ...(setup?.startedAt  ? { startedAt:  setup.startedAt  } : {}),
+          ...(setup?.endedAt    ? { endedAt:    setup.endedAt    } : {}),
+          ...(setup?.providerId ? { providerId: setup.providerId } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       const realId = data?.id;
@@ -236,12 +274,18 @@ export default function SessionNewPage() {
       setSessionId(localSessionId);
       toast.info("Offline mode — trials saved locally", { duration: 3000 });
     }
-    setStartedAt(Date.now());
+    setStartedAt(setup?.startedAt ? new Date(setup.startedAt).getTime() : Date.now());
   }, [clientId, storeStartSession, storeSetServerId]);
 
   useEffect(() => {
-    if (!sessionId) createSession();
-  }, [sessionId, createSession]);
+    // Only auto-create once the user has submitted the setup form
+    if (!sessionId && hasStarted) createSession({
+      startedAt: setupForm.timeIn ? new Date(`${setupForm.sessionDate}T${setupForm.timeIn}:00`).toISOString() : undefined,
+      endedAt: setupForm.timeOut ? new Date(`${setupForm.sessionDate}T${setupForm.timeOut}:00`).toISOString() : undefined,
+      providerId: setupForm.providerId || undefined,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasStarted]);
 
   /* ─── Session timer (no reset on pause) ────────────────────────────────── */
 
@@ -484,6 +528,111 @@ export default function SessionNewPage() {
   const pct = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : null;
 
   /* ─── Render ────────────────────────────────────────────────────────────── */
+
+  /* ── Setup form shown before session starts ── */
+  if (!hasStarted) {
+    const isBackdated = setupForm.sessionDate !== new Date().toISOString().slice(0, 10);
+    return (
+      <div className="min-h-dvh bg-[var(--background)] pb-safe">
+        <header className="sticky top-0 z-20 border-b border-[var(--glass-border)] bg-[var(--background)]/90 backdrop-blur-xl">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <Link href={`/clients/${clientId}`} className="tap-target rounded-xl p-2 text-zinc-400 hover:text-[var(--foreground)]">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+            <div>
+              <h1 className="text-base font-bold text-[var(--foreground)]">New Session</h1>
+              <p className="text-xs text-zinc-500">Session date controls reports, notes, and assessments.</p>
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto max-w-lg px-4 py-6 space-y-5">
+          <div className="glass-card rounded-2xl p-5 space-y-4">
+            {/* Provider */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Provider</label>
+              <div className="relative">
+                <select
+                  value={setupForm.providerId}
+                  onChange={(e) => {
+                    const opt = providerList.find((p) => p.id === e.target.value);
+                    setSetupForm((f) => ({ ...f, providerId: e.target.value, providerName: opt?.name ?? e.target.value }));
+                  }}
+                  className="w-full appearance-none rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)] pr-8"
+                >
+                  {providerList.length === 0 && (
+                    <option value={loggedInUserId}>{loggedInUserName || "Me (logged in)"}</option>
+                  )}
+                  {providerList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name ?? p.id}{p.displayRole ? ` — ${p.displayRole}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              </div>
+            </div>
+            {/* Session Date */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Session Date</label>
+              <input
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={setupForm.sessionDate}
+                onChange={(e) => setSetupForm((f) => ({ ...f, sessionDate: e.target.value }))}
+                className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)]"
+              />
+            </div>
+            {/* Time In / Time Out */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Time In</label>
+                <input
+                  type="time"
+                  value={setupForm.timeIn}
+                  onChange={(e) => setSetupForm((f) => ({ ...f, timeIn: e.target.value }))}
+                  className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Time Out <span className="font-normal">(optional)</span></label>
+                <input
+                  type="time"
+                  value={setupForm.timeOut}
+                  onChange={(e) => setSetupForm((f) => ({ ...f, timeOut: e.target.value }))}
+                  className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {isBackdated && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3">
+              <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-300">Backdated Session</p>
+                <p className="text-xs text-amber-400/80 mt-0.5">
+                  You are creating a session for{" "}
+                  <span className="font-semibold">
+                    {new Date(setupForm.sessionDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                  </span>
+                  . Reports, graphs, assessments, and session notes will use this service date.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setHasStarted(true)}
+            className="btn-primary tap-target w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-base"
+          >
+            <Play className="h-5 w-5" />
+            {isBackdated ? "Create Backdated Session" : "Start Session"}
+          </button>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh bg-[var(--background)] pb-safe">

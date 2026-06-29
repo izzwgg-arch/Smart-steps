@@ -12,27 +12,46 @@
  * offline-first behaviour and localStorage persistence are inherited for free.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Play, Pause, Timer, Save, CloudOff, Plus, Minus, RefreshCcw,
   Activity, X, CheckCircle2, Zap, Layers, Target as TargetIcon, Clock,
+  RotateCcw, ChevronDown, User,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { queueTrial, queueBehavior } from "@/lib/dexie";
 import {
   useABAStore,
+  defaultMastery,
+  defaultPromptLevels,
   type TrialResultKey,
   type ActiveABCEntry,
   type LocalTarget,
 } from "@/store/abaStore";
+import { SessionSnapshotDrawer } from "./SessionSnapshotDrawer";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
 type RecordingMode = "DTT" | "INTERVAL" | "ABC";
 type IntervalType  = "FREQUENCY" | "DURATION" | "MOMENTARY" | "PARTIAL" | "WHOLE" | "LATENCY";
-type DataView      = "history" | "live" | "summary";
+type DataView      = "history" | "setup" | "live" | "summary";
+
+interface SessionSetup {
+  startedAt?: string;
+  endedAt?: string;
+  providerId?: string;
+  mode?: RecordingMode;
+}
+
+interface ProviderOption {
+  id: string;
+  name: string | null;
+  role: string;
+  displayRole: string | null;
+}
 
 interface TrialEntry {
   id: string;
@@ -71,6 +90,7 @@ interface PastSession {
   id: string;
   startedAt: string;
   endedAt?: string | null;
+  createdAt?: string | null;
   trialCount: number;
   pctCorrect?: number | null;
   therapistName?: string | null;
@@ -320,8 +340,46 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
+  /* ── Auth ── */
+  const { data: authSession } = useSession();
+  const loggedInUserId   = (authSession?.user as { id?: string })?.id ?? "";
+  const loggedInUserName = authSession?.user?.name ?? "";
+
   /* ── View state ── */
   const [view, setView] = useState<DataView>("history");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  /* ── Pre-session setup form ── */
+  const todayStr   = new Date().toISOString().slice(0, 10);
+  const nowTimeStr = new Date().toTimeString().slice(0, 5);
+  const [setupForm, setSetupForm] = useState({
+    sessionDate: todayStr,
+    timeIn: nowTimeStr,
+    timeOut: "",
+    mode: "DTT" as RecordingMode,
+    providerId: "",
+    providerName: "",
+  });
+
+  /* Set default provider once auth loads */
+  useEffect(() => {
+    if (loggedInUserId && !setupForm.providerId) {
+      setSetupForm((f) => ({ ...f, providerId: loggedInUserId, providerName: loggedInUserName }));
+    }
+    // Only run when auth first resolves
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedInUserId]);
+
+  /* ── Provider dropdown list ── */
+  const { data: providerList = [] } = useQuery<ProviderOption[]>({
+    queryKey: ["providers-dropdown"],
+    queryFn: async () => {
+      const res = await fetch("/smart-steps/api/users?forDropdown=1");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+  });
 
   /* ── Session timer ── */
   const [startedAtMs, setStartedAtMs]   = useState<number | null>(null);
@@ -371,9 +429,17 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
   const storeMarkSaved     = useABAStore((s) => s.markSessionSaved);
   const storeClear         = useABAStore((s) => s.clearActiveSession);
   const storeActiveSession = useABAStore((s) => s.activeSession);
-  const categories         = useABAStore((s) => (s.categories ?? []).filter((c) => c.clientId === clientId));
-  const allSkills          = useABAStore((s) => s.programs ?? []);
-  const allGoals           = useABAStore((s) => (s.targets ?? []).filter((t) => t.clientId === clientId && (t.isActive ?? true)));
+  // Select raw arrays — never filter inside useABAStore selector (filter() returns a new
+  // array reference every call → Zustand sees changed value every render → infinite loop).
+  // Actions (setTargetServerId, addTarget) are accessed via getState() in effects only —
+  // subscribing to them as selectors + including them in effect deps causes React #185
+  // (maximum update depth exceeded) in React 19 because Zustand notifies subscribers
+  // synchronously inside useSyncExternalStore, re-triggering the effect chain.
+  const rawCategories      = useABAStore((s) => s.categories);
+  const allSkills          = useABAStore((s) => s.programs);
+  const rawTargets         = useABAStore((s) => s.targets);
+  const categories         = useMemo(() => (rawCategories ?? []).filter((c) => c.clientId === clientId), [rawCategories, clientId]);
+  const allGoals           = useMemo(() => (rawTargets ?? []).filter((t) => t.clientId === clientId && (t.isActive ?? true)), [rawTargets, clientId]);
 
   /* ── Past sessions ── */
   const { data: pastSessions = [], refetch: refetchSessions } = useQuery<PastSession[]>({
@@ -386,19 +452,101 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     enabled: !!clientId,
   });
 
-  /* ── Derived goal list ── */
-  const visibleGoals = allGoals.filter((g) => {
-    if (filterSkillId) return g.programId === filterSkillId;
-    if (filterCatId) {
-      const skill = allSkills.find((s) => s.categoryId === filterCatId && s.clientId === clientId && g.programId === s.id);
-      return !!skill || (allSkills.filter((s) => s.categoryId === filterCatId).length === 0 && g.categoryId === filterCatId);
-    }
-    return true;
+  /* ── Server target sync: ensures every goal has a serverId before recording ── */
+  const { data: serverTargetData } = useQuery<{
+    groups: Array<{
+      groupId: string;
+      groupLabel: string;
+      groupType: "goal" | "program";
+      targets: Array<{ id: string; definition: string; targetType: string; phase: string }>;
+    }>;
+  }>({
+    queryKey: ["server-targets-sync", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/smart-steps/api/clients/${clientId}/targets`);
+      if (!res.ok) return { groups: [] };
+      return res.json();
+    },
+    enabled: !!clientId,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const visibleSkills = filterCatId
-    ? allSkills.filter((s) => s.categoryId === filterCatId && s.clientId === clientId)
-    : allSkills.filter((s) => s.clientId === clientId);
+  /* ── Derived goal list ── */
+  const visibleGoals = useMemo(() => allGoals.filter((g) => {
+    if (filterSkillId) return g.programId === filterSkillId;
+    if (filterCatId) {
+      const skill = (allSkills ?? []).find((s) => s.categoryId === filterCatId && s.clientId === clientId && g.programId === s.id);
+      return !!skill || ((allSkills ?? []).filter((s) => s.categoryId === filterCatId).length === 0 && g.categoryId === filterCatId);
+    }
+    return true;
+  }), [allGoals, allSkills, filterSkillId, filterCatId, clientId]);
+
+  const visibleSkills = useMemo(() => filterCatId
+    ? (allSkills ?? []).filter((s) => s.categoryId === filterCatId && s.clientId === clientId)
+    : (allSkills ?? []).filter((s) => s.clientId === clientId),
+  [allSkills, filterCatId, clientId]);
+
+  /* ── Sync server targetIds into local Zustand store ──────────────────────
+   * This ensures every LocalTarget has a serverId before the user records
+   * trials. Without a serverId, trials would be saved with local IDs that
+   * don't exist in the database → FK violation → silent data loss.
+   *
+   * Actions are accessed via useABAStore.getState() rather than as subscribed
+   * selectors. Including action function selectors in the dep array caused
+   * React error #185 (maximum update depth exceeded) in React 19: Zustand
+   * notifies all subscribers synchronously inside useSyncExternalStore, and
+   * having the action refs in deps caused the effect to re-queue itself on
+   * every store write, producing an unbounded synchronous call chain.
+   * ──────────────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!serverTargetData?.groups) return;
+
+    // Snapshot current store state + grab actions imperatively (no subscription)
+    const { targets: storeTargets, addTarget, setTargetServerId } = useABAStore.getState();
+
+    for (const group of serverTargetData.groups) {
+      for (const st of group.targets) {
+        // Already linked — skip
+        if (storeTargets.some((t) => t.serverId === st.id)) continue;
+
+        // Try to match an existing local target by title + clientId (case-insensitive)
+        const match = storeTargets.find(
+          (t) =>
+            t.clientId === clientId &&
+            !t.serverId &&
+            (t.title ?? "").trim().toLowerCase() === (st.definition ?? "").trim().toLowerCase(),
+        );
+
+        if (match) {
+          // Link the server ID to the existing local target
+          setTargetServerId(match.id, st.id);
+        } else if (!storeTargets.some((t) => t.id === st.id)) {
+          // Target exists on server but not locally — add it so it's visible in DataEntry
+          addTarget({
+            id: st.id,
+            serverId: st.id,
+            clientId,
+            title: st.definition,
+            operationalDefinition: st.definition,
+            targetType: st.targetType as LocalTarget["targetType"],
+            phase: st.phase as LocalTarget["phase"],
+            status: (st.phase === "MASTERED" ? "mastered" : "active") as LocalTarget["status"],
+            categoryId: "",
+            programId: group.groupType === "program" ? group.groupId : "",
+            masteryCriteria: defaultMastery(),
+            promptLevels: defaultPromptLevels(),
+            isActive: true,
+            synced: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+    // Only re-run when the server data or client changes.
+    // Actions come from getState() so they don't need to be deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverTargetData, clientId]);
 
   /* ── Session timer effect ── */
   useEffect(() => {
@@ -439,36 +587,46 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
   }, [isIntervalRunning, intervalDuration]);
 
   /* ── Start session ── */
-  const startSession = useCallback(async () => {
-    // Check for existing in-progress session in store
-    const existing = useABAStore.getState().activeSession;
-    if (existing && existing.clientId === clientId && !existing.saved) {
-      const lid = existing.localId;
-      setLocalSessionId(lid);
-      setSessionId(existing.serverId ?? lid);
-      setStartedAtMs(existing.startedAt);
-      const restored: TrialEntry[] = existing.trials.map((t) => ({
-        id: t.id, targetId: t.targetId, targetTitle: t.targetTitle,
-        result: t.result, at: t.recordedAt,
-      }));
-      if (restored.length > 0) {
-        setTrials(restored);
-        toast.info(`Restored ${restored.length} trial${restored.length !== 1 ? "s" : ""} from previous session`);
+  const startSession = useCallback(async (setup?: SessionSetup) => {
+    // Check for existing in-progress session in store (only when not explicitly configuring a new one)
+    if (!setup) {
+      const existing = useABAStore.getState().activeSession;
+      if (existing && existing.clientId === clientId && !existing.saved) {
+        const lid = existing.localId;
+        setLocalSessionId(lid);
+        setSessionId(existing.serverId ?? lid);
+        setStartedAtMs(existing.startedAt);
+        const restored: TrialEntry[] = existing.trials.map((t) => ({
+          id: t.id, targetId: t.targetId, targetTitle: t.targetTitle,
+          result: t.result, at: t.recordedAt,
+        }));
+        if (restored.length > 0) {
+          setTrials(restored);
+          toast.info(`Restored ${restored.length} trial${restored.length !== 1 ? "s" : ""} from previous session`);
+        }
+        setView("live");
+        return;
       }
-      setView("live");
-      return;
     }
 
     const lid = storeStartSession(clientId, null);
     setLocalSessionId(lid);
-    setStartedAtMs(Date.now());
+    // Timer uses the setup startedAt so live elapsed time is relative to service date
+    setStartedAtMs(setup?.startedAt ? new Date(setup.startedAt).getTime() : Date.now());
+    if (setup?.mode) setMode(setup.mode);
     setView("live");
 
     try {
       const res  = await fetch("/smart-steps/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId }),
+        body: JSON.stringify({
+          clientId,
+          mode: setup?.mode ?? "DTT",
+          ...(setup?.startedAt  ? { startedAt:  setup.startedAt  } : {}),
+          ...(setup?.endedAt    ? { endedAt:    setup.endedAt    } : {}),
+          ...(setup?.providerId ? { providerId: setup.providerId } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (data?.id && !String(data.id).startsWith("mock-")) {
@@ -496,6 +654,18 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     },
     [localSessionId, storeAddTrial]
   );
+
+  /* ── Undo last trial (live session only) ── */
+  const undoLastTrial = useCallback(() => {
+    setTrials((prev) => {
+      if (prev.length === 0) return prev;
+      toast.info("Last trial removed");
+      return prev.slice(0, -1);
+    });
+    if (localSessionId) {
+      useABAStore.getState().undoLastTrial(localSessionId);
+    }
+  }, [localSessionId]);
 
   /* ── Record ABC ── */
   const recordABC = useCallback(() => {
@@ -526,13 +696,32 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
 
   /* ── End session ── */
   const endSession = useCallback(async () => {
-    const sid = sessionId ?? localSessionId;
+    let sid = sessionId ?? localSessionId;
     if (!sid || isSaving) return;
     setIsSaving(true);
 
     const endedAt = new Date().toISOString();
 
     try {
+      // If we're still on a local-fallback session ID (server was unreachable at start),
+      // make one more attempt to create a real server session before saving.
+      const sessionIsLocal = sid === localSessionId && sid !== sessionId;
+      if (sessionIsLocal) {
+        try {
+          const retryRes = await fetch("/smart-steps/api/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clientId }),
+          });
+          const retryData = await retryRes.json().catch(() => ({}));
+          if (retryData?.id && !String(retryData.id).startsWith("mock-")) {
+            sid = retryData.id;
+            setSessionId(retryData.id);
+            if (localSessionId) storeSetServerId(localSessionId, retryData.id);
+          }
+        } catch { /* keep local id — will queue to Dexie below */ }
+      }
+
       // Patch session end time
       await fetch(`/smart-steps/api/sessions/${sid}`, {
         method: "PATCH",
@@ -540,26 +729,53 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
         body: JSON.stringify({ endedAt }),
       }).catch(() => {});
 
-      // Save trials
-      if (trials.length > 0) {
-        await fetch("/smart-steps/api/trials", {
+      // Re-resolve target IDs — sync may have populated serverId after recording started
+      const freshTargets = useABAStore.getState().targets;
+      const resolvedTrials = trials.map((t) => {
+        if (!t.targetId.startsWith("local-")) return t;
+        const fresh = freshTargets.find((ft) => ft.id === t.targetId);
+        return fresh?.serverId ? { ...t, targetId: fresh.serverId } : t;
+      });
+
+      // Separate server-linked trials from still-local ones
+      const serverTrials  = resolvedTrials.filter((t) => !t.targetId.startsWith("local-"));
+      const localTrials   = resolvedTrials.filter((t) =>  t.targetId.startsWith("local-"));
+
+      // Queue any still-local trials to Dexie for later reconciliation
+      if (localTrials.length > 0) {
+        localTrials.forEach((t) => queueTrial({
+          sessionId: sid!, targetId: t.targetId, result: t.result,
+          promptLevel: t.promptLevel, createdAt: new Date(t.at).toISOString(),
+        }).catch(() => {}));
+        toast.warning(
+          `${localTrials.length} trial${localTrials.length !== 1 ? "s" : ""} queued locally — goals not yet synced to server`,
+          { duration: 5000 },
+        );
+      }
+
+      // Save server-linked trials
+      if (serverTrials.length > 0) {
+        const trialsRes = await fetch("/smart-steps/api/trials", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sessionId: sid,
-            trials: trials.map((t) => ({
+            trials: serverTrials.map((t) => ({
               targetId:    t.targetId,
               result:      t.result,
               promptLevel: t.promptLevel,
             })),
           }),
-        }).catch((e: unknown) => {
-          trials.forEach((t) => queueTrial({
-            sessionId: sid, targetId: t.targetId, result: t.result,
+        });
+        if (!trialsRes.ok) {
+          // Server rejected — queue all for later sync
+          const errBody = await trialsRes.json().catch(() => ({}));
+          serverTrials.forEach((t) => queueTrial({
+            sessionId: sid!, targetId: t.targetId, result: t.result,
             promptLevel: t.promptLevel, createdAt: new Date(t.at).toISOString(),
           }).catch(() => {}));
-          throw e;
-        });
+          toast.warning(`Trials queued for sync (${errBody?.error ?? trialsRes.status})`);
+        }
       }
 
       // Save ABC events
@@ -614,7 +830,7 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     } finally {
       setIsSaving(false);
     }
-  }, [sessionId, trials, abcEntries, elapsedSec, localSessionId, allGoals, storeMarkSaved, storeClear, qc, clientId, isSaving]);
+  }, [sessionId, trials, abcEntries, elapsedSec, localSessionId, allGoals, storeMarkSaved, storeClear, storeSetServerId, qc, clientId, isSaving]);
 
   /* ── Reset to history ── */
   function resetToHistory() {
@@ -631,6 +847,16 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     setFilterSkillId(null);
     setIntervalCount(0);
     setIsIntervalRunning(false);
+    // Reset setup form defaults for next session
+    const nowDate = new Date();
+    setSetupForm({
+      sessionDate: nowDate.toISOString().slice(0, 10),
+      timeIn: nowDate.toTimeString().slice(0, 5),
+      timeOut: "",
+      mode: "DTT",
+      providerId: loggedInUserId,
+      providerName: loggedInUserName,
+    });
     setView("history");
     refetchSessions();
   }
@@ -646,6 +872,165 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
   /* ━━━━ VIEW: SUMMARY ━━━━ */
   if (view === "summary" && summary) {
     return <SummaryView summary={summary} onDone={resetToHistory} />;
+  }
+
+  /* ━━━━ VIEW: SETUP — pre-session form ━━━━ */
+  if (view === "setup") {
+    const isBackdated = setupForm.sessionDate !== new Date().toISOString().slice(0, 10);
+    const handleStartFromSetup = async () => {
+      const startedAt = setupForm.timeIn
+        ? `${setupForm.sessionDate}T${setupForm.timeIn}:00`
+        : `${setupForm.sessionDate}T00:00:00`;
+      const endedAt = setupForm.timeOut
+        ? `${setupForm.sessionDate}T${setupForm.timeOut}:00`
+        : undefined;
+      await startSession({
+        startedAt: new Date(startedAt).toISOString(),
+        endedAt: endedAt ? new Date(endedAt).toISOString() : undefined,
+        providerId: setupForm.providerId || undefined,
+        mode: setupForm.mode,
+      });
+    };
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-5"
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setView("history")}
+            className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div>
+            <h2 className="text-base font-bold text-[var(--foreground)]">New Session Setup</h2>
+            <p className="text-xs text-zinc-500">Session date controls reports, graphs, assessments, and session notes.</p>
+          </div>
+        </div>
+
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          {/* Provider */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">
+              <User className="inline h-3.5 w-3.5 mr-1" />Provider
+            </label>
+            <div className="relative">
+              <select
+                value={setupForm.providerId}
+                onChange={(e) => {
+                  const opt = providerList.find((p) => p.id === e.target.value);
+                  setSetupForm((f) => ({
+                    ...f,
+                    providerId: e.target.value,
+                    providerName: opt?.name ?? e.target.value,
+                  }));
+                }}
+                className="w-full appearance-none rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)] pr-8"
+              >
+                {providerList.length === 0 && (
+                  <option value={loggedInUserId}>{loggedInUserName || "Me (logged in)"}</option>
+                )}
+                {providerList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name ?? p.id}{p.displayRole ? ` — ${p.displayRole}` : p.role !== "RBT" ? ` — ${p.role}` : ""}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+            </div>
+          </div>
+
+          {/* Session Date */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Session Date</label>
+            <input
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+              value={setupForm.sessionDate}
+              onChange={(e) => setSetupForm((f) => ({ ...f, sessionDate: e.target.value }))}
+              className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)]"
+            />
+          </div>
+
+          {/* Time In / Time Out */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Time In</label>
+              <input
+                type="time"
+                value={setupForm.timeIn}
+                onChange={(e) => setSetupForm((f) => ({ ...f, timeIn: e.target.value }))}
+                className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Time Out <span className="font-normal">(optional)</span></label>
+              <input
+                type="time"
+                value={setupForm.timeOut}
+                onChange={(e) => setSetupForm((f) => ({ ...f, timeOut: e.target.value }))}
+                className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2.5 text-sm text-[var(--foreground)]"
+              />
+            </div>
+          </div>
+
+          {/* Session Type */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Session Type</label>
+            <div className="flex gap-1.5 rounded-xl bg-[var(--glass-bg)] p-1 border border-[var(--glass-border)]">
+              {(["DTT", "INTERVAL", "ABC"] as RecordingMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setSetupForm((f) => ({ ...f, mode: m }))}
+                  className={`flex-1 rounded-lg px-2 py-2 text-xs font-semibold transition-all ${
+                    setupForm.mode === m
+                      ? "bg-[var(--accent-cyan)]/20 text-[var(--accent-cyan)]"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {m === "DTT" ? "Discrete Trial" : m === "INTERVAL" ? "Interval" : "ABC Data"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Backdated warning */}
+        {isBackdated && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4"
+          >
+            <p className="text-sm font-semibold text-amber-300">Backdated Session</p>
+            <p className="text-xs text-amber-400/80 mt-1">
+              You are creating a session for{" "}
+              <span className="font-semibold">
+                {new Date(setupForm.sessionDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+              </span>
+              . Reports, graphs, assessments, and session notes will use this service date.
+            </p>
+          </motion.div>
+        )}
+
+        {/* Start button */}
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          type="button"
+          onClick={handleStartFromSetup}
+          className="w-full flex items-center justify-center gap-2 btn-primary rounded-2xl py-4 font-bold text-base"
+        >
+          <Play className="h-5 w-5" />
+          {isBackdated ? "Create Backdated Session" : "Start Session"}
+        </motion.button>
+      </motion.div>
+    );
   }
 
   /* ━━━━ VIEW: HISTORY ━━━━ */
@@ -667,7 +1052,7 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
             </div>
             <button
               type="button"
-              onClick={startSession}
+              onClick={() => startSession()}
               className="flex items-center gap-1.5 rounded-xl bg-amber-500/20 px-4 py-2.5 text-sm font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
             >
               <Play className="h-4 w-4" /> Resume
@@ -680,7 +1065,7 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
           whileHover={{ y: -2 }}
           whileTap={{ scale: 0.98 }}
           type="button"
-          onClick={startSession}
+          onClick={() => setView("setup")}
           className="w-full flex items-center justify-between gap-4 glass-card rounded-2xl border border-[var(--accent-cyan)]/30 bg-[var(--accent-cyan)]/5 p-5 hover:border-[var(--accent-cyan)]/60 transition-all"
         >
           <div className="flex items-center gap-4">
@@ -734,7 +1119,7 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
                 const start    = new Date(s.startedAt);
                 const durMin   = s.endedAt ? Math.round((new Date(s.endedAt).getTime() - start.getTime()) / 60000) : null;
                 return (
-                  <div key={s.id} className="glass-card rounded-2xl p-4 flex items-center gap-4">
+                  <button key={s.id} type="button" onClick={() => setSelectedSessionId(s.id)} className="glass-card w-full rounded-2xl p-4 flex items-center gap-4 text-left hover:border-[var(--accent-cyan)]/40 transition-colors">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-cyan)]/10">
                       <Activity className="h-5 w-5 text-[var(--accent-cyan)]" />
                     </div>
@@ -754,12 +1139,13 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
                         {Math.round(s.pctCorrect)}%
                       </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
+        <SessionSnapshotDrawer sessionId={selectedSessionId} onClose={() => setSelectedSessionId(null)} />
       </div>
     );
   }
@@ -792,6 +1178,18 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
           <div className="flex-1 min-w-0 text-center">
             <span className="text-xs text-zinc-500">{trials.length} trial{trials.length !== 1 ? "s" : ""}</span>
           </div>
+
+          {/* Undo last trial */}
+          {trials.length > 0 && (
+            <button
+              type="button"
+              onClick={undoLastTrial}
+              title="Undo last trial"
+              className="flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium text-amber-400 hover:bg-amber-400/10 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Undo
+            </button>
+          )}
 
           {/* End session */}
           <button

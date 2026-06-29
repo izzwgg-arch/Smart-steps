@@ -20,10 +20,13 @@ export async function GET(req: Request) {
         id: true,
         startedAt: true,
         endedAt: true,
+        createdAt: true,
+        mode: true,
         clientId: true,
         user: { select: { name: true } },
         _count: { select: { trials: true } },
         trials: {
+          where: { deletedAt: null },
           select: { result: true },
         },
       },
@@ -36,6 +39,8 @@ export async function GET(req: Request) {
         id: s.id,
         startedAt: s.startedAt,
         endedAt: s.endedAt,
+        createdAt: s.createdAt,
+        mode: s.mode,
         clientId: s.clientId,
         trialCount: total,
         pctCorrect: total > 0 ? (correct / total) * 100 : null,
@@ -66,12 +71,24 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { clientId } = body as { clientId?: string };
+    const { clientId, mode, startedAt, endedAt, providerId } = body as {
+      clientId?: string;
+      mode?: string;
+      startedAt?: string;
+      endedAt?: string;
+      providerId?: string;
+    };
     if (!clientId) {
       return NextResponse.json({ error: "clientId required" }, { status: 400 });
     }
     const sessionRecord = await prisma.session.create({
-      data: { clientId, userId },
+      data: {
+        clientId,
+        userId: providerId ?? userId,
+        mode: mode || "DTT",
+        ...(startedAt ? { startedAt: new Date(startedAt) } : {}),
+        ...(endedAt ? { endedAt: new Date(endedAt) } : {}),
+      },
     });
     return NextResponse.json({ id: sessionRecord.id });
   } catch (e) {
