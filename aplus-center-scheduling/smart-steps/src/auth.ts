@@ -67,6 +67,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (!localUser.isActive) return null;
           const valid = await verifyPassword(password, localUser.passwordHash);
           if (!valid) return null;
+          // Backfill appRoleId the same way SSO/demo logins do — otherwise a
+          // brand-new local-password account has appRoleId=null and the
+          // fail-closed permission resolver gives it zero access.
+          await ensureUser({
+            id: localUser.id,
+            email: localUser.email,
+            name: localUser.name,
+            role: localUser.role,
+          });
           await auditLog(localUser.id, "MANUAL_LOGIN", "User", localUser.id, { method: "local_password" });
           return {
             id: localUser.id,
