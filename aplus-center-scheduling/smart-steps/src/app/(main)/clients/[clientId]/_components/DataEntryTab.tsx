@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import {
   Play, Pause, Timer, Save, CloudOff, Plus, Minus, RefreshCcw,
   Activity, X, CheckCircle2, Zap, Layers, Target as TargetIcon, Clock,
@@ -22,13 +23,15 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { queueTrial, queueBehavior } from "@/lib/dexie";
+import { queueTrial, queueBehavior, queueSession } from "@/lib/dexie";
 import {
   useABAStore,
+  resolveSessionStart,
   defaultMastery,
   defaultPromptLevels,
   type TrialResultKey,
   type ActiveABCEntry,
+  type ActiveSession,
   type LocalTarget,
 } from "@/store/abaStore";
 import { SessionSnapshotDrawer } from "./SessionSnapshotDrawer";
@@ -333,6 +336,60 @@ function SummaryView({
   );
 }
 
+/* ─── Unsaved-session conflict dialog ─────────────────────────────────────
+ * Shown instead of silently discarding data when the user tries to start a
+ * session while a DIFFERENT client's session is still unsaved. */
+function ConflictDialog({
+  trialCount,
+  onCancel,
+  onDiscard,
+}: {
+  trialCount: number;
+  onCancel: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        className="glass-card w-full max-w-md rounded-2xl border border-amber-500/30 p-6 space-y-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15">
+            <CloudOff className="h-5 w-5 text-amber-400" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-[var(--foreground)]">Unsaved session in progress</h3>
+            <p className="text-xs text-zinc-500">for a different client</p>
+          </div>
+        </div>
+        <p className="text-sm text-zinc-400">
+          You have <span className="font-semibold text-amber-300">{trialCount} recorded trial{trialCount !== 1 ? "s" : ""}</span> that
+          {" "}have not been saved yet. Starting a new session here will <span className="font-semibold text-[var(--accent-pink)]">permanently discard</span> that
+          data unless you go back and end that session first.
+        </p>
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-xl border border-[var(--glass-border)] py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5 transition-colors"
+          >
+            Go back &amp; resume it
+          </button>
+          <button
+            type="button"
+            onClick={onDiscard}
+            className="flex-1 rounded-xl bg-[var(--accent-pink)]/20 py-2.5 text-sm font-semibold text-[var(--accent-pink)] hover:bg-[var(--accent-pink)]/30 transition-colors"
+          >
+            Discard &amp; start new
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 /* ─── Main DataEntryTab ──────────────────────────────────────────────────── */
 
 export function DataEntryTab({ clientId }: { clientId: string }) {
@@ -419,10 +476,18 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
   const [summary, setSummary]  = useState<SessionSummaryData | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  /* ── Conflicting unsaved session guard ──
+   * Set when the user tries to start a new session while a DIFFERENT
+   * client's session is still unsaved. We never discard that data
+   * automatically — the user must explicitly confirm. */
+  const [conflictingSession, setConflictingSession] = useState<{
+    existing: ActiveSession;
+    pendingSetup?: SessionSetup;
+  } | null>(null);
+
   const qc = useQueryClient();
 
   /* ── Zustand store ── */
-  const storeStartSession  = useABAStore((s) => s.startSession);
   const storeSetServerId   = useABAStore((s) => s.setSessionServerId);
   const storeAddTrial      = useABAStore((s) => s.addTrial);
   const storeAddABC        = useABAStore((s) => s.addABCEvent);
@@ -586,31 +651,42 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isIntervalRunning, intervalDuration]);
 
-  /* ── Start session ── */
-  const startSession = useCallback(async (setup?: SessionSetup) => {
-    // Check for existing in-progress session in store (only when not explicitly configuring a new one)
-    if (!setup) {
-      const existing = useABAStore.getState().activeSession;
-      if (existing && existing.clientId === clientId && !existing.saved) {
-        const lid = existing.localId;
-        setLocalSessionId(lid);
-        setSessionId(existing.serverId ?? lid);
-        setStartedAtMs(existing.startedAt);
-        const restored: TrialEntry[] = existing.trials.map((t) => ({
-          id: t.id, targetId: t.targetId, targetTitle: t.targetTitle,
-          result: t.result, at: t.recordedAt,
-        }));
-        if (restored.length > 0) {
-          setTrials(restored);
-          toast.info(`Restored ${restored.length} trial${restored.length !== 1 ? "s" : ""} from previous session`);
-        }
-        setView("live");
-        return;
-      }
+  /* ── Start session ──
+   * Always routes through resolveSessionStart() so an unsaved session
+   * (this client OR any other client) is NEVER silently discarded. See the
+   * comment on resolveSessionStart in abaStore.ts for why this must be
+   * centralized rather than reimplemented per-caller. */
+  const startSession = useCallback(async (setup?: SessionSetup, opts?: { force?: boolean }) => {
+    const result = resolveSessionStart(clientId, opts);
+
+    if (result.kind === "conflict") {
+      // Do NOT proceed — surface a confirmation instead of wiping data.
+      setConflictingSession({ existing: result.existing, pendingSetup: setup });
+      return;
     }
 
-    const lid = storeStartSession(clientId, null);
+    if (result.kind === "resumed") {
+      const lid = result.existing.localId;
+      setLocalSessionId(lid);
+      setSessionId(result.existing.serverId ?? lid);
+      setStartedAtMs(result.existing.startedAt);
+      const restored: TrialEntry[] = result.existing.trials.map((t) => ({
+        id: t.id, targetId: t.targetId, targetTitle: t.targetTitle,
+        result: t.result, at: t.recordedAt,
+      }));
+      if (restored.length > 0) {
+        setTrials(restored);
+        toast.info(`Restored ${restored.length} trial${restored.length !== 1 ? "s" : ""} from previous session`);
+      }
+      setView("live");
+      return;
+    }
+
+    // result.kind === "started" — brand new local session (or explicit force-discard-and-start)
+    const lid = result.localId;
     setLocalSessionId(lid);
+    setTrials([]);
+    setAbcEntries([]);
     // Timer uses the setup startedAt so live elapsed time is relative to service date
     setStartedAtMs(setup?.startedAt ? new Date(setup.startedAt).getTime() : Date.now());
     if (setup?.mode) setMode(setup.mode);
@@ -634,13 +710,28 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
         storeSetServerId(lid, data.id);
       } else {
         setSessionId(lid);
+        // Queue the session itself for creation — without this, any trials
+        // recorded against `lid` below would reference a session id that
+        // never exists server-side and could never sync, no matter how
+        // many times it's retried (see queueSession() for full context).
+        queueSession({ localId: lid, clientId, startedAt: new Date(setup?.startedAt ?? Date.now()).toISOString(), mode: setup?.mode ?? "DTT" }).catch(() => {});
         toast.info("Working offline — data saved locally", { duration: 3000 });
       }
     } catch {
       setSessionId(lid);
+      queueSession({ localId: lid, clientId, startedAt: new Date(setup?.startedAt ?? Date.now()).toISOString(), mode: setup?.mode ?? "DTT" }).catch(() => {});
       toast.info("Offline mode — data saved locally", { duration: 3000 });
     }
-  }, [clientId, storeStartSession, storeSetServerId]);
+  }, [clientId, storeSetServerId]);
+
+  /* ── Resolve a pending conflict: user explicitly chose to discard the
+   * other client's unsaved session and proceed with this one. ── */
+  const confirmDiscardAndStart = useCallback(() => {
+    if (!conflictingSession) return;
+    const pendingSetup = conflictingSession.pendingSetup;
+    setConflictingSession(null);
+    void startSession(pendingSetup, { force: true });
+  }, [conflictingSession, startSession]);
 
   /* ── Record trial ── */
   const recordTrial = useCallback(
@@ -703,10 +794,16 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     const endedAt = new Date().toISOString();
 
     try {
-      // If we're still on a local-fallback session ID (server was unreachable at start),
-      // make one more attempt to create a real server session before saving.
-      const sessionIsLocal = sid === localSessionId && sid !== sessionId;
+      // If we're still on a local-fallback session ID (server was unreachable
+      // at start), make one more attempt to create a real server session
+      // before saving. Local ids are always formatted "session-<ts>-<n>";
+      // real ones are Prisma cuids — this is the reliable way to tell them
+      // apart (the previous `sid === localSessionId && sid !== sessionId`
+      // check could never be true here since `startSession` always sets
+      // `sessionId` equal to `localSessionId` in its offline-fallback path).
+      const sessionIsLocal = sid.startsWith("session-");
       if (sessionIsLocal) {
+        const localSid = sid;
         try {
           const retryRes = await fetch("/smart-steps/api/sessions", {
             method: "POST",
@@ -718,8 +815,15 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
             sid = retryData.id;
             setSessionId(retryData.id);
             if (localSessionId) storeSetServerId(localSessionId, retryData.id);
+          } else {
+            queueSession({ localId: localSid, clientId, startedAt: new Date(startedAtMs ?? Date.now()).toISOString() }).catch(() => {});
           }
-        } catch { /* keep local id — will queue to Dexie below */ }
+        } catch {
+          // Offline — queue the session itself so it (and anything
+          // referencing it) can be created/resolved on the next successful
+          // sync instead of being lost.
+          queueSession({ localId: localSid, clientId, startedAt: new Date(startedAtMs ?? Date.now()).toISOString() }).catch(() => {});
+        }
       }
 
       // Patch session end time
@@ -830,7 +934,7 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     } finally {
       setIsSaving(false);
     }
-  }, [sessionId, trials, abcEntries, elapsedSec, localSessionId, allGoals, storeMarkSaved, storeClear, storeSetServerId, qc, clientId, isSaving]);
+  }, [sessionId, trials, abcEntries, elapsedSec, localSessionId, allGoals, storeMarkSaved, storeClear, storeSetServerId, qc, clientId, isSaving, startedAtMs]);
 
   /* ── Reset to history ── */
   function resetToHistory() {
@@ -869,9 +973,20 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
     );
   }
 
+  const conflictDialog = conflictingSession && (
+    <ConflictDialog
+      trialCount={conflictingSession.existing.trials.length}
+      onCancel={() => setConflictingSession(null)}
+      onDiscard={confirmDiscardAndStart}
+    />
+  );
+
   /* ━━━━ VIEW: SUMMARY ━━━━ */
   if (view === "summary" && summary) {
-    return <SummaryView summary={summary} onDone={resetToHistory} />;
+    return <>
+      <SummaryView summary={summary} onDone={resetToHistory} />
+      {conflictDialog}
+    </>;
   }
 
   /* ━━━━ VIEW: SETUP — pre-session form ━━━━ */
@@ -892,7 +1007,7 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
       });
     };
 
-    return (
+    return (<>
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1030,14 +1145,15 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
           {isBackdated ? "Create Backdated Session" : "Start Session"}
         </motion.button>
       </motion.div>
-    );
+      {conflictDialog}
+    </>);
   }
 
   /* ━━━━ VIEW: HISTORY ━━━━ */
   if (view === "history") {
-    return (
+    return (<>
       <div className="space-y-5">
-        {/* Active session restore banner */}
+        {/* Active session restore banner — shown for THIS client's unsaved session */}
         {storeActiveSession && storeActiveSession.clientId === clientId && !storeActiveSession.saved && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
@@ -1057,6 +1173,30 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
             >
               <Play className="h-4 w-4" /> Resume
             </button>
+          </motion.div>
+        )}
+
+        {/* Warn about an unsaved session for a DIFFERENT client — visible no
+         * matter which client's page you're on, so it can never be silently
+         * lost just because you navigated elsewhere before ending it. */}
+        {storeActiveSession && storeActiveSession.clientId !== clientId && !storeActiveSession.saved && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-center justify-between gap-3"
+          >
+            <div>
+              <p className="text-sm font-semibold text-amber-300">Unsaved session for another client</p>
+              <p className="text-xs text-amber-400/70">
+                {storeActiveSession.trials.length} trial{storeActiveSession.trials.length !== 1 ? "s" : ""} recorded there — finish it before starting a new one to avoid losing it
+              </p>
+            </div>
+            <Link
+              href={`/clients/${storeActiveSession.clientId}?tab=data-entry`}
+              className="flex items-center gap-1.5 rounded-xl bg-amber-500/20 px-4 py-2.5 text-sm font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
+            >
+              <Play className="h-4 w-4" /> Go resume it
+            </Link>
           </motion.div>
         )}
 
@@ -1147,11 +1287,12 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
         </div>
         <SessionSnapshotDrawer sessionId={selectedSessionId} onClose={() => setSelectedSessionId(null)} />
       </div>
-    );
+      {conflictDialog}
+    </>);
   }
 
   /* ━━━━ VIEW: LIVE SESSION ━━━━ */
-  return (
+  return (<>
     <div className="space-y-4 -mx-0 relative">
       {/* ── Sticky session header ── */}
       <div className="sticky top-0 z-20 -mx-0 glass-card rounded-2xl border border-[var(--accent-cyan)]/20 p-3 backdrop-blur-xl mb-2">
@@ -1566,5 +1707,6 @@ export function DataEntryTab({ clientId }: { clientId: string }) {
         </AnimatePresence>
       )}
     </div>
-  );
+    {conflictDialog}
+  </>);
 }

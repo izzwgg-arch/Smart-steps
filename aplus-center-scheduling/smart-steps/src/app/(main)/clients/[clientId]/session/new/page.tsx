@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { db, queueTrial, queueBehavior } from "@/lib/dexie";
+import { db, queueTrial, queueBehavior, queueSession } from "@/lib/dexie";
 import { toast } from "sonner";
 import { ArrowLeft, Pause, Play, Timer, Plus, Minus, RefreshCcw, Save, CloudOff, ChevronDown, AlertTriangle } from "lucide-react";
-import { useABAStore } from "@/store/abaStore";
+import { useABAStore, resolveSessionStart, type ActiveSession } from "@/store/abaStore";
 import { useSession as useAuthSession } from "next-auth/react";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -92,7 +92,6 @@ export default function SessionNewPage() {
   const queryClient = useQueryClient();
 
   /* ABA store for offline-first persistence */
-  const storeStartSession = useABAStore((s) => s.startSession);
   const storeSetServerId = useABAStore((s) => s.setSessionServerId);
   const storeAddTrial = useABAStore((s) => s.addTrial);
   const storeAddABC = useABAStore((s) => s.addABCEvent);
@@ -101,6 +100,12 @@ export default function SessionNewPage() {
   const storeActiveSession = useABAStore((s) => s.activeSession);
   const storeTargets = useABAStore((s) => s.targets.filter((t) => t.clientId === clientId && t.isActive));
   const [storeLocalSessionId, setStoreLocalSessionId] = useState<string | null>(null);
+  /* Unsaved-session conflict guard — set when starting this session would
+   * silently discard a DIFFERENT client's still-unsaved session data. */
+  const [conflictingSession, setConflictingSession] = useState<{
+    existing: ActiveSession;
+    pendingSetup?: { startedAt?: string; endedAt?: string; providerId?: string };
+  } | null>(null);
 
   /* Auth */
   const { data: authSession } = useAuthSession();
@@ -222,16 +227,33 @@ export default function SessionNewPage() {
 
   /* ─── Session init ─────────────────────────────────────────────────────── */
 
-  const createSession = useCallback(async (setup?: { startedAt?: string; endedAt?: string; providerId?: string }) => {
-    // Check if there's an unfinished active session in the store for this client
-    const stored = useABAStore.getState().activeSession;
-    if (!setup && stored && stored.clientId === clientId && !stored.saved) {
-      // Restore existing in-progress session
-      const localId = storeStartSession(clientId, stored.serverId);
-      setStoreLocalSessionId(localId);
-      setSessionId(stored.serverId ?? localId);
-      setStartedAt(stored.startedAt);
-      const restoredTrials: TrialEntry[] = stored.trials.map((t) => ({
+  /* Always routes through resolveSessionStart() so an unsaved session (this
+   * client OR any other client) is NEVER silently discarded. This used to
+   * call the store's startSession action directly with its own bespoke
+   * "already in progress?" check that only ever matched when `setup` was
+   * omitted — but every real caller here always passes a (possibly
+   * all-undefined-fields) setup object, so that check could never actually
+   * fire and any existing unsaved session was unconditionally overwritten.
+   * See resolveSessionStart in abaStore.ts for the shared, centralized fix. */
+  const createSession = useCallback(async (
+    setup?: { startedAt?: string; endedAt?: string; providerId?: string },
+    opts?: { force?: boolean },
+  ) => {
+    const result = resolveSessionStart(clientId, opts);
+
+    if (result.kind === "conflict") {
+      setConflictingSession({ existing: result.existing, pendingSetup: setup });
+      return;
+    }
+
+    setHasStarted(true);
+
+    if (result.kind === "resumed") {
+      const existing = result.existing;
+      setStoreLocalSessionId(existing.localId);
+      setSessionId(existing.serverId ?? existing.localId);
+      setStartedAt(existing.startedAt);
+      const restoredTrials: TrialEntry[] = existing.trials.map((t) => ({
         targetId: t.targetId,
         targetLabel: t.targetTitle,
         result: t.result as TrialEntry["result"],
@@ -246,8 +268,8 @@ export default function SessionNewPage() {
       return;
     }
 
-    // Start fresh session in store first (offline-first)
-    const localSessionId = storeStartSession(clientId, null);
+    // result.kind === "started" — brand new local session
+    const localSessionId = result.localId;
     setStoreLocalSessionId(localSessionId);
 
     try {
@@ -268,24 +290,42 @@ export default function SessionNewPage() {
         storeSetServerId(localSessionId, realId);
       } else {
         setSessionId(localSessionId);
+        // Queue the session itself for creation — otherwise trials recorded
+        // against `localSessionId` below would reference a session that
+        // never exists server-side and could never sync (see queueSession).
+        queueSession({
+          localId: localSessionId,
+          clientId,
+          startedAt: setup?.startedAt ?? new Date().toISOString(),
+        }).catch(() => {});
         toast.info("Working offline — session saved locally", { duration: 3000 });
       }
     } catch {
       setSessionId(localSessionId);
+      queueSession({
+        localId: localSessionId,
+        clientId,
+        startedAt: setup?.startedAt ?? new Date().toISOString(),
+      }).catch(() => {});
       toast.info("Offline mode — trials saved locally", { duration: 3000 });
     }
     setStartedAt(setup?.startedAt ? new Date(setup.startedAt).getTime() : Date.now());
-  }, [clientId, storeStartSession, storeSetServerId]);
+  }, [clientId, storeSetServerId]);
 
-  useEffect(() => {
-    // Only auto-create once the user has submitted the setup form
-    if (!sessionId && hasStarted) createSession({
+  const startSetupSession = useCallback(() => {
+    void createSession({
       startedAt: setupForm.timeIn ? new Date(`${setupForm.sessionDate}T${setupForm.timeIn}:00`).toISOString() : undefined,
       endedAt: setupForm.timeOut ? new Date(`${setupForm.sessionDate}T${setupForm.timeOut}:00`).toISOString() : undefined,
       providerId: setupForm.providerId || undefined,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasStarted]);
+  }, [createSession, setupForm]);
+
+  const confirmDiscardAndStart = useCallback(() => {
+    if (!conflictingSession) return;
+    const pendingSetup = conflictingSession.pendingSetup;
+    setConflictingSession(null);
+    void createSession(pendingSetup, { force: true });
+  }, [conflictingSession, createSession]);
 
   /* ─── Session timer (no reset on pause) ────────────────────────────────── */
 
@@ -623,13 +663,49 @@ export default function SessionNewPage() {
 
           <button
             type="button"
-            onClick={() => setHasStarted(true)}
+            onClick={startSetupSession}
             className="btn-primary tap-target w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-base"
           >
             <Play className="h-5 w-5" />
             {isBackdated ? "Create Backdated Session" : "Start Session"}
           </button>
         </main>
+
+        {conflictingSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="glass-card w-full max-w-md rounded-2xl border border-amber-500/30 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15">
+                  <AlertTriangle className="h-5 w-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[var(--foreground)]">Unsaved session in progress</h3>
+                  <p className="text-xs text-zinc-500">for a different client</p>
+                </div>
+              </div>
+              <p className="text-sm text-zinc-400">
+                You have <span className="font-semibold text-amber-300">
+                  {conflictingSession.existing.trials.length} recorded trial{conflictingSession.existing.trials.length !== 1 ? "s" : ""}
+                </span> that have not been saved yet. Starting a new session here will <span className="font-semibold text-[var(--accent-pink)]">permanently discard</span> that data unless you go back and end that session first.
+              </p>
+              <div className="flex gap-3 pt-1">
+                <Link
+                  href={`/clients/${conflictingSession.existing.clientId}/session/new`}
+                  className="flex-1 rounded-xl border border-[var(--glass-border)] py-2.5 text-center text-sm font-medium text-zinc-300 hover:bg-white/5 transition-colors"
+                >
+                  Go resume it
+                </Link>
+                <button
+                  type="button"
+                  onClick={confirmDiscardAndStart}
+                  className="flex-1 rounded-xl bg-[var(--accent-pink)]/20 py-2.5 text-sm font-semibold text-[var(--accent-pink)] hover:bg-[var(--accent-pink)]/30 transition-colors"
+                >
+                  Discard &amp; start new
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

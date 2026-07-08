@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Moon, Sun, Monitor, Shield, Database, User, Building2, Upload, ShieldCheck } from "lucide-react";
+import { Moon, Sun, Monitor, Shield, Database, User, Building2, Upload, ShieldCheck, LifeBuoy } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { toast } from "sonner";
@@ -193,6 +193,24 @@ export default function SettingsPage() {
           </Link>
         </motion.section>
       )}
+
+      {/* Local data recovery */}
+      <motion.section
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }}
+        className="glass-card rounded-2xl p-5 mb-4"
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <LifeBuoy className="h-5 w-5 text-amber-400" />
+          <h2 className="font-semibold text-[var(--foreground)]">Local Data Recovery</h2>
+        </div>
+        <p className="text-sm text-zinc-500 mb-3">
+          If data you entered on THIS device ever seemed to disappear, use this to scan this
+          browser&apos;s offline storage for anything that never made it to the server, and push it up.
+        </p>
+        <Link href="/data-recovery" className="btn-primary inline-flex rounded-xl px-4 py-2 text-sm font-semibold">
+          Open Data Recovery
+        </Link>
+      </motion.section>
 
       {/* Access control info */}
       <motion.section
