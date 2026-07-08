@@ -1,6 +1,8 @@
 import express from "express";
 import { prisma } from "../config/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
+import { requirePermission } from "../middleware/permissions.js";
+import { can } from "../services/permissionsService.js";
 import { sendEmail } from "../utils/mailer.js";
 import { writeAuditLog } from "../services/auditLogService.js";
 import {
@@ -13,7 +15,7 @@ import {
 } from "../services/clinic/appointments/appointmentService.js";
 import { asDate, asNumber, requireString } from "../utils/validation.js";
 import { decryptText } from "../utils/crypto.js";
-import { createInvoiceFromAppointment } from "../services/invoiceService.js";
+import { createInvoiceFromAppointment, syncAppointmentAndInvoiceToTargetAmount } from "../services/invoiceService.js";
 import {
   cancelQueuedJobsForAppointment,
   reconcileReminderJobsForAppointment
@@ -22,12 +24,12 @@ import {
 const router = express.Router();
 router.use(requireAuth);
 
-router.get("/", async (_req, res) => {
+router.get("/", requirePermission("aplus.appointments.view"), async (_req, res) => {
   const appts = await listAppointments();
   return res.json(appts);
 });
 
-router.get("/:id/history", async (req, res) => {
+router.get("/:id/history", requirePermission("aplus.appointments.view"), async (req, res) => {
   const logs = await prisma.auditLog.findMany({
     where: { entityType: "Appointment", entityId: req.params.id },
     orderBy: { createdAt: "asc" },
@@ -37,7 +39,7 @@ router.get("/:id/history", async (req, res) => {
   return res.json(logs);
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", requirePermission("aplus.appointments.view"), async (req, res) => {
   const appt = await getAppointmentById(req.params.id);
   if (!appt) return res.status(404).json({ error: "Appointment not found" });
   // Decrypt sensitive client fields so the details drawer can display them
@@ -50,7 +52,7 @@ router.get("/:id", async (req, res) => {
   return res.json(appt);
 });
 
-router.post("/preview-pricing", async (req, res) => {
+router.post("/preview-pricing", requirePermission("aplus.appointments.view"), async (req, res) => {
   try {
     const pricing = await previewAppointmentPricing({
       serviceId: requireString(req.body.serviceId, "Service"),
@@ -65,7 +67,7 @@ router.post("/preview-pricing", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission("aplus.appointments.create"), async (req, res) => {
   try {
     requireString(req.body.clientId, "Client");
     requireString(req.body.serviceId, "Service");
@@ -101,8 +103,36 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requirePermission("aplus.appointments.edit"), async (req, res) => {
   try {
+    // Granular checks for higher-sensitivity fields, on top of the base edit permission.
+    if (req.body.status === "NO_SHOW" && !(await can(req.user.sub, "aplus.appointments.mark_no_show"))) {
+      return res.status(403).json({ error: "Forbidden", requiredPermission: "aplus.appointments.mark_no_show" });
+    }
+    if (req.body.status === "CANCELLED" && !(await can(req.user.sub, "aplus.appointments.cancel"))) {
+      return res.status(403).json({ error: "Forbidden", requiredPermission: "aplus.appointments.cancel" });
+    }
+    if (req.body.providerId !== undefined && !(await can(req.user.sub, "aplus.appointments.change_provider"))) {
+      return res.status(403).json({ error: "Forbidden", requiredPermission: "aplus.appointments.change_provider" });
+    }
+    if (req.body.serviceId !== undefined && !(await can(req.user.sub, "aplus.appointments.change_service"))) {
+      return res.status(403).json({ error: "Forbidden", requiredPermission: "aplus.appointments.change_service" });
+    }
+    if (req.body.startsAt !== undefined) {
+      const existing = await prisma.appointment.findUnique({ where: { id: req.params.id }, select: { startsAt: true } });
+      const nextStart = new Date(req.body.startsAt);
+      if (existing && !Number.isNaN(nextStart.getTime()) && nextStart < new Date() && existing.startsAt.getTime() !== nextStart.getTime()) {
+        if (!(await can(req.user.sub, "aplus.appointments.backdate"))) {
+          return res.status(403).json({ error: "Forbidden", requiredPermission: "aplus.appointments.backdate" });
+        }
+      }
+    }
+    const currentForBill = await prisma.appointment.findUnique({ where: { id: req.params.id }, select: { status: true } });
+    if (currentForBill?.status === "COMPLETED" && (req.body.billingNotes !== undefined || req.body.effectiveRate !== undefined || req.body.standardRateSnapshot !== undefined || req.body.overtimeRateSnapshot !== undefined)) {
+      if (!(await can(req.user.sub, "aplus.appointments.edit_completed_bill"))) {
+        return res.status(403).json({ error: "Forbidden", requiredPermission: "aplus.appointments.edit_completed_bill" });
+      }
+    }
     const updated = await updateAppointment(req.params.id, req.body);
     await writeAuditLog(req, {
       action: "APPOINTMENT_UPDATED",
@@ -122,7 +152,7 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requirePermission("aplus.appointments.cancel"), async (req, res) => {
   await prisma.appointment.delete({ where: { id: req.params.id } });
   await writeAuditLog(req, {
     action: "APPOINTMENT_DELETED",
@@ -132,7 +162,7 @@ router.delete("/:id", async (req, res) => {
   return res.status(204).send();
 });
 
-router.post("/:id/cancel", async (req, res) => {
+router.post("/:id/cancel", requirePermission("aplus.appointments.cancel"), async (req, res) => {
   await cancelQueuedJobsForAppointment(req.params.id, "Appointment cancelled");
   const appt = await prisma.appointment.update({
     where: { id: req.params.id },
@@ -154,7 +184,7 @@ router.post("/:id/cancel", async (req, res) => {
   return res.json(appt);
 });
 
-router.post("/:id/reschedule", async (req, res) => {
+router.post("/:id/reschedule", requirePermission("aplus.appointments.edit"), async (req, res) => {
   const { startsAt, durationMinutes } = req.body;
   const nextStart = new Date(startsAt);
   const nextDuration = Number(durationMinutes || 60);
@@ -197,12 +227,12 @@ router.post("/:id/reschedule", async (req, res) => {
   return res.json(appt);
 });
 
-router.post("/:id/complete", async (req, res) => {
+router.post("/:id/complete", requirePermission("aplus.appointments.complete"), async (req, res) => {
   await cancelQueuedJobsForAppointment(req.params.id, "Appointment completed");
   const appt = await prisma.appointment.update({
     where: { id: req.params.id },
     data: { status: "COMPLETED" },
-    include: { invoice: { include: { payments: true } } }
+    include: { invoice: { include: { payments: true, lineItems: { orderBy: { createdAt: "asc" } } } } }
   });
 
   // Auto-create invoice synchronously so the response always includes it
@@ -224,8 +254,25 @@ router.post("/:id/complete", async (req, res) => {
   return res.json({ ...appt, invoice: invoice ?? null });
 });
 
+// Align session length + invoice total to a target dollar amount (before card payment)
+router.post("/:id/sync-billing-to-amount", requirePermission("aplus.appointments.edit_completed_bill"), async (req, res) => {
+  try {
+    const amount = asNumber(req.body.amount, "amount");
+    const result = await syncAppointmentAndInvoiceToTargetAmount(req.params.id, amount);
+    await writeAuditLog(req, {
+      action: "APPOINTMENT_BILLING_SYNCED",
+      entityType: "Appointment",
+      entityId: req.params.id,
+      detailsJson: { amount, ...result.appointment }
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Could not sync billing" });
+  }
+});
+
 // Create (or return existing) invoice for a completed appointment
-router.post("/:id/create-invoice", async (req, res) => {
+router.post("/:id/create-invoice", requirePermission("aplus.billing.edit_invoices"), async (req, res) => {
   try {
     const appt = await prisma.appointment.findUnique({
       where: { id: req.params.id },
@@ -245,7 +292,7 @@ router.post("/:id/create-invoice", async (req, res) => {
     // Return invoice with payments included
     const full = await prisma.invoice.findUnique({
       where: { id: invoice.id },
-      include: { payments: true }
+      include: { payments: true, lineItems: { orderBy: { createdAt: "asc" } } }
     });
     return res.status(201).json(full);
   } catch (error) {

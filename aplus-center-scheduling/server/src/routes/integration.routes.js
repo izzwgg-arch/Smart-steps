@@ -1,5 +1,6 @@
 import express from "express";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requirePermission } from "../middleware/permissions.js";
 import { prisma } from "../config/prisma.js";
 import {
   connectQuickbooks,
@@ -60,7 +61,7 @@ router.get("/quickbooks/callback", async (req, res) => {
 router.use(requireAuth);
 
 // ── Sola Payments ─────────────────────────────────────────────────────────────
-router.post("/sola/connect", requireRole("ADMIN"), async (req, res) => {
+router.post("/sola/connect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   try {
     const account = await connectSolaPayments(req.body || {});
     await writeAuditLog(req, {
@@ -75,7 +76,7 @@ router.post("/sola/connect", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-router.post("/sola/disconnect", requireRole("ADMIN"), async (req, res) => {
+router.post("/sola/disconnect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   try {
     const account = await disconnectSolaPayments();
     await writeAuditLog(req, {
@@ -90,7 +91,7 @@ router.post("/sola/disconnect", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-router.post("/sola/test", requireRole("ADMIN"), async (_req, res) => {
+router.post("/sola/test", requirePermission("aplus.integrations.manage"), async (_req, res) => {
   try {
     return res.json(await testSolaConnection());
   } catch (error) {
@@ -99,16 +100,16 @@ router.post("/sola/test", requireRole("ADMIN"), async (_req, res) => {
 });
 
 // Returns the Intuit OAuth authorization URL — frontend opens it to start QB connect
-router.get("/quickbooks/auth-url", requireRole("ADMIN"), (_req, res) => {
+router.get("/quickbooks/auth-url", requirePermission("aplus.quickbooks.manage_connection"), async (_req, res) => {
   try {
-    const url = getAuthUrl();
+    const url = await getAuthUrl();
     return res.json({ url });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message || "Could not build QuickBooks auth URL" });
   }
 });
 
-router.get("/", async (_req, res) => {
+router.get("/", requirePermission("aplus.integrations.view"), async (_req, res) => {
   const accounts = await prisma.integrationAccount.findMany({
     orderBy: { provider: "asc" },
     select: {
@@ -129,7 +130,7 @@ router.get("/", async (_req, res) => {
   return res.json(accounts);
 });
 
-router.get("/sync-logs", requireRole("ADMIN"), async (req, res) => {
+router.get("/sync-logs", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const provider = req.query.provider ? String(req.query.provider) : undefined;
   const logs = await prisma.integrationSyncLog.findMany({
     where: { provider },
@@ -139,7 +140,46 @@ router.get("/sync-logs", requireRole("ADMIN"), async (req, res) => {
   return res.json(logs);
 });
 
-router.post("/quickbooks/connect", requireRole("ADMIN"), async (req, res) => {
+// Save QB app credentials (Client ID / Secret / Redirect URI / Environment)
+// These allow the "Connect with QuickBooks" OAuth button to work without server env vars.
+router.post("/quickbooks/app-credentials", requirePermission("aplus.quickbooks.manage_connection"), async (req, res) => {
+  try {
+    const { clientId, clientSecret, redirectUri, environment } = req.body || {};
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ error: "clientId and clientSecret are required" });
+    }
+    const existing = await prisma.integrationAccount.findUnique({ where: { provider: "QUICKBOOKS" } });
+    const existingMeta = existing?.metadataJson || {};
+    await prisma.integrationAccount.upsert({
+      where: { provider: "QUICKBOOKS" },
+      update: {
+        environment: environment || existing?.environment || "SANDBOX",
+        metadataJson: {
+          ...existingMeta,
+          clientId,
+          clientSecret,
+          redirectUri: redirectUri || existingMeta.redirectUri || ""
+        }
+      },
+      create: {
+        provider: "QUICKBOOKS",
+        isEnabled: false,
+        environment: environment || "SANDBOX",
+        metadataJson: { clientId, clientSecret, redirectUri: redirectUri || "" }
+      }
+    });
+    await writeAuditLog(req, {
+      action: "INTEGRATION_CONFIGURED",
+      entityType: "IntegrationAccount",
+      detailsJson: { provider: "QUICKBOOKS", field: "app-credentials" }
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Failed to save QB credentials" });
+  }
+});
+
+router.post("/quickbooks/connect", requirePermission("aplus.quickbooks.manage_connection"), async (req, res) => {
   const account = await connectQuickbooks(req.body || {});
   await writeAuditLog(req, {
     action: "INTEGRATION_CONNECTED",
@@ -150,7 +190,7 @@ router.post("/quickbooks/connect", requireRole("ADMIN"), async (req, res) => {
   return res.json(account);
 });
 
-router.post("/quickbooks/disconnect", requireRole("ADMIN"), async (req, res) => {
+router.post("/quickbooks/disconnect", requirePermission("aplus.quickbooks.manage_connection"), async (req, res) => {
   const account = await disconnectQuickbooks();
   await writeAuditLog(req, {
     action: "INTEGRATION_DISCONNECTED",
@@ -161,15 +201,15 @@ router.post("/quickbooks/disconnect", requireRole("ADMIN"), async (req, res) => 
   return res.json(account);
 });
 
-router.post("/quickbooks/test", requireRole("ADMIN"), async (_req, res) => {
+router.post("/quickbooks/test", requirePermission("aplus.quickbooks.manage_connection"), async (_req, res) => {
   try {
-    return res.json(await testQuickbooksConnection());
+    return res.json(await testQuickbooksConnection({ userId: _req.user?.id, triggerType: "user" }));
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || "QuickBooks test failed" });
   }
 });
 
-router.post("/quickbooks/sync-now", requireRole("ADMIN"), async (_req, res) => {
+router.post("/quickbooks/sync-now", requirePermission("aplus.quickbooks.manage_connection"), async (_req, res) => {
   const account = await prisma.integrationAccount.findUnique({ where: { provider: "QUICKBOOKS" } });
   if (!account?.isEnabled) return res.status(400).json({ error: "QuickBooks is not connected" });
   const updated = await prisma.integrationAccount.update({
@@ -184,7 +224,7 @@ router.post("/quickbooks/sync-now", requireRole("ADMIN"), async (_req, res) => {
   return res.json(updated);
 });
 
-router.post("/payment-hub/connect", requireRole("ADMIN"), async (req, res) => {
+router.post("/payment-hub/connect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await connectPaymentHub(req.body || {});
   await writeAuditLog(req, {
     action: "INTEGRATION_CONNECTED",
@@ -195,7 +235,7 @@ router.post("/payment-hub/connect", requireRole("ADMIN"), async (req, res) => {
   return res.json(account);
 });
 
-router.post("/payment-hub/disconnect", requireRole("ADMIN"), async (req, res) => {
+router.post("/payment-hub/disconnect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await disconnectPaymentHub();
   await writeAuditLog(req, {
     action: "INTEGRATION_DISCONNECTED",
@@ -206,7 +246,7 @@ router.post("/payment-hub/disconnect", requireRole("ADMIN"), async (req, res) =>
   return res.json(account);
 });
 
-router.post("/payment-hub/test", requireRole("ADMIN"), async (_req, res) => {
+router.post("/payment-hub/test", requirePermission("aplus.integrations.manage"), async (_req, res) => {
   try {
     return res.json(await testPaymentHubConnection());
   } catch (error) {
@@ -214,7 +254,7 @@ router.post("/payment-hub/test", requireRole("ADMIN"), async (_req, res) => {
   }
 });
 
-router.post("/payment-hub/sync-now", requireRole("ADMIN"), async (req, res) => {
+router.post("/payment-hub/sync-now", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await prisma.integrationAccount.findUnique({ where: { provider: "PAYMENT_HUB" } });
   if (!account?.isEnabled) return res.status(400).json({ error: "Payment Hub is not connected" });
   const updated = await prisma.integrationAccount.update({
@@ -229,7 +269,7 @@ router.post("/payment-hub/sync-now", requireRole("ADMIN"), async (req, res) => {
   return res.json(updated);
 });
 
-router.post("/google-workspace/connect", requireRole("ADMIN"), async (req, res) => {
+router.post("/google-workspace/connect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await connectGoogleWorkspace(req.body || {});
   await writeAuditLog(req, {
     action: "INTEGRATION_CONNECTED",
@@ -240,7 +280,7 @@ router.post("/google-workspace/connect", requireRole("ADMIN"), async (req, res) 
   return res.json(account);
 });
 
-router.post("/google-workspace/disconnect", requireRole("ADMIN"), async (req, res) => {
+router.post("/google-workspace/disconnect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await disconnectGoogleWorkspace();
   await writeAuditLog(req, {
     action: "INTEGRATION_DISCONNECTED",
@@ -251,7 +291,7 @@ router.post("/google-workspace/disconnect", requireRole("ADMIN"), async (req, re
   return res.json(account);
 });
 
-router.post("/google-workspace/test", requireRole("ADMIN"), async (req, res) => {
+router.post("/google-workspace/test", requirePermission("aplus.integrations.manage"), async (req, res) => {
   try {
     return res.json(await testGoogleWorkspaceConnection(req.body || {}));
   } catch (error) {
@@ -259,7 +299,7 @@ router.post("/google-workspace/test", requireRole("ADMIN"), async (req, res) => 
   }
 });
 
-router.post("/google-workspace/sync-now", requireRole("ADMIN"), async (req, res) => {
+router.post("/google-workspace/sync-now", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await prisma.integrationAccount.findUnique({ where: { provider: "GOOGLE_WORKSPACE" } });
   if (!account?.isEnabled) return res.status(400).json({ error: "Google Workspace is not connected" });
   const updated = await prisma.integrationAccount.update({
@@ -274,7 +314,7 @@ router.post("/google-workspace/sync-now", requireRole("ADMIN"), async (req, res)
   return res.json(updated);
 });
 
-router.post("/google-workspace/send-test-email", requireRole("ADMIN"), async (req, res) => {
+router.post("/google-workspace/send-test-email", requirePermission("aplus.integrations.manage"), async (req, res) => {
   try {
     const to = String(req.body?.to || "").trim();
     const result = await sendGoogleWorkspaceTestEmail({ to, payload: req.body || {} });
@@ -290,11 +330,11 @@ router.post("/google-workspace/send-test-email", requireRole("ADMIN"), async (re
   }
 });
 
-router.get("/voipms/callback-hints", requireRole("ADMIN"), async (_req, res) => {
+router.get("/voipms/callback-hints", requirePermission("aplus.integrations.manage"), async (_req, res) => {
   return res.json(await getVoipmsWebhookCallbackHints());
 });
 
-router.post("/voipms/connect", requireRole("ADMIN"), async (req, res) => {
+router.post("/voipms/connect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await connectVoipms(req.body || {});
   await writeAuditLog(req, {
     action: "INTEGRATION_CONNECTED",
@@ -305,7 +345,7 @@ router.post("/voipms/connect", requireRole("ADMIN"), async (req, res) => {
   return res.json(account);
 });
 
-router.post("/voipms/disconnect", requireRole("ADMIN"), async (req, res) => {
+router.post("/voipms/disconnect", requirePermission("aplus.integrations.manage"), async (req, res) => {
   const account = await disconnectVoipms();
   await writeAuditLog(req, {
     action: "INTEGRATION_DISCONNECTED",
@@ -316,7 +356,7 @@ router.post("/voipms/disconnect", requireRole("ADMIN"), async (req, res) => {
   return res.json(account ?? { ok: true, disconnected: true });
 });
 
-router.post("/voipms/test", requireRole("ADMIN"), async (_req, res) => {
+router.post("/voipms/test", requirePermission("aplus.integrations.manage"), async (_req, res) => {
   try {
     const r = await testVoipmsIntegrationConnection();
     if (!r.ok) return res.status(400).json({ error: r.message || "VoIP.ms test failed", ...r });

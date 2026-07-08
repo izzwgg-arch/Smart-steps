@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/common/ProtectedRoute";
+import { RequirePermission } from "./components/common/PermissionRoute";
 import { ClientsListProvider } from "./context/ClientsListContext";
 
 const AppLayout = lazy(() => import("./components/layout/AppLayout"));
@@ -28,6 +29,7 @@ const SettingsPage = lazy(() => import("./pages/aplus/SettingsPage"));
 const RemindersPage = lazy(() => import("./pages/aplus/RemindersPage"));
 const UsersPage = lazy(() => import("./pages/aplus/UsersPage"));
 const AuditLogsPage = lazy(() => import("./pages/aplus/AuditLogsPage"));
+const PermissionsPage = lazy(() => import("./pages/aplus/PermissionsPage"));
 const LegalEulaPage     = lazy(() => import("./pages/legal/LegalEulaPage"));
 const LegalPrivacyPage  = lazy(() => import("./pages/legal/LegalPrivacyPage"));
 
@@ -58,23 +60,24 @@ export default function App() {
         <Route path="/aba-coming-soon" element={<ProtectedRoute><Navigate to="/smart-steps" replace /></ProtectedRoute>} />
 
         <Route path="/aplus" element={<ProtectedRoute><ClientsListProvider><AppLayout /></ClientsListProvider></ProtectedRoute>}>
-          <Route index element={<OverviewPage />} />
-          <Route path="clients" element={<ClientsPage />} />
-          <Route path="clients/:id" element={<ClientDetailPage />} />
-          <Route path="clients/:id/:tab" element={<ClientDetailPage />} />
-          <Route path="services" element={<ServicesPage />} />
-          <Route path="providers" element={<ProvidersPage />} />
-          <Route path="appointments" element={<AppointmentsPage />} />
-          <Route path="reminders" element={<RemindersPage />} />
-          <Route path="data-tracking" element={<DataTrackingPage />} />
-          <Route path="assessments" element={<AssessmentsPage />} />
-          <Route path="waitlist" element={<WaitlistPage />} />
-          <Route path="invoices" element={<InvoicesPage />} />
-          <Route path="payments" element={<PaymentsPage />} />
-          <Route path="intake" element={<IntakeFormPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="audit-logs" element={<AuditLogsPage />} />
+          <Route index element={<RequirePermission permission="aplus.dashboard.view"><OverviewPage /></RequirePermission>} />
+          <Route path="clients" element={<RequirePermission permission="aplus.clients.view"><ClientsPage /></RequirePermission>} />
+          <Route path="clients/:id" element={<RequirePermission permission="aplus.clients.view"><ClientDetailPage /></RequirePermission>} />
+          <Route path="clients/:id/:tab" element={<RequirePermission permission="aplus.clients.view"><ClientDetailPage /></RequirePermission>} />
+          <Route path="services" element={<RequirePermission permission="aplus.services.view"><ServicesPage /></RequirePermission>} />
+          <Route path="providers" element={<RequirePermission permission="aplus.providers.view"><ProvidersPage /></RequirePermission>} />
+          <Route path="appointments" element={<RequirePermission permission="aplus.appointments.view"><AppointmentsPage /></RequirePermission>} />
+          <Route path="reminders" element={<RequirePermission permission="aplus.communications.view"><RemindersPage /></RequirePermission>} />
+          <Route path="data-tracking" element={<RequirePermission permission="aplus.data_tracking.view"><DataTrackingPage /></RequirePermission>} />
+          <Route path="assessments" element={<RequirePermission permission="aplus.assessments.view"><AssessmentsPage /></RequirePermission>} />
+          <Route path="waitlist" element={<RequirePermission permission="aplus.waitlist.view"><WaitlistPage /></RequirePermission>} />
+          <Route path="invoices" element={<RequirePermission permission="aplus.billing.view_invoices"><InvoicesPage /></RequirePermission>} />
+          <Route path="payments" element={<RequirePermission permission="aplus.billing.view_payment_history"><PaymentsPage /></RequirePermission>} />
+          <Route path="intake" element={<RequirePermission permission="aplus.intake.view"><IntakeFormPage /></RequirePermission>} />
+          <Route path="settings" element={<RequirePermission permission="aplus.settings.view"><SettingsPage /></RequirePermission>} />
+          <Route path="settings/permissions" element={<RequirePermission permission="aplus.settings.manage_permissions"><PermissionsPage /></RequirePermission>} />
+          <Route path="users" element={<RequirePermission permission="aplus.users.view"><UsersPage /></RequirePermission>} />
+          <Route path="audit-logs" element={<RequirePermission permission="aplus.audit_logs.view"><AuditLogsPage /></RequirePermission>} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

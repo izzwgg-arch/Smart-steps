@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../context/AuthContext";
 
 const SMART_STEPS_URL = import.meta.env.VITE_SMART_STEPS_URL;
 
@@ -10,6 +10,9 @@ export default function RedirectToSmartSteps() {
     if (!isAuthed || !token) return;
     const base = SMART_STEPS_URL || (window.location.origin + "/smart-steps");
     const url = new URL(base);
+    // Add a query param so the browser performs a full page navigation
+    // (a hash-only change on the same path wouldn't leave the React SPA)
+    url.searchParams.set("sso", "1");
     url.hash = "token=" + encodeURIComponent(token);
     window.location.href = url.toString();
   }, [token, isAuthed]);

@@ -114,6 +114,10 @@ model User {
   passwordHash   String
   fullName       String
   role           UserRole             @default(STAFF)
+  // Legacy `role` enum is kept for backward compatibility / display fallback.
+  // `roleId` is the new granular-permission role. Nullable so existing rows
+  // are valid pre-backfill; the seed/backfill script populates it for every user.
+  roleId         String?
   status         UserStatus           @default(ACTIVE)
   invitedAt      DateTime?
   activatedAt    DateTime?
@@ -124,6 +128,52 @@ model User {
   resetTokens    PasswordResetToken[]
   appointments   Appointment[]
   auditLogs      AuditLog[]
+  customRole     Role?                @relation(fields: [roleId], references: [id], onDelete: SetNull)
+}
+
+// ─── Permission System (Phase 1) ─────────────────────────────────────────────
+// Additive-only tables. Existing `User.role` enum is untouched; `roleId` is the
+// new source of truth for granular permission checks going forward.
+
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique // stable machine key, e.g. "ADMIN", "OFFICE_ADMIN"
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) // seeded role; cannot be deleted (Phase 1 has no delete UI anyway)
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       User[]
+
+  @@index([isActive])
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  key         String @unique // e.g. "aplus.appointments.view"
+  category    String
+  label       String
+  description String?
+
+  roles RolePermission[]
+
+  @@index([category])
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
 }
 
 model Service {

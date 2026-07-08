@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../config/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
+import { requirePermission } from "../middleware/permissions.js";
 import { requireString } from "../utils/validation.js";
 import { decryptText } from "../utils/crypto.js";
 import { writeAuditLog } from "../services/auditLogService.js";
@@ -452,7 +453,7 @@ function normalizeIncomingSections(sections) {
 }
 
 // ── List templates ────────────────────────────────────────────────────────────
-router.get("/", async (_req, res) => {
+router.get("/", requirePermission("aplus.assessment_templates.view"), async (_req, res) => {
   const templates = await prisma.assessmentTemplate.findMany({
     include: { sections: { orderBy: { order: "asc" }, select: { id: true, title: true, order: true } } },
     orderBy: { createdAt: "desc" },
@@ -461,7 +462,7 @@ router.get("/", async (_req, res) => {
 });
 
 // ── Get single template with sections ────────────────────────────────────────
-router.get("/:id", async (req, res) => {
+router.get("/:id", requirePermission("aplus.assessment_templates.view"), async (req, res) => {
   const template = await prisma.assessmentTemplate.findUnique({
     where: { id: req.params.id },
     include: { sections: { orderBy: { order: "asc" } } },
@@ -471,7 +472,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // ── Create template ───────────────────────────────────────────────────────────
-router.post("/", async (req, res) => {
+router.post("/", requirePermission("aplus.assessment_templates.create"), async (req, res) => {
   const body = req.body || {};
   const name  = requireString(body.name, "name");
   const type  = body.type || "ASSESSMENT";
@@ -504,7 +505,7 @@ router.post("/", async (req, res) => {
 });
 
 // ── Update template metadata ──────────────────────────────────────────────────
-router.put("/:id", async (req, res) => {
+router.put("/:id", requirePermission("aplus.assessment_templates.edit"), async (req, res) => {
   const body = req.body || {};
   const template = await prisma.assessmentTemplate.findUnique({ where: { id: req.params.id } });
   if (!template) return res.status(404).json({ error: "Template not found" });
@@ -521,7 +522,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // ── Delete template ───────────────────────────────────────────────────────────
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requirePermission("aplus.assessment_templates.delete"), async (req, res) => {
   const template = await prisma.assessmentTemplate.findUnique({ where: { id: req.params.id } });
   if (!template) return res.status(404).json({ error: "Template not found" });
   await prisma.assessmentTemplate.delete({ where: { id: req.params.id } });
@@ -530,7 +531,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // ── Duplicate template ────────────────────────────────────────────────────────
-router.post("/:id/duplicate", async (req, res) => {
+router.post("/:id/duplicate", requirePermission("aplus.assessment_templates.create"), async (req, res) => {
   const template = await prisma.assessmentTemplate.findUnique({
     where: { id: req.params.id },
     include: { sections: { orderBy: { order: "asc" } } },
@@ -558,7 +559,7 @@ router.post("/:id/duplicate", async (req, res) => {
 });
 
 // ── Generate an editable client-linked report from template ───────────────────
-router.post("/:id/generate-report", async (req, res) => {
+router.post("/:id/generate-report", requirePermission("aplus.assessment_reports.create"), async (req, res) => {
   const template = await prisma.assessmentTemplate.findUnique({
     where: { id: req.params.id },
     include: { sections: { orderBy: { order: "asc" } } },
@@ -599,7 +600,7 @@ router.post("/:id/generate-report", async (req, res) => {
 });
 
 // ── Replace / reorder all sections at once ───────────────────────────────────
-router.put("/:id/sections", async (req, res) => {
+router.put("/:id/sections", requirePermission("aplus.assessment_templates.edit"), async (req, res) => {
   const template = await prisma.assessmentTemplate.findUnique({ where: { id: req.params.id } });
   if (!template) return res.status(404).json({ error: "Template not found" });
   const sections = normalizeIncomingSections(req.body.sections);
@@ -621,7 +622,7 @@ router.put("/:id/sections", async (req, res) => {
 });
 
 // ── Add a section ─────────────────────────────────────────────────────────────
-router.post("/:id/sections", async (req, res) => {
+router.post("/:id/sections", requirePermission("aplus.assessment_templates.edit"), async (req, res) => {
   const template = await prisma.assessmentTemplate.findUnique({ where: { id: req.params.id } });
   if (!template) return res.status(404).json({ error: "Template not found" });
   const maxOrder = await prisma.assessmentTemplateSection.aggregate({
@@ -641,7 +642,7 @@ router.post("/:id/sections", async (req, res) => {
 });
 
 // ── Update a section ──────────────────────────────────────────────────────────
-router.put("/:id/sections/:sectionId", async (req, res) => {
+router.put("/:id/sections/:sectionId", requirePermission("aplus.assessment_templates.edit"), async (req, res) => {
   const section = await prisma.assessmentTemplateSection.findFirst({
     where: { id: req.params.sectionId, templateId: req.params.id },
   });
@@ -658,7 +659,7 @@ router.put("/:id/sections/:sectionId", async (req, res) => {
 });
 
 // ── Delete a section ──────────────────────────────────────────────────────────
-router.delete("/:id/sections/:sectionId", async (req, res) => {
+router.delete("/:id/sections/:sectionId", requirePermission("aplus.assessment_templates.edit"), async (req, res) => {
   const section = await prisma.assessmentTemplateSection.findFirst({
     where: { id: req.params.sectionId, templateId: req.params.id },
   });

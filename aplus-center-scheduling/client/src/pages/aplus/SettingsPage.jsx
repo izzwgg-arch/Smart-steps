@@ -189,7 +189,7 @@ function BillingTab({ isAdmin, toast }) {
 export default function SettingsPage() {
   const toast = useToast();
   const { user } = useAuth();
-  const tabs = ["General", "Users", "Billing", "Reminders", "Integrations", "Audit Logs"];
+  const tabs = ["General", "Users", "Permissions", "Billing", "Reminders", "Integrations", "Audit Logs"];
   const [activeTab, setActiveTab] = useState("General");
   const [form, setForm] = useState({
     defaultHourlyRate: 130,
@@ -199,6 +199,7 @@ export default function SettingsPage() {
   const [qbForm, setQbForm] = useState({ environment: "SANDBOX", realmId: "", companyName: "", accessToken: "", refreshToken: "", syncMode: "FULL" });
   const [phForm, setPhForm] = useState({ environment: "SANDBOX", apiKey: "", webhookSecret: "", paymentCollectionEnabled: true });
   const [solaForm, setSolaForm] = useState({ xKey: "", iFieldsKey: "", cloudIMKey: "", cloudIMDeviceId: "", webhookSecret: "" });
+  const [qbAppForm, setQbAppForm] = useState({ clientId: "", clientSecret: "", redirectUri: "", environment: "PRODUCTION" });
   const [voipmsForm, setVoipmsForm] = useState({ apiUser: "", apiPassword: "", webhookSecret: "" });
   const [voipmsWebhookTouched, setVoipmsWebhookTouched] = useState(false);
   const [voipmsWebhookHints, setVoipmsWebhookHints] = useState(null);
@@ -358,6 +359,16 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {activeTab === "Permissions" && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Roles &amp; Permissions</h3>
+            <p className="mt-1 text-sm text-slate-500">Manage what each role can see and do, and assign users to roles.</p>
+            <Link className="btn-secondary mt-3 inline-flex" to="/aplus/settings/permissions">Open Permissions</Link>
+          </div>
+        </div>
+      )}
+
       {activeTab === "Billing" && (
         <BillingTab isAdmin={isAdmin} toast={toast} />
       )}
@@ -485,8 +496,8 @@ export default function SettingsPage() {
           </section>
 
           {/* ── QuickBooks ────────────────────────────────────────────────── */}
-          <section className="rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between">
+          <section className="rounded-xl border border-slate-200 p-4 col-span-full lg:col-span-2">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-slate-900">QuickBooks</h3>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                 quickbooks?.isEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
@@ -494,20 +505,101 @@ export default function SettingsPage() {
                 {quickbooks?.isEnabled ? "Connected" : "Not connected"}
               </span>
             </div>
-            {quickbooks?.isEnabled ? (
-              <div className="mt-2 space-y-1">
-                <p className="text-sm text-slate-700 font-medium">{quickbooks.companyName || "Company connected"}</p>
+
+            {quickbooks?.isEnabled && (
+              <div className="mb-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 space-y-0.5">
+                <p className="text-sm text-emerald-800 font-medium">{quickbooks.companyName || "Company connected"}</p>
                 <p className="text-xs text-slate-500">Realm ID: {quickbooks.realmId}</p>
                 <p className="text-xs text-slate-500">Last sync: {quickbooks.lastSyncAt ? new Date(quickbooks.lastSyncAt).toLocaleString() : "Never"}</p>
                 {quickbooks.syncError && <p className="text-xs text-red-600">{quickbooks.syncError}</p>}
               </div>
-            ) : (
-              <p className="mt-1 text-sm text-slate-500">
-                Connect QuickBooks to automatically create invoices and record payments.
-                Invoices will be marked as Paid when a Sola payment is collected.
+            )}
+
+            {!quickbooks?.isEnabled && (
+              <p className="mb-3 text-sm text-slate-500">
+                Connect QuickBooks to automatically push invoices and mark them as Paid when a payment is collected.
               </p>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
+
+            {/* Step 1 — App Credentials (Client ID + Secret from Intuit Developer Portal) */}
+            {!quickbooks?.isEnabled && isAdmin && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-semibold text-amber-800 mb-2">Step 1 — Enter your Intuit App Credentials</p>
+                <p className="text-xs text-amber-700 mb-3">
+                  Get your Client ID and Secret from{" "}
+                  <a href="https://developer.intuit.com/app/developer/homepage" target="_blank" rel="noopener noreferrer" className="underline">
+                    developer.intuit.com
+                  </a>{" "}
+                  → Your App → Keys & OAuth. Set the Redirect URI to{" "}
+                  <code className="bg-amber-100 px-1 rounded text-[10px] break-all">
+                    {window.location.origin.replace(/:\d+$/, "")}/api/integrations/quickbooks/callback
+                  </code>
+                </p>
+                <div className="grid gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Environment</label>
+                      <select
+                        className="saas-input"
+                        value={qbAppForm.environment}
+                        onChange={(e) => setQbAppForm((p) => ({ ...p, environment: e.target.value }))}
+                      >
+                        <option value="PRODUCTION">Production</option>
+                        <option value="SANDBOX">Sandbox</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Redirect URI (optional override)</label>
+                      <input
+                        className="saas-input"
+                        placeholder="Auto-detected if left blank"
+                        value={qbAppForm.redirectUri}
+                        onChange={(e) => setQbAppForm((p) => ({ ...p, redirectUri: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Client ID <span className="text-red-500">*</span></label>
+                    <input
+                      className="saas-input"
+                      placeholder="ABxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      value={qbAppForm.clientId}
+                      onChange={(e) => setQbAppForm((p) => ({ ...p, clientId: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Client Secret <span className="text-red-500">*</span></label>
+                    <input
+                      className="saas-input"
+                      type="password"
+                      placeholder="Your Intuit app client secret"
+                      value={qbAppForm.clientSecret}
+                      onChange={(e) => setQbAppForm((p) => ({ ...p, clientSecret: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary mt-2"
+                  disabled={!qbAppForm.clientId || !qbAppForm.clientSecret || loadingAction === "qb-save-app"}
+                  onClick={() => runIntegrationAction(
+                    "qb-save-app",
+                    () => api.post("/integrations/quickbooks/app-credentials", {
+                      clientId: qbAppForm.clientId,
+                      clientSecret: qbAppForm.clientSecret,
+                      redirectUri: qbAppForm.redirectUri || `${window.location.origin.replace(/:\d+$/, "")}/api/integrations/quickbooks/callback`,
+                      environment: qbAppForm.environment
+                    }),
+                    "App credentials saved. Now click Connect with QuickBooks."
+                  )}
+                >
+                  {loadingAction === "qb-save-app" ? "Saving…" : "Save App Credentials"}
+                </button>
+              </div>
+            )}
+
+            {/* Step 2 — OAuth Connect */}
+            <div className="flex flex-wrap gap-2">
               {!quickbooks?.isEnabled ? (
                 <button
                   type="button"
@@ -519,11 +611,12 @@ export default function SettingsPage() {
                       const res = await api.get("/integrations/quickbooks/auth-url");
                       window.location.href = res.data.url;
                     } catch (err) {
+                      toast?.error(err?.response?.data?.error || "Could not start QuickBooks authorization. Save your app credentials first.");
                       setLoadingAction("");
                     }
                   }}
                 >
-                  {loadingAction === "qb-auth" ? "Redirecting…" : "Connect with QuickBooks"}
+                  {loadingAction === "qb-auth" ? "Redirecting to Intuit…" : "Step 2 — Connect with QuickBooks"}
                 </button>
               ) : (
                 <>
@@ -533,7 +626,7 @@ export default function SettingsPage() {
                     disabled={!isAdmin || loadingAction === "qb-test"}
                     onClick={() => runIntegrationAction("qb-test", () => api.post("/integrations/quickbooks/test"), "QuickBooks connection verified.")}
                   >
-                    Test Connection
+                    {loadingAction === "qb-test" ? "Testing…" : "Test Connection"}
                   </button>
                   <button
                     type="button"
@@ -541,7 +634,7 @@ export default function SettingsPage() {
                     disabled={!isAdmin || loadingAction === "qb-sync"}
                     onClick={() => runIntegrationAction("qb-sync", () => api.post("/integrations/quickbooks/sync-now"), "QuickBooks sync triggered.")}
                   >
-                    Sync Now
+                    {loadingAction === "qb-sync" ? "Syncing…" : "Sync Now"}
                   </button>
                   <button
                     type="button"

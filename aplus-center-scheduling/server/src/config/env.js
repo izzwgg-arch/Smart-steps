@@ -52,6 +52,18 @@ export const env = {
   quickbooksClientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || "",
   quickbooksRedirectUri: process.env.QUICKBOOKS_REDIRECT_URI || "",
   quickbooksEnvironment: process.env.QUICKBOOKS_ENVIRONMENT || "SANDBOX",
+  /** QuickBooks API governance (see quickbooksApiClient.js) */
+  qbSafeMode: process.env.QB_SAFE_MODE === "true",
+  qbTenantIdFallback: process.env.QB_TENANT_ID || "",
+  qbMaxCallsPerMinute: Number(process.env.QB_MAX_CALLS_PER_MINUTE || 40),
+  qbMaxCallsPerHour: Number(process.env.QB_MAX_CALLS_PER_HOUR || 800),
+  qbGetCacheTtlMs: Number(process.env.QB_GET_CACHE_TTL_MS || 600000),
+  qbDedupeWindowMs: Number(process.env.QB_DEDUPE_WINDOW_MS || 4000),
+  /** QuickBooks PaymentMethod entity IDs (Lists → Payment methods). Used when recording manual Cash/Check so QBO shows the correct method. */
+  qbPaymentMethodCashId: process.env.QB_PAYMENT_METHOD_CASH_ID || "",
+  qbPaymentMethodCheckId: process.env.QB_PAYMENT_METHOD_CHECK_ID || "",
+  /** Default for card / processor payments when pushing to QuickBooks (often "1" in new QBO companies). */
+  qbPaymentMethodCardId: process.env.QB_PAYMENT_METHOD_CARD_ID || "1",
   paymentHubBaseUrl: process.env.PAYMENT_HUB_BASE_URL || "",
   paymentHubWebhookSecret: process.env.PAYMENT_HUB_WEBHOOK_SECRET || "",
   paymentHubPublicKey: process.env.PAYMENT_HUB_PUBLIC_KEY || "",

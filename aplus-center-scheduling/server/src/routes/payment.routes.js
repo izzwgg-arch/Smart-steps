@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import express from "express";
 import { prisma } from "../config/prisma.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requirePermission } from "../middleware/permissions.js";
 import { asNumber, asOptionalString, requireString } from "../utils/validation.js";
 import { recalculateInvoiceBalance, refreshPaymentAggregateStatus } from "../services/payments/paymentService.js";
 import { writeAuditLog } from "../services/auditLogService.js";
@@ -158,7 +159,7 @@ router.post("/browser-post/confirm", async (req, res) => {
       })
       .catch((err) => console.error("[receipt-email]", err?.message));
 
-    syncPaymentToQuickbooks(payment.id).catch((err) => {
+    syncPaymentToQuickbooks(payment.id, { triggerType: "background" }).catch((err) => {
       console.error("[qb-sync] Browser Post payment sync failed", err?.message);
       logActivity({ invoiceId, type: "QB_FAILED", message: `QB sync failed: ${err?.message}` }).catch(() => {});
     });
@@ -202,7 +203,7 @@ router.post("/webhook/payment-hub", async (req, res) => {
 router.use(requireAuth);
 
 // ── Sola iFields key — returned to frontend for card tokenization ─────────────
-router.get("/sola-ifields-key", async (_req, res) => {
+router.get("/sola-ifields-key", requirePermission("aplus.billing.take_payments"), async (_req, res) => {
   try {
     const key = await getIFieldsKey();
     return res.json({ iFieldsKey: key });
@@ -212,7 +213,7 @@ router.get("/sola-ifields-key", async (_req, res) => {
 });
 
 // ── Legacy: Browser Post config ───────────────────────────────────────────────
-router.get("/browser-post-config", async (req, res) => {
+router.get("/browser-post-config", requirePermission("aplus.billing.take_payments"), async (req, res) => {
   const invoiceId = String(req.query.invoiceId || "").trim();
   if (!invoiceId) return res.status(400).json({ error: "invoiceId is required" });
   try {
@@ -223,7 +224,7 @@ router.get("/browser-post-config", async (req, res) => {
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", requirePermission("aplus.billing.view_payment_history"), async (req, res) => {
   const clientId = req.query.clientId ? String(req.query.clientId) : undefined;
   const invoiceId = req.query.invoiceId ? String(req.query.invoiceId) : undefined;
   const status = req.query.status ? String(req.query.status) : undefined;
@@ -282,7 +283,7 @@ router.get("/", async (req, res) => {
   });
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", requirePermission("aplus.billing.view_payment_history"), async (req, res) => {
   const payment = await prisma.payment.findUnique({
     where: { id: req.params.id },
     include: { client: true, invoice: true, refunds: { orderBy: { createdAt: "desc" } } }
@@ -292,7 +293,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // ── Sola card-not-present charge (main endpoint used by SolaPaymentModal) ────
-router.post("/charge", async (req, res) => {
+router.post("/charge", requirePermission("aplus.billing.take_payments"), async (req, res) => {
   try {
     const body   = req.body || {};
     const amount = asNumber(body.amount, "amount");
@@ -314,8 +315,14 @@ router.post("/charge", async (req, res) => {
         cloudIM:       true
       });
     } else {
-      // Card Not Present — iFields xToken
-      const xToken = requireString(body.xToken, "xToken");
+      // Card Not Present — iFields returns SUTs in xCardNum/xCVV hidden fields
+      const xCardNum = asOptionalString(body.xCardNum);
+      const xCVV     = asOptionalString(body.xCVV);
+      const xExp     = asOptionalString(body.xExp);
+      const xToken   = asOptionalString(body.xToken);
+      if (!xToken && !xCardNum) {
+        return res.status(400).json({ error: "Card entry is required" });
+      }
       payment = await createProcessorCharge({
         clientId:      body.clientId   || null,
         invoiceId:     body.invoiceId  || null,
@@ -323,6 +330,9 @@ router.post("/charge", async (req, res) => {
         amount,
         currency:      (body.currency || "USD").toUpperCase(),
         xToken,
+        xCardNum,
+        xCVV,
+        xExp,
         description:   asOptionalString(body.description),
         billingName:   asOptionalString(body.billingName),
         billingEmail:  asOptionalString(body.billingEmail),
@@ -365,7 +375,7 @@ router.post("/charge", async (req, res) => {
           .catch((err) => console.error("[sola-invoice-email]", err?.message));
 
         // 3. QB sync (non-blocking)
-        syncPaymentToQuickbooks(payment.id).catch((err) => {
+        syncPaymentToQuickbooks(payment.id, { userId: req.user?.id, triggerType: "user" }).catch((err) => {
           console.error("[qb-sync] Sola payment sync failed", err?.message);
           logActivity({ invoiceId: payment.invoiceId, type: "QB_FAILED", message: `QB sync failed: ${err?.message}` }).catch(() => {});
         });
@@ -390,7 +400,7 @@ router.post("/charge", async (req, res) => {
 });
 
 // ── CloudIM charge (card present) ─────────────────────────────────────────────
-router.post("/cloudim-charge", async (req, res) => {
+router.post("/cloudim-charge", requirePermission("aplus.billing.take_payments"), async (req, res) => {
   try {
     const body   = req.body || {};
     const amount = asNumber(body.amount, "amount");
@@ -431,7 +441,7 @@ router.post("/cloudim-charge", async (req, res) => {
         sendInvoiceEmail({ invoice, settings })
           .catch((err) => console.error("[cloudim-invoice-email]", err?.message));
 
-        syncPaymentToQuickbooks(payment.id).catch(() => {});
+        syncPaymentToQuickbooks(payment.id, { userId: req.user?.id, triggerType: "user" }).catch(() => {});
       }
     }
 
@@ -442,7 +452,7 @@ router.post("/cloudim-charge", async (req, res) => {
   }
 });
 
-router.post("/:id/refunds", async (req, res) => {
+router.post("/:id/refunds", requirePermission("aplus.billing.refund"), async (req, res) => {
   const body   = req.body || {};
   const amount = asNumber(body.amount, "amount");
   try {
@@ -464,7 +474,7 @@ router.post("/:id/refunds", async (req, res) => {
   }
 });
 
-router.get("/:id/refunds", async (req, res) => {
+router.get("/:id/refunds", requirePermission("aplus.billing.view_payment_history"), async (req, res) => {
   const refunds = await prisma.refund.findMany({
     where: { paymentId: req.params.id },
     orderBy: { createdAt: "desc" }
@@ -472,7 +482,7 @@ router.get("/:id/refunds", async (req, res) => {
   return res.json(refunds);
 });
 
-router.post("/:id/refresh-status", async (req, res) => {
+router.post("/:id/refresh-status", requirePermission("aplus.billing.view_payment_history"), async (req, res) => {
   try {
     const updated = await refreshProcessorPaymentStatus(req.params.id);
     await refreshPaymentAggregateStatus(req.params.id);
@@ -487,7 +497,7 @@ router.post("/:id/refresh-status", async (req, res) => {
   }
 });
 
-router.post("/payment-method-snapshots", async (req, res) => {
+router.post("/payment-method-snapshots", requirePermission("aplus.billing.take_payments"), async (req, res) => {
   const body    = req.body || {};
   const created = await prisma.paymentMethodSnapshot.create({
     data: {
@@ -508,7 +518,7 @@ router.post("/payment-method-snapshots", async (req, res) => {
 });
 
 // ── Test connection endpoints ─────────────────────────────────────────────────
-router.post("/test-connection", requireRole("ADMIN"), async (req, res) => {
+router.post("/test-connection", requirePermission("aplus.integrations.manage"), async (req, res) => {
   try {
     const result = await testSolaConnection();
     await writeAuditLog(req, {
@@ -522,7 +532,7 @@ router.post("/test-connection", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
-router.post("/test-connection/payment-hub", requireRole("ADMIN"), async (req, res) => {
+router.post("/test-connection/payment-hub", requirePermission("aplus.integrations.manage"), async (req, res) => {
   try {
     const result = await testPaymentHubConnection();
     await writeAuditLog(req, {

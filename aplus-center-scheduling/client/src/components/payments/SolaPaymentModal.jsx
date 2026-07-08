@@ -9,16 +9,21 @@
  *   "reader" — Card Present. POSTs to /api/payments/cloudim-charge which
  *              sends the transaction to the CloudIM physical terminal.
  *
+ * When `appointmentId` is set (appointment checkout), the charge amount can be
+ * edited; the server shortens/lengthens the session and invoice to match hours = amount ÷ hourly rate.
+ *
  * Usage:
  *   <SolaPaymentModal
  *     invoice={invoice}
  *     clientId={clientId}
+ *     appointmentId={optionalForAppointmentFlow}
+ *     onBillingSynced={(data) => merge appointment + invoice from data)}
  *     onSuccess={(payment) => { ... }}
  *     onClose={() => { ... }}
  *   />
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../lib/api.js";
 import { CARDKNOX_IFIELD_FRAME_URL, loadCardknoxIFieldsScript } from "../../lib/cardknoxIfields.js";
 
@@ -26,6 +31,16 @@ import { CARDKNOX_IFIELD_FRAME_URL, loadCardknoxIFieldsScript } from "../../lib/
 
 function fmtMoney(n) {
   return Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function round2(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+function hourlyRateFromInvoice(invoice) {
+  const li = invoice?.lineItems?.[0];
+  const u = Number(li?.unitPrice);
+  return Number.isFinite(u) && u > 0 ? u : null;
 }
 
 function TabBtn({ active, onClick, children }) {
@@ -56,29 +71,35 @@ const IFIELD_STYLE = {
 
 /* ─── CardNotPresentForm ────────────────────────────────────────────────────── */
 
-function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled }) {
+function CardNotPresentForm({
+  invoice,
+  clientId,
+  chargeAmount,
+  onSuccess,
+  onError,
+  disabled,
+}) {
   const [iFieldsKey, setIFieldsKey] = useState(null);
-  const [keyError,   setKeyError]   = useState(null);
-  const [ready,      setReady]      = useState(false);   // true once setAccount called
-  const [loading,    setLoading]    = useState(false);
-  const [expiry,     setExpiry]     = useState("");
+  const [keyError, setKeyError] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [expiry, setExpiry] = useState("");
   const [billingName, setBillingName] = useState("");
-  const [billingZip,  setBillingZip]  = useState("");
-  const cardTokenRef    = useRef(null);
-  const cvvTokenRef     = useRef(null);
+  const [billingZip, setBillingZip] = useState("");
+  const cardTokenRef = useRef(null);
+  const cvvTokenRef = useRef(null);
 
-  // 1. Fetch iFields public key from backend
   useEffect(() => {
-    api.get("/payments/sola-ifields-key")
+    api
+      .get("/payments/sola-ifields-key")
       .then((res) => setIFieldsKey(res.data.iFieldsKey))
       .catch((err) => {
         const msg = err?.response?.data?.error || "Could not load payment form — check Sola credentials in Settings.";
         setKeyError(msg);
         onError(msg);
       });
-  }, []);
+  }, [onError]);
 
-  // 2. Once key arrives, load Cardknox iFields then setAccount after iframes are in the DOM.
   useEffect(() => {
     if (!iFieldsKey) return;
     let cancelled = false;
@@ -119,11 +140,14 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
     return () => {
       cancelled = true;
     };
-  }, [iFieldsKey]);
+  }, [iFieldsKey, onError]);
 
   function getToken() {
     return new Promise((resolve, reject) => {
-      if (!window.getTokens) { reject(new Error("Card form not ready — please wait a moment")); return; }
+      if (!window.getTokens) {
+        reject(new Error("Card form not ready — please wait a moment"));
+        return;
+      }
       if (!cardTokenRef.current || !cvvTokenRef.current) {
         reject(new Error("Card form is missing token fields"));
         return;
@@ -148,6 +172,15 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
 
   async function handleSubmit(e) {
     e.preventDefault();
+    const amt = round2(Number(chargeAmount));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      onError("Enter a valid charge amount.");
+      return;
+    }
+    if (amt > round2(Number(invoice.balanceDue || 0)) + 0.01) {
+      onError("Charge amount cannot exceed the balance due.");
+      return;
+    }
     setLoading(true);
     try {
       const exp = expiry.replace(/\D/g, "");
@@ -158,14 +191,14 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
       const res = await api.post("/payments/charge", {
         xCardNum,
         xCVV,
-        xExp:          exp,
-        amount:        invoice.balanceDue,
-        invoiceId:     invoice.id,
+        xExp: exp,
+        amount: amt,
+        invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
-        clientId:      invoice.clientId || clientId,
-        billingName:   billingName || undefined,
-        billingZip:    billingZip  || undefined,
-        description:   `Payment for invoice ${invoice.invoiceNumber || invoice.id}`
+        clientId: invoice.clientId || clientId,
+        billingName: billingName || undefined,
+        billingZip: billingZip || undefined,
+        description: `Payment for invoice ${invoice.invoiceNumber || invoice.id}`,
       });
       onSuccess(res.data);
     } catch (err) {
@@ -176,9 +209,7 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
   }
 
   if (keyError) {
-    return (
-      <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">{keyError}</div>
-    );
+    return <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">{keyError}</div>;
   }
 
   if (!iFieldsKey) {
@@ -193,10 +224,8 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
     );
   }
 
-  /* iframes are always visible — no overlay ever covers them */
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Card Number */}
       <div>
         <label className="block text-xs font-semibold text-slate-600 mb-1.5">Card Number</label>
         <div className="border border-slate-300 rounded-lg bg-white overflow-hidden" style={{ height: "44px" }}>
@@ -227,10 +256,15 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">Expiry (MM/YY)</label>
-          <input type="text" placeholder="MM/YY" maxLength={5} value={expiry}
+          <input
+            type="text"
+            placeholder="MM/YY"
+            maxLength={5}
+            value={expiry}
             onChange={(e) => setExpiry(e.target.value)}
             className="w-full border border-slate-300 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ height: "44px" }} />
+            style={{ height: "44px" }}
+          />
         </div>
       </div>
 
@@ -239,17 +273,25 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">Name on Card</label>
-          <input type="text" placeholder="Full name" value={billingName}
+          <input
+            type="text"
+            placeholder="Full name"
+            value={billingName}
             onChange={(e) => setBillingName(e.target.value)}
             className="w-full border border-slate-300 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ height: "44px" }} />
+            style={{ height: "44px" }}
+          />
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">Billing ZIP</label>
-          <input type="text" placeholder="ZIP code" value={billingZip}
+          <input
+            type="text"
+            placeholder="ZIP code"
+            value={billingZip}
             onChange={(e) => setBillingZip(e.target.value)}
             className="w-full border border-slate-300 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ height: "44px" }} />
+            style={{ height: "44px" }}
+          />
         </div>
       </div>
 
@@ -258,7 +300,7 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
         disabled={loading || disabled || !ready}
         className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold rounded-lg text-sm transition-colors"
       >
-        {loading ? "Processing…" : !ready ? "Initializing…" : `Charge ${fmtMoney(invoice.balanceDue)}`}
+        {loading ? "Processing…" : !ready ? "Initializing…" : `Charge ${fmtMoney(chargeAmount)}`}
       </button>
     </form>
   );
@@ -266,22 +308,28 @@ function CardNotPresentForm({ invoice, clientId, onSuccess, onError, disabled })
 
 /* ─── CardReaderForm ────────────────────────────────────────────────────────── */
 
-function CardReaderForm({ invoice, clientId, onSuccess, onError, disabled }) {
+function CardReaderForm({ invoice, clientId, chargeAmount, onSuccess, onError, disabled }) {
   const [loading, setLoading] = useState(false);
-  const [sent, setSent]       = useState(false);
 
   async function handleSendToReader() {
+    const amt = round2(Number(chargeAmount));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      onError("Enter a valid charge amount.");
+      return;
+    }
+    if (amt > round2(Number(invoice.balanceDue || 0)) + 0.01) {
+      onError("Charge amount cannot exceed the balance due.");
+      return;
+    }
     setLoading(true);
-    setSent(false);
     try {
       const res = await api.post("/payments/cloudim-charge", {
-        amount:        invoice.balanceDue,
-        invoiceId:     invoice.id,
+        amount: amt,
+        invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
-        clientId:      invoice.clientId || clientId,
-        description:   `Payment for invoice ${invoice.invoiceNumber || invoice.id}`
+        clientId: invoice.clientId || clientId,
+        description: `Payment for invoice ${invoice.invoiceNumber || invoice.id}`,
       });
-      setSent(true);
       onSuccess(res.data);
     } catch (err) {
       const msg = err?.response?.data?.error || err?.message || "Terminal charge failed";
@@ -296,14 +344,14 @@ function CardReaderForm({ invoice, clientId, onSuccess, onError, disabled }) {
       <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
         <p className="font-medium mb-1">Card Reader (CloudIM Terminal)</p>
         <p className="text-blue-700">
-          Clicking "Send to Reader" will push the charge to the connected terminal.
-          Ask the client to present their card when prompted on the device.
+          Clicking &quot;Send to Reader&quot; will push the charge to the connected terminal. Ask the client to present
+          their card when prompted on the device.
         </p>
       </div>
 
       <div className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-200 px-4 py-3">
         <span className="text-sm text-slate-600">Amount to charge</span>
-        <span className="text-lg font-bold text-slate-900">{fmtMoney(invoice.balanceDue)}</span>
+        <span className="text-lg font-bold text-slate-900">{fmtMoney(chargeAmount)}</span>
       </div>
 
       <button
@@ -320,7 +368,9 @@ function CardReaderForm({ invoice, clientId, onSuccess, onError, disabled }) {
             </svg>
             Waiting for terminal…
           </>
-        ) : "Send to Reader"}
+        ) : (
+          "Send to Reader"
+        )}
       </button>
     </div>
   );
@@ -328,44 +378,102 @@ function CardReaderForm({ invoice, clientId, onSuccess, onError, disabled }) {
 
 /* ─── Main modal ────────────────────────────────────────────────────────────── */
 
-export default function SolaPaymentModal({ invoice, clientId, onSuccess, onClose }) {
-  const [tab, setTab]         = useState("card");
-  const [error, setError]     = useState(null);
+export default function SolaPaymentModal({
+  invoice,
+  clientId,
+  appointmentId = null,
+  onBillingSynced = null,
+  onSuccess,
+  onClose,
+}) {
+  const [tab, setTab] = useState("card");
+  const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [amountStr, setAmountStr] = useState("");
+  const [syncingBilling, setSyncingBilling] = useState(false);
+  const debounceRef = useRef(null);
+  const invoiceRef = useRef(invoice);
+  invoiceRef.current = invoice;
+
+  const chargeAmount = round2(parseFloat(String(amountStr).replace(/,/g, "")) || 0);
+  const rate = hourlyRateFromInvoice(invoice);
+  const hoursPreview = rate && chargeAmount > 0 ? round2(chargeAmount / rate) : null;
+
+  useEffect(() => {
+    setAmountStr(String(invoice?.balanceDue ?? ""));
+  }, [invoice?.id]);
+
+  const runBillingSync = useCallback(
+    async (target) => {
+      const inv = invoiceRef.current;
+      if (!appointmentId || !inv?.id) return;
+      const t = round2(Number(target));
+      if (!Number.isFinite(t) || t <= 0) return;
+      const invTotal = round2(Number(inv.total ?? inv.balanceDue ?? 0));
+      if (Math.abs(t - invTotal) < 0.02) return;
+      setSyncingBilling(true);
+      setError(null);
+      try {
+        const { data } = await api.post(`/appointments/${appointmentId}/sync-billing-to-amount`, { amount: t });
+        onBillingSynced?.(data);
+        if (data?.invoice?.balanceDue != null) {
+          setAmountStr(String(data.invoice.balanceDue));
+        }
+      } catch (err) {
+        const msg = err?.response?.data?.error || err?.message || "Could not update session length";
+        setError(msg);
+      } finally {
+        setSyncingBilling(false);
+      }
+    },
+    [appointmentId, onBillingSynced]
+  );
+
+  useEffect(() => {
+    if (!appointmentId || success) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const t = round2(parseFloat(String(amountStr).replace(/,/g, "")) || 0);
+    if (!Number.isFinite(t) || t <= 0) return;
+    debounceRef.current = setTimeout(() => {
+      runBillingSync(t);
+    }, 550);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [amountStr, appointmentId, success, runBillingSync]);
 
   function handleSuccess(payment) {
     setSuccess(payment);
-    // Give the user a moment to see the success message, then close
     setTimeout(() => {
       onSuccess?.(payment);
     }, 1800);
   }
 
-  // Nothing to pay
   if (!invoice || Number(invoice.balanceDue || 0) <= 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center">
           <p className="text-green-600 font-semibold text-lg">Invoice is fully paid!</p>
-          <button onClick={onClose} className="mt-4 text-sm text-slate-500 underline">Close</button>
+          <button type="button" onClick={onClose} className="mt-4 text-sm text-slate-500 underline">
+            Close
+          </button>
         </div>
       </div>
     );
   }
 
+  const maxCharge = round2(Number(invoice.balanceDue || 0));
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Collect Payment</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Invoice {invoice.invoiceNumber || invoice.id}
-            </p>
+            <p className="text-xs text-slate-500 mt-0.5">Invoice {invoice.invoiceNumber || invoice.id}</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
             aria-label="Close"
@@ -377,14 +485,40 @@ export default function SolaPaymentModal({ invoice, clientId, onSuccess, onClose
         </div>
 
         <div className="px-5 py-4 space-y-4">
-
-          {/* Balance due */}
           <div className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
-            <p className="text-xs font-medium opacity-80 mb-1">Balance Due</p>
-            <p className="text-3xl font-bold">{fmtMoney(invoice.balanceDue)}</p>
+            {appointmentId ? (
+              <>
+                <p className="text-xs font-medium opacity-80 mb-1">Amount to charge</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-semibold opacity-90">$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={amountStr}
+                    onChange={(e) => setAmountStr(e.target.value)}
+                    className="flex-1 bg-white/10 border border-white/30 rounded-lg px-3 py-2 text-2xl font-bold text-white placeholder-white/50 outline-none focus:ring-2 focus:ring-white/80"
+                    placeholder="0.00"
+                    disabled={!!success}
+                  />
+                </div>
+                <p className="text-xs opacity-80 mt-2">
+                  Max {fmtMoney(maxCharge)} (current invoice). Session length updates to match hours ÷ hourly rate.
+                  {syncingBilling && <span className="ml-2 font-medium">Updating…</span>}
+                </p>
+                {rate != null && hoursPreview != null && Number.isFinite(hoursPreview) && (
+                  <p className="text-xs opacity-90 mt-1">
+                    ≈ <strong>{hoursPreview}</strong> hours at {fmtMoney(rate)}/hr
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-medium opacity-80 mb-1">Balance Due</p>
+                <p className="text-3xl font-bold">{fmtMoney(invoice.balanceDue)}</p>
+              </>
+            )}
           </div>
 
-          {/* Success state */}
           {success && (
             <div className="rounded-xl bg-green-50 border border-green-200 p-4 text-center">
               <div className="flex items-center justify-center w-10 h-10 bg-green-100 rounded-full mx-auto mb-2">
@@ -400,7 +534,6 @@ export default function SolaPaymentModal({ invoice, clientId, onSuccess, onClose
             </div>
           )}
 
-          {/* Error */}
           {error && !success && (
             <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
               <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -412,21 +545,32 @@ export default function SolaPaymentModal({ invoice, clientId, onSuccess, onClose
 
           {!success && (
             <>
-              {/* Tab switcher */}
               <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                <TabBtn active={tab === "card"}   onClick={() => { setTab("card");   setError(null); }}>
+                <TabBtn
+                  active={tab === "card"}
+                  onClick={() => {
+                    setTab("card");
+                    setError(null);
+                  }}
+                >
                   Card Entry
                 </TabBtn>
-                <TabBtn active={tab === "reader"} onClick={() => { setTab("reader"); setError(null); }}>
+                <TabBtn
+                  active={tab === "reader"}
+                  onClick={() => {
+                    setTab("reader");
+                    setError(null);
+                  }}
+                >
                   Card Reader
                 </TabBtn>
               </div>
 
-              {/* Tab content */}
               {tab === "card" && (
                 <CardNotPresentForm
                   invoice={invoice}
                   clientId={clientId}
+                  chargeAmount={chargeAmount}
                   onSuccess={handleSuccess}
                   onError={setError}
                   disabled={!!success}
@@ -436,6 +580,7 @@ export default function SolaPaymentModal({ invoice, clientId, onSuccess, onClose
                 <CardReaderForm
                   invoice={invoice}
                   clientId={clientId}
+                  chargeAmount={chargeAmount}
                   onSuccess={handleSuccess}
                   onError={setError}
                   disabled={!!success}
@@ -444,7 +589,6 @@ export default function SolaPaymentModal({ invoice, clientId, onSuccess, onClose
             </>
           )}
 
-          {/* Powered-by footer */}
           <p className="text-center text-xs text-slate-400">
             Secured by Sola Payments · PCI Compliant · Card data never touches our servers
           </p>

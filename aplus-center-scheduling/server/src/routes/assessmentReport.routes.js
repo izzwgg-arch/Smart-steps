@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../config/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
+import { requirePermission } from "../middleware/permissions.js";
 import { requireString } from "../utils/validation.js";
 import { writeAuditLog } from "../services/auditLogService.js";
 
@@ -103,7 +104,7 @@ function sanitizeHtmlContent(value) {
 }
 
 // ── List reports ──────────────────────────────────────────────────────────────
-router.get("/", async (req, res) => {
+router.get("/", requirePermission("aplus.assessment_reports.view"), async (req, res) => {
   const clientId = req.query.clientId ? String(req.query.clientId) : undefined;
   const status   = req.query.status   ? String(req.query.status)   : undefined;
   const reports  = await prisma.assessmentReport.findMany({
@@ -119,7 +120,7 @@ router.get("/", async (req, res) => {
 });
 
 // ── Get single report with full sections ──────────────────────────────────────
-router.get("/:id", async (req, res) => {
+router.get("/:id", requirePermission("aplus.assessment_reports.view"), async (req, res) => {
   const report = await prisma.assessmentReport.findUnique({
     where: { id: req.params.id },
     include: {
@@ -133,7 +134,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // ── Update report metadata ────────────────────────────────────────────────────
-router.put("/:id", async (req, res) => {
+router.put("/:id", requirePermission("aplus.assessment_reports.edit"), async (req, res) => {
   const report = await prisma.assessmentReport.findUnique({ where: { id: req.params.id } });
   if (!report) return res.status(404).json({ error: "Report not found" });
   const body = req.body || {};
@@ -153,7 +154,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // ── Delete report ─────────────────────────────────────────────────────────────
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requirePermission("aplus.assessment_reports.delete"), async (req, res) => {
   const report = await prisma.assessmentReport.findUnique({ where: { id: req.params.id } });
   if (!report) return res.status(404).json({ error: "Report not found" });
   await prisma.assessmentReport.delete({ where: { id: req.params.id } });
@@ -162,7 +163,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // ── Replace / reorder all sections ───────────────────────────────────────────
-router.put("/:id/sections", async (req, res) => {
+router.put("/:id/sections", requirePermission("aplus.assessment_reports.edit"), async (req, res) => {
   const report = await prisma.assessmentReport.findUnique({ where: { id: req.params.id } });
   if (!report) return res.status(404).json({ error: "Report not found" });
   const sections = Array.isArray(req.body.sections) ? req.body.sections : [];
@@ -188,7 +189,7 @@ router.put("/:id/sections", async (req, res) => {
 });
 
 // ── Add a section ─────────────────────────────────────────────────────────────
-router.post("/:id/sections", async (req, res) => {
+router.post("/:id/sections", requirePermission("aplus.assessment_reports.edit"), async (req, res) => {
   const report = await prisma.assessmentReport.findUnique({ where: { id: req.params.id } });
   if (!report) return res.status(404).json({ error: "Report not found" });
   const maxOrder = await prisma.assessmentReportSection.aggregate({
@@ -208,7 +209,7 @@ router.post("/:id/sections", async (req, res) => {
 });
 
 // ── Update a section ──────────────────────────────────────────────────────────
-router.put("/:id/sections/:sectionId", async (req, res) => {
+router.put("/:id/sections/:sectionId", requirePermission("aplus.assessment_reports.edit"), async (req, res) => {
   const section = await prisma.assessmentReportSection.findFirst({
     where: { id: req.params.sectionId, reportId: req.params.id },
   });
@@ -225,7 +226,7 @@ router.put("/:id/sections/:sectionId", async (req, res) => {
 });
 
 // ── Delete a section ──────────────────────────────────────────────────────────
-router.delete("/:id/sections/:sectionId", async (req, res) => {
+router.delete("/:id/sections/:sectionId", requirePermission("aplus.assessment_reports.edit"), async (req, res) => {
   const section = await prisma.assessmentReportSection.findFirst({
     where: { id: req.params.sectionId, reportId: req.params.id },
   });

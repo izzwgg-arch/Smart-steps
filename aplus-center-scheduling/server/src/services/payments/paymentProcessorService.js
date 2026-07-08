@@ -19,6 +19,9 @@ function mapExternalStatus(status) {
 async function createSolaCharge(payload) {
   const result = await chargeWithToken({
     xToken:        payload.xToken,
+    xCardNum:      payload.xCardNum,
+    xCVV:          payload.xCVV,
+    xExp:          payload.xExp,
     amount:        payload.amount,
     invoiceNumber: payload.invoiceNumber || payload.invoiceId,
     clientEmail:   payload.billingEmail  || undefined,

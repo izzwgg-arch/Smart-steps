@@ -1,17 +1,10 @@
 /**
  * QuickBooks Online Integration Service
  *
- * OAuth 2.0 flow:
- *   1. GET  /integrations/quickbooks/auth-url  → redirect user to Intuit
- *   2. GET  /integrations/quickbooks/callback  → exchange code for tokens (stored encrypted)
- *   3. All subsequent API calls use stored access token; refresh automatically if expired.
+ * All QuickBooks **accounting API** HTTP traffic goes through `qbAccountingApiRequest`
+ * (quickbooksApiClient.js) for logging, rate limits, dedupe, caching, and retries.
  *
- * Invoice sync flow (called after Sola payment):
- *   syncPaymentToQuickbooks(paymentId)
- *     → syncInvoiceToQuickbooks(invoiceId)       — creates/updates QB Invoice
- *     → creates QB Payment linked to that invoice — marks invoice Paid in QB
- *
- * Intuit API reference: https://developer.intuit.com/app/developer/qbo/docs/api/accounting
+ * OAuth token endpoint (Intuit platform) still uses direct fetch — not QBO company API.
  */
 
 import { prisma } from "../../../config/prisma.js";
@@ -22,147 +15,68 @@ import {
   upsertIntegrationAccount,
   writeIntegrationSyncLog
 } from "../integrationAccountService.js";
+import { qbAccountingApiRequest } from "./quickbooksApiClient.js";
+import {
+  getQBAppCredentials,
+  basicAuthHeader,
+  QB_TOKEN_URL
+} from "./quickbooksAuth.js";
 
-/* ─── Constants ─────────────────────────────────────────────────────────────── */
+const QB_OAUTH_BASE = "https://appcenter.intuit.com/connect/oauth2";
+const QB_REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
+const QB_SCOPE = "com.intuit.quickbooks.accounting";
 
-const QB_OAUTH_BASE    = "https://appcenter.intuit.com/connect/oauth2";
-const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-const QB_REVOKE_URL    = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
-const QB_SCOPE         = "com.intuit.quickbooks.accounting";
-const QB_API_SANDBOX   = "https://sandbox-quickbooks.api.intuit.com/v3/company";
-const QB_API_PROD      = "https://quickbooks.api.intuit.com/v3/company";
+/** @typedef {{ userId?: string|null, triggerType?: "user"|"background"|"retry" }} QbCallContext */
 
-/* ─── Internal helpers ──────────────────────────────────────────────────────── */
-
-function apiBase(environment) {
-  return (environment || "").toUpperCase() === "PRODUCTION" ? QB_API_PROD : QB_API_SANDBOX;
-}
-
-function basicAuthHeader() {
-  const clientId     = env.quickbooksClientId;
-  const clientSecret = env.quickbooksClientSecret;
-  if (!clientId || !clientSecret) {
-    const err = new Error("QuickBooks credentials (QUICKBOOKS_CLIENT_ID / QUICKBOOKS_CLIENT_SECRET) are not configured");
-    err.status = 500;
-    throw err;
-  }
-  return "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-}
-
-/**
- * Make an authenticated request to the QuickBooks API.
- * Automatically refreshes the access token if expired.
- */
-async function qbFetch(path, { method = "GET", body, account: acct } = {}) {
-  const account = acct || await getIntegrationAccount("QUICKBOOKS");
-  if (!account?.isEnabled || !account?.realmId) {
-    const err = new Error("QuickBooks is not connected");
-    err.status = 400;
-    throw err;
-  }
-
-  let { accessToken, refreshToken } = getDecryptedTokens(account);
-
-  // Refresh if token is expired (or within 5 minutes of expiring)
-  const expiresAt = account.tokenExpiresAt ? new Date(account.tokenExpiresAt) : null;
-  const now       = new Date();
-  const needsRefresh = !expiresAt || expiresAt.getTime() - now.getTime() < 5 * 60 * 1000;
-  if (needsRefresh && refreshToken) {
-    const refreshed = await refreshAccessToken(refreshToken);
-    accessToken     = refreshed.accessToken;
-    // Update stored tokens
-    await upsertIntegrationAccount("QUICKBOOKS", {
-      accessToken:   refreshed.accessToken,
-      refreshToken:  refreshed.refreshToken || refreshToken,
-      tokenExpiresAt: new Date(Date.now() + refreshed.expiresIn * 1000)
-    });
-  }
-
-  if (!accessToken) {
-    const err = new Error("QuickBooks access token is missing — please reconnect");
-    err.status = 401;
-    throw err;
-  }
-
-  const base = apiBase(account.environment);
-  const url  = `${base}/${account.realmId}${path}`;
-
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Authorization:  `Bearer ${accessToken}`,
-      Accept:         "application/json",
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  const text = await response.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-  if (!response.ok) {
-    const msg = data?.Fault?.Error?.[0]?.Detail
-      || data?.Fault?.Error?.[0]?.Message
-      || data?.error_description
-      || `QuickBooks API error ${response.status}`;
-    const err = new Error(msg);
-    err.status  = response.status;
-    err.qbFault = data?.Fault;
-    throw err;
-  }
-
-  return data;
-}
-
-async function refreshAccessToken(refreshToken) {
-  const response = await fetch(QB_TOKEN_URL, {
-    method:  "POST",
-    headers: {
-      Authorization:  basicAuthHeader(),
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description || "Failed to refresh QuickBooks access token");
-  }
+function qbCtx(ctx = {}) {
   return {
-    accessToken:  data.access_token,
-    refreshToken: data.refresh_token || refreshToken,
-    expiresIn:    data.expires_in    || 3600
+    userId: ctx.userId ?? null,
+    triggerType: ctx.triggerType || "background"
   };
 }
 
-/* ─── Public API ────────────────────────────────────────────────────────────── */
-
 /**
- * Build the Intuit OAuth2 authorization URL.
- * Redirect the user's browser here to start the OAuth flow.
+ * Map app payment rows to QuickBooks PaymentMethodRef (Lists → Payment methods).
+ * Manual Cash/Check uses QB_PAYMENT_METHOD_CASH_ID / QB_PAYMENT_METHOD_CHECK_ID when set.
+ * Card/processor payments use QB_PAYMENT_METHOD_CARD_ID when set; otherwise omit (QBO accepts payment without method ref).
  */
-export function getAuthUrl(state = "") {
-  const clientId    = env.quickbooksClientId;
-  const redirectUri = env.quickbooksRedirectUri;
+function resolveQbPaymentMethodRefForPayment(payment) {
+  const method = String(payment.paymentMethod || "").trim().toLowerCase();
+  const isManual = payment.paymentSourceType === "MANUAL";
+
+  if (isManual) {
+    if (method === "cash" || method.includes("cash")) {
+      const id = String(env.qbPaymentMethodCashId || "").trim();
+      return id || null;
+    }
+    if (method === "check" || method.includes("check")) {
+      const id = String(env.qbPaymentMethodCheckId || "").trim();
+      return id || null;
+    }
+    return null;
+  }
+
+  const cardId = String(env.qbPaymentMethodCardId || "").trim();
+  return cardId || null;
+}
+
+export async function getAuthUrl(state = "") {
+  const { clientId, redirectUri } = await getQBAppCredentials();
   if (!clientId || !redirectUri) {
-    const err = new Error("QuickBooks OAuth is not configured (QUICKBOOKS_CLIENT_ID / QUICKBOOKS_REDIRECT_URI)");
+    const err = new Error("QuickBooks Client ID and Redirect URI are not configured. Enter them in Settings → Integrations → QuickBooks.");
     err.status = 500;
     throw err;
   }
   const params = new URLSearchParams({
-    client_id:    clientId,
+    client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope:        QB_SCOPE,
-    state:        state || "qb-connect"
+    scope: QB_SCOPE,
+    state: state || "qb-connect"
   });
   return `${QB_OAUTH_BASE}?${params.toString()}`;
 }
 
-/**
- * Exchange the OAuth2 authorization code for access/refresh tokens.
- * Called from the OAuth callback route.
- */
 export async function exchangeCodeForTokens({ code, realmId }) {
   if (!code || !realmId) {
     const err = new Error("code and realmId are required");
@@ -170,16 +84,18 @@ export async function exchangeCodeForTokens({ code, realmId }) {
     throw err;
   }
 
+  const { redirectUri, environment } = await getQBAppCredentials();
+
   const response = await fetch(QB_TOKEN_URL, {
-    method:  "POST",
+    method: "POST",
     headers: {
-      Authorization:  basicAuthHeader(),
+      Authorization: await basicAuthHeader(),
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: [
       `grant_type=authorization_code`,
       `code=${encodeURIComponent(code)}`,
-      `redirect_uri=${encodeURIComponent(env.quickbooksRedirectUri)}`
+      `redirect_uri=${encodeURIComponent(redirectUri)}`
     ].join("&")
   });
 
@@ -188,41 +104,48 @@ export async function exchangeCodeForTokens({ code, realmId }) {
     throw new Error(data.error_description || "Failed to exchange QuickBooks authorization code");
   }
 
-  // Fetch company info so we can store the company name
   let companyName = null;
   try {
-    const infoResponse = await fetch(
-      `${QB_API_SANDBOX}/${realmId}/companyinfo/${realmId}?minorversion=65`,
-      { headers: { Authorization: `Bearer ${data.access_token}`, Accept: "application/json" } }
-    );
-    const infoData = await infoResponse.json().catch(() => ({}));
+    const infoData = await qbAccountingApiRequest({
+      path: `/companyinfo/${realmId}?minorversion=65`,
+      method: "GET",
+      account: { realmId, environment },
+      tokenOverride: data.access_token,
+      feature: "oauth_companyinfo",
+      triggerType: "user",
+      tenantId: realmId,
+      realmId,
+      bypassCache: true,
+      bypassDedupe: true
+    });
     companyName = infoData?.CompanyInfo?.CompanyName || null;
   } catch {}
 
   const account = await upsertIntegrationAccount("QUICKBOOKS", {
-    isEnabled:     true,
-    environment:   env.quickbooksEnvironment || "SANDBOX",
+    isEnabled: true,
+    environment,
     realmId,
     companyName,
-    accessToken:   data.access_token,
-    refreshToken:  data.refresh_token,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
     tokenExpiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
-    syncStatus:    "SUCCESS",
-    syncError:     null
+    syncStatus: "SUCCESS",
+    syncError: null
   });
 
   await writeIntegrationSyncLog({
-    provider:   "QUICKBOOKS",
-    direction:  "PULL",
+    provider: "QUICKBOOKS",
+    direction: "PULL",
     entityType: "Connection",
-    status:     "SUCCESS",
-    message:    `QuickBooks connected — company: ${companyName || realmId}`
+    status: "SUCCESS",
+    message: `QuickBooks connected — company: ${companyName || realmId}`
   });
 
   return account;
 }
 
-export async function testQuickbooksConnection() {
+export async function testQuickbooksConnection(ctx = {}) {
+  const c = qbCtx(ctx);
   const account = await getIntegrationAccount("QUICKBOOKS");
   if (!account?.isEnabled) {
     const err = new Error("QuickBooks is not connected");
@@ -230,36 +153,42 @@ export async function testQuickbooksConnection() {
     throw err;
   }
 
-  // Try a lightweight call — fetch company info
-  const data = await qbFetch(`/companyinfo/${account.realmId}?minorversion=65`, { account });
+  const data = await qbAccountingApiRequest({
+    path: `/companyinfo/${account.realmId}?minorversion=65`,
+    method: "GET",
+    account,
+    feature: "connection_test",
+    triggerType: c.triggerType,
+    userId: c.userId
+  });
 
   await writeIntegrationSyncLog({
-    provider:   "QUICKBOOKS",
-    direction:  "PULL",
+    provider: "QUICKBOOKS",
+    direction: "PULL",
     entityType: "Connection",
-    status:     "SUCCESS",
-    message:    "QuickBooks connection tested successfully"
+    status: "SUCCESS",
+    message: "QuickBooks connection tested successfully"
   });
 
   return {
-    ok:          true,
+    ok: true,
     companyName: data?.CompanyInfo?.CompanyName || account.companyName,
-    realmId:     account.realmId
+    realmId: account.realmId
   };
 }
 
 export async function connectQuickbooks(payload) {
   return upsertIntegrationAccount("QUICKBOOKS", {
-    isEnabled:     true,
-    environment:   payload.environment || "SANDBOX",
-    realmId:       payload.realmId     || null,
-    companyName:   payload.companyName || null,
-    accessToken:   payload.accessToken || null,
-    refreshToken:  payload.refreshToken || null,
+    isEnabled: true,
+    environment: payload.environment || "SANDBOX",
+    realmId: payload.realmId || null,
+    companyName: payload.companyName || null,
+    accessToken: payload.accessToken || null,
+    refreshToken: payload.refreshToken || null,
     tokenExpiresAt: payload.tokenExpiresAt ? new Date(payload.tokenExpiresAt) : null,
-    metadataJson:  payload.metadataJson || null,
-    syncStatus:    "SUCCESS",
-    syncError:     null
+    metadataJson: payload.metadataJson || null,
+    syncStatus: "SUCCESS",
+    syncError: null
   });
 }
 
@@ -268,57 +197,60 @@ export async function disconnectQuickbooks() {
   if (account) {
     const { refreshToken } = getDecryptedTokens(account);
     if (refreshToken) {
-      // Revoke the token on Intuit's side (best effort)
       fetch(QB_REVOKE_URL, {
-        method:  "POST",
-        headers: { Authorization: basicAuthHeader(), "Content-Type": "application/json" },
-        body:    JSON.stringify({ token: refreshToken })
+        method: "POST",
+        headers: { Authorization: await basicAuthHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ token: refreshToken })
       }).catch(() => {});
     }
   }
   return upsertIntegrationAccount("QUICKBOOKS", {
-    isEnabled:       false,
-    accessTokenEnc:  null,
+    isEnabled: false,
+    accessTokenEnc: null,
     refreshTokenEnc: null,
-    tokenExpiresAt:  null,
-    syncStatus:      "PENDING",
-    syncError:       null
+    tokenExpiresAt: null,
+    syncStatus: "PENDING",
+    syncError: null
   });
 }
 
-/**
- * Find or create a QuickBooks Customer for a given client.
- * Returns the QB Customer Id.
- */
-async function ensureQBCustomer(client, account) {
-  // Check if we already have a QB customer ID stored on the client
+async function ensureQBCustomer(client, account, ctx = {}) {
+  const c = qbCtx(ctx);
   if (client.quickbooksCustomerId) {
     return client.quickbooksCustomerId;
   }
 
-  // Search QB for an existing customer by display name
   try {
-    const query    = encodeURIComponent(`SELECT * FROM Customer WHERE DisplayName = '${client.fullName.replace(/'/g, "\\'")}'`);
-    const data     = await qbFetch(`/query?query=${query}&minorversion=65`, { account });
+    const query = encodeURIComponent(`SELECT * FROM Customer WHERE DisplayName = '${client.fullName.replace(/'/g, "\\'")}'`);
+    const data = await qbAccountingApiRequest({
+      path: `/query?query=${query}&minorversion=65`,
+      method: "GET",
+      account,
+      feature: "customer_query",
+      triggerType: c.triggerType,
+      userId: c.userId
+    });
     const existing = data?.QueryResponse?.Customer?.[0];
     if (existing) {
-      // Store QB ID on local client for future calls
       await prisma.client.update({ where: { id: client.id }, data: { quickbooksCustomerId: existing.Id } }).catch(() => {});
       return existing.Id;
     }
   } catch {}
 
-  // Create new QB Customer
   const payload = {
     DisplayName: client.fullName,
     PrimaryEmailAddr: client.email ? { Address: client.email } : undefined,
-    PrimaryPhone:     client.phone  ? { FreeFormNumber: client.phone } : undefined
+    PrimaryPhone: client.phone ? { FreeFormNumber: client.phone } : undefined
   };
 
-  const created = await qbFetch(`/customer?minorversion=65`, {
-    method:  "POST",
-    body:    payload,
-    account
+  const created = await qbAccountingApiRequest({
+    path: `/customer?minorversion=65`,
+    method: "POST",
+    body: payload,
+    account,
+    feature: "customer_create",
+    triggerType: c.triggerType,
+    userId: c.userId
   });
   const qbCustomerId = created?.Customer?.Id;
   if (qbCustomerId) {
@@ -327,7 +259,8 @@ async function ensureQBCustomer(client, account) {
   return qbCustomerId;
 }
 
-export async function syncClientToQuickbooks(clientId) {
+export async function syncClientToQuickbooks(clientId, ctx = {}) {
+  const c = qbCtx(ctx);
   const account = await getIntegrationAccount("QUICKBOOKS");
   if (!account?.isEnabled) {
     const err = new Error("QuickBooks is not connected");
@@ -342,15 +275,15 @@ export async function syncClientToQuickbooks(clientId) {
     throw err;
   }
 
-  const qbCustomerId = await ensureQBCustomer(client, account);
+  const qbCustomerId = await ensureQBCustomer(client, account, c);
 
   await writeIntegrationSyncLog({
-    provider:   "QUICKBOOKS",
-    direction:  "PUSH",
+    provider: "QUICKBOOKS",
+    direction: "PUSH",
     entityType: "Client",
-    entityId:   client.id,
-    status:     "SUCCESS",
-    message:    `Client synced to QuickBooks as Customer ${qbCustomerId}`,
+    entityId: client.id,
+    status: "SUCCESS",
+    message: `Client synced to QuickBooks as Customer ${qbCustomerId}`,
     payloadJson: { fullName: client.fullName, qbCustomerId }
   });
 
@@ -358,20 +291,21 @@ export async function syncClientToQuickbooks(clientId) {
   return { ok: true, externalCustomerId: qbCustomerId };
 }
 
-export async function syncInvoiceToQuickbooks(invoiceId) {
+export async function syncInvoiceToQuickbooks(invoiceId, ctx = {}) {
+  const c = qbCtx(ctx);
   const account = await getIntegrationAccount("QUICKBOOKS");
 
   if (!account?.isEnabled) {
     await prisma.invoice.update({
       where: { id: invoiceId },
-      data:  { qbSyncStatus: "NOT_SYNCED", qbSyncError: "QuickBooks is not connected" }
+      data: { qbSyncStatus: "NOT_SYNCED", qbSyncError: "QuickBooks is not connected" }
     }).catch(() => {});
     return prisma.invoice.findUnique({ where: { id: invoiceId } });
   }
 
   try {
     const invoice = await prisma.invoice.findUnique({
-      where:   { id: invoiceId },
+      where: { id: invoiceId },
       include: { client: true, lineItems: true }
     });
     if (!invoice) {
@@ -382,179 +316,277 @@ export async function syncInvoiceToQuickbooks(invoiceId) {
 
     await prisma.invoice.update({ where: { id: invoice.id }, data: { qbSyncStatus: "PENDING", qbSyncError: null } });
 
-    // Ensure the QB Customer exists
-    const qbCustomerId = await ensureQBCustomer(invoice.client, account);
+    const qbCustomerId = await ensureQBCustomer(invoice.client, account, c);
 
     let qbInvoiceId = invoice.quickbooksInvoiceId;
 
     if (qbInvoiceId) {
-      // Update existing QB Invoice
-      const existing = await qbFetch(`/invoice/${qbInvoiceId}?minorversion=65`, { account }).catch(() => null);
+      const existing = await qbAccountingApiRequest({
+        path: `/invoice/${qbInvoiceId}?minorversion=65`,
+        method: "GET",
+        account,
+        feature: "invoice_read",
+        triggerType: c.triggerType,
+        userId: c.userId
+      }).catch(() => null);
       if (existing?.Invoice) {
         const syncVersion = existing.Invoice.SyncToken;
-        await qbFetch(`/invoice?minorversion=65`, {
-          method:  "POST",
+        await qbAccountingApiRequest({
+          path: `/invoice?minorversion=65`,
+          method: "POST",
+          body: buildQBInvoicePayload(invoice, qbCustomerId, qbInvoiceId, syncVersion),
           account,
-          body:    buildQBInvoicePayload(invoice, qbCustomerId, qbInvoiceId, syncVersion)
+          feature: "invoice_update",
+          triggerType: c.triggerType,
+          userId: c.userId
         });
       } else {
-        qbInvoiceId = null; // Will create fresh below
+        qbInvoiceId = null;
       }
     }
 
     if (!qbInvoiceId) {
-      // Create new QB Invoice
-      const result  = await qbFetch(`/invoice?minorversion=65`, {
-        method:  "POST",
+      const result = await qbAccountingApiRequest({
+        path: `/invoice?minorversion=65`,
+        method: "POST",
+        body: buildQBInvoicePayload(invoice, qbCustomerId, null, null),
         account,
-        body:    buildQBInvoicePayload(invoice, qbCustomerId, null, null)
+        feature: "invoice_create",
+        triggerType: c.triggerType,
+        userId: c.userId
       });
       qbInvoiceId = result?.Invoice?.Id;
     }
 
     const updated = await prisma.invoice.update({
       where: { id: invoice.id },
-      data:  { quickbooksInvoiceId: qbInvoiceId, qbSyncStatus: "SYNCED", qbSyncError: null }
+      data: { quickbooksInvoiceId: qbInvoiceId, qbSyncStatus: "SYNCED", qbSyncError: null }
     });
 
     await writeIntegrationSyncLog({
-      provider:    "QUICKBOOKS",
-      direction:   "PUSH",
-      entityType:  "Invoice",
-      entityId:    invoice.id,
-      status:      "SUCCESS",
-      message:     `Invoice ${invoice.invoiceNumber} synced to QuickBooks (ID: ${qbInvoiceId})`,
+      provider: "QUICKBOOKS",
+      direction: "PUSH",
+      entityType: "Invoice",
+      entityId: invoice.id,
+      status: "SUCCESS",
+      message: `Invoice ${invoice.invoiceNumber} synced to QuickBooks (ID: ${qbInvoiceId})`,
       payloadJson: { qbInvoiceId, total: invoice.total }
     });
     await upsertIntegrationAccount("QUICKBOOKS", { lastSyncAt: new Date(), syncStatus: "SUCCESS", syncError: null });
     return updated;
-
   } catch (error) {
     await prisma.invoice.update({
       where: { id: invoiceId },
-      data:  { qbSyncStatus: "FAILED", qbSyncError: error.message || "Sync failed" }
+      data: { qbSyncStatus: "FAILED", qbSyncError: error.message || "Sync failed" }
     }).catch(() => {});
     await writeIntegrationSyncLog({
-      provider:   "QUICKBOOKS",
-      direction:  "PUSH",
+      provider: "QUICKBOOKS",
+      direction: "PUSH",
       entityType: "Invoice",
-      entityId:   invoiceId,
-      status:     "FAILED",
-      message:    error.message || "Invoice sync failed"
+      entityId: invoiceId,
+      status: "FAILED",
+      message: error.message || "Invoice sync failed"
     }).catch(() => {});
     throw error;
   }
 }
 
-export async function syncPaymentToQuickbooks(paymentId) {
+export async function syncPaymentToQuickbooks(paymentId, ctx = {}) {
+  const c = qbCtx(ctx);
   const account = await getIntegrationAccount("QUICKBOOKS");
 
   const payment = await prisma.payment.findUnique({
-    where:   { id: paymentId },
+    where: { id: paymentId },
     include: { invoice: { include: { client: true } } }
   });
   if (!payment) return;
+
+  const alreadySynced = await prisma.integrationSyncLog.findFirst({
+    where: {
+      provider: "QUICKBOOKS",
+      direction: "PUSH",
+      entityType: "Payment",
+      entityId: paymentId,
+      status: "SUCCESS"
+    }
+  });
+  if (alreadySynced) return;
 
   if (!account?.isEnabled) {
     if (payment.invoiceId) {
       await prisma.invoice.update({
         where: { id: payment.invoiceId },
-        data:  { qbSyncStatus: "NOT_SYNCED" }
+        data: { qbSyncStatus: "NOT_SYNCED" }
       }).catch(() => {});
     }
     return;
   }
 
   try {
-    // Ensure invoice exists in QB first
     if (payment.invoiceId && !payment.invoice?.quickbooksInvoiceId) {
-      await syncInvoiceToQuickbooks(payment.invoiceId);
+      await syncInvoiceToQuickbooks(payment.invoiceId, { ...c, triggerType: c.triggerType === "user" ? "user" : "background" });
     }
 
-    // Re-fetch invoice to get the QB invoice ID (may have just been created)
     const invoice = payment.invoiceId
       ? await prisma.invoice.findUnique({ where: { id: payment.invoiceId }, include: { client: true } })
       : null;
 
-    if (invoice?.quickbooksInvoiceId) {
-      // Create QB Payment linked to the invoice
-      const qbCustomerId = await ensureQBCustomer(invoice.client, account);
+    if (payment.invoiceId && invoice && !invoice.quickbooksInvoiceId) {
+      throw new Error(
+        "Invoice is not linked to QuickBooks after sync. Check QuickBooks connection and invoice line items."
+      );
+    }
 
+    if (invoice?.quickbooksInvoiceId) {
+      const qbCustomerId = await ensureQBCustomer(invoice.client, account, c);
+
+      const paymentMethodRefValue = resolveQbPaymentMethodRefForPayment(payment);
       const paymentPayload = {
         TotalAmt: Number(payment.amount).toFixed(2),
         CustomerRef: { value: qbCustomerId },
-        PaymentMethodRef: { value: "1" },
         TxnDate: new Date(payment.paymentDate).toISOString().slice(0, 10),
         Line: [{
-          Amount:         Number(payment.amount),
+          Amount: Number(payment.amount),
           LinkedTxn: [{
-            TxnId:   invoice.quickbooksInvoiceId,
+            TxnId: invoice.quickbooksInvoiceId,
             TxnType: "Invoice"
           }]
         }]
       };
+      if (paymentMethodRefValue) {
+        paymentPayload.PaymentMethodRef = { value: paymentMethodRefValue };
+      }
 
-      const result    = await qbFetch(`/payment?minorversion=65`, {
-        method:  "POST",
+      const result = await qbAccountingApiRequest({
+        path: `/payment?minorversion=65`,
+        method: "POST",
+        body: paymentPayload,
         account,
-        body:    paymentPayload
+        feature: "payment_create",
+        triggerType: c.triggerType,
+        userId: c.userId
       });
       const qbPaymentId = result?.Payment?.Id;
 
       if (payment.invoiceId) {
         await prisma.invoice.update({
           where: { id: payment.invoiceId },
-          data:  { qbPaymentId, qbSyncStatus: "SYNCED", qbSyncError: null }
+          data: { qbPaymentId, qbSyncStatus: "SYNCED", qbSyncError: null }
         });
       }
 
       await writeIntegrationSyncLog({
-        provider:    "QUICKBOOKS",
-        direction:   "PUSH",
-        entityType:  "Payment",
-        entityId:    payment.id,
-        status:      "SUCCESS",
-        message:     `Payment of $${Number(payment.amount).toFixed(2)} synced to QuickBooks (Payment ID: ${qbPaymentId})`,
+        provider: "QUICKBOOKS",
+        direction: "PUSH",
+        entityType: "Payment",
+        entityId: payment.id,
+        status: "SUCCESS",
+        message: `Payment of $${Number(payment.amount).toFixed(2)} synced to QuickBooks (Payment ID: ${qbPaymentId})`,
         payloadJson: { qbPaymentId, amount: payment.amount, invoiceId: payment.invoiceId }
       });
       await upsertIntegrationAccount("QUICKBOOKS", { lastSyncAt: new Date(), syncStatus: "SUCCESS", syncError: null });
     }
-
   } catch (error) {
     if (payment.invoiceId) {
       await prisma.invoice.update({
         where: { id: payment.invoiceId },
-        data:  { qbSyncStatus: "FAILED", qbSyncError: error.message || "Payment sync failed" }
+        data: { qbSyncStatus: "FAILED", qbSyncError: error.message || "Payment sync failed" }
       }).catch(() => {});
     }
     await writeIntegrationSyncLog({
-      provider:   "QUICKBOOKS",
-      direction:  "PUSH",
+      provider: "QUICKBOOKS",
+      direction: "PUSH",
       entityType: "Payment",
-      entityId:   payment.id,
-      status:     "FAILED",
-      message:    error.message || "Payment sync failed"
+      entityId: payment.id,
+      status: "FAILED",
+      message: error.message || "Payment sync failed"
     }).catch(() => {});
-    // Do not rethrow — QB sync failure must not break the main payment flow
   }
 }
 
-/* ─── QB payload builders ───────────────────────────────────────────────────── */
+export async function updatePaymentInQuickbooks(paymentId, ctx = {}) {
+  const c = qbCtx(ctx);
+  const account = await getIntegrationAccount("QUICKBOOKS");
+  if (!account?.isEnabled) return null;
+
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { invoice: { include: { client: true } } }
+  });
+  if (!payment?.invoiceId || !payment.invoice?.quickbooksInvoiceId) return null;
+
+  const syncLog = await prisma.integrationSyncLog.findFirst({
+    where: {
+      provider: "QUICKBOOKS",
+      direction: "PUSH",
+      entityType: "Payment",
+      entityId: paymentId,
+      status: "SUCCESS"
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  const qbPaymentId = syncLog?.payloadJson?.qbPaymentId || payment.invoice.qbPaymentId;
+  if (!qbPaymentId) return syncPaymentToQuickbooks(paymentId, c);
+
+  const existing = await qbAccountingApiRequest({
+    path: `/payment/${qbPaymentId}?minorversion=65`,
+    method: "GET",
+    account,
+    feature: "payment_read",
+    triggerType: c.triggerType,
+    userId: c.userId
+  }).catch(() => null);
+  if (!existing?.Payment) return syncPaymentToQuickbooks(paymentId, c);
+
+  const paymentMethodRefValue = resolveQbPaymentMethodRefForPayment(payment);
+  const payload = {
+    Id: qbPaymentId,
+    SyncToken: existing.Payment.SyncToken || "0",
+    sparse: true,
+    TotalAmt: Number(payment.amount),
+    TxnDate: new Date(payment.paymentDate).toISOString().slice(0, 10),
+    CustomerRef: existing.Payment.CustomerRef,
+    Line: existing.Payment.Line
+  };
+  if (paymentMethodRefValue) payload.PaymentMethodRef = { value: paymentMethodRefValue };
+
+  const result = await qbAccountingApiRequest({
+    path: `/payment?minorversion=65`,
+    method: "POST",
+    body: payload,
+    account,
+    feature: "payment_update",
+    triggerType: c.triggerType,
+    userId: c.userId
+  });
+
+  await writeIntegrationSyncLog({
+    provider: "QUICKBOOKS",
+    direction: "PUSH",
+    entityType: "Payment",
+    entityId: payment.id,
+    status: "SUCCESS",
+    message: `Payment ${payment.id} updated in QuickBooks (Payment ID: ${qbPaymentId})`,
+    payloadJson: { qbPaymentId, paymentMethod: payment.paymentMethod, amount: payment.amount }
+  });
+  await upsertIntegrationAccount("QUICKBOOKS", { lastSyncAt: new Date(), syncStatus: "SUCCESS", syncError: null });
+  return result?.Payment || null;
+}
 
 function buildQBInvoicePayload(invoice, qbCustomerId, qbInvoiceId, syncToken) {
   const payload = {
     CustomerRef: { value: qbCustomerId },
-    DocNumber:   invoice.invoiceNumber  || undefined,
-    TxnDate:     new Date(invoice.issueDate).toISOString().slice(0, 10),
-    DueDate:     invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : undefined,
+    DocNumber: invoice.invoiceNumber || undefined,
+    TxnDate: new Date(invoice.issueDate).toISOString().slice(0, 10),
+    DueDate: invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : undefined,
     Line: (invoice.lineItems || []).map((li) => ({
-      DetailType:          "SalesItemLineDetail",
-      Amount:              Number(li.amount),
-      Description:         li.description || undefined,
+      DetailType: "SalesItemLineDetail",
+      Amount: Number(li.amount),
+      Description: li.description || undefined,
       SalesItemLineDetail: {
-        Qty:      Number(li.quantity),
+        Qty: Number(li.quantity),
         UnitPrice: Number(li.unitPrice),
-        ItemRef:  { value: "1", name: "Services" }
+        ItemRef: { value: "1", name: "Services" }
       }
     }))
   };
@@ -562,17 +594,17 @@ function buildQBInvoicePayload(invoice, qbCustomerId, qbInvoiceId, syncToken) {
   if (!payload.Line.length) {
     payload.Line = [{
       DetailType: "SalesItemLineDetail",
-      Amount:     Number(invoice.total),
+      Amount: Number(invoice.total),
       SalesItemLineDetail: {
-        Qty:      1,
+        Qty: 1,
         UnitPrice: Number(invoice.total),
-        ItemRef:  { value: "1", name: "Services" }
+        ItemRef: { value: "1", name: "Services" }
       }
     }];
   }
 
   if (qbInvoiceId) {
-    payload.Id        = qbInvoiceId;
+    payload.Id = qbInvoiceId;
     payload.SyncToken = syncToken || "0";
   }
 
