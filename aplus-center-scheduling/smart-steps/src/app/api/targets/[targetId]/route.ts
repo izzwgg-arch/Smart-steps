@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireSession } from "@/lib/session";
+import { canForClient, requirePermissionResponse, hasAllScope } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 
 function asBool(value: string | null) {
@@ -25,8 +26,8 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ targetId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { targetId } = await params;
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get("clientId");
@@ -102,6 +103,18 @@ export async function GET(
     const resolvedClientId = resolvedParentGoal?.clientId ?? target.program?.clientId ?? null;
 
     if (clientId && resolvedClientId && clientId !== resolvedClientId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (resolvedClientId) {
+      const allowed = await canForClient(user.id, resolvedClientId, "smartsteps.targets.view");
+      if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // BT visibility: assigned-only viewers may only open In-Treatment targets.
+    // Anything not in the ACQUISITION phase is hidden (treated as not found).
+    const restrictToInTreatment = !(await hasAllScope(user.id, "smartsteps.targets.view"));
+    if (restrictToInTreatment && target.phase !== "ACQUISITION") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -189,8 +202,11 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ targetId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const denied = await requirePermissionResponse(user.id, "smartsteps.targets.edit");
+  if (denied) return denied;
 
   const { targetId } = await params;
 
@@ -241,13 +257,11 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ targetId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const role = (session.user as { role?: string }).role;
-  if (role !== "ADMIN" && role !== "BCBA") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const denied = await requirePermissionResponse(user.id, "smartsteps.targets.delete");
+  if (denied) return denied;
 
   const { targetId } = await params;
 

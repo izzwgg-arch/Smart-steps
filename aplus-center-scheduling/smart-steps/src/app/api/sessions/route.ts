@@ -1,21 +1,32 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireSession } from "@/lib/session";
+import { accessibleClientIds, requireClientAccessResponse, requirePermissionResponse } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
-import { ensureUser } from "@/lib/ensureUser";
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get("clientId");
-  const limit = Math.min(Number(searchParams.get("limit") ?? 20), 100);
+  // Pagination: default page size 50, capped at 200 per request to protect the
+  // DB, with `offset` for navigating the COMPLETE history (no arbitrary ceiling
+  // on how far back you can page — today, recent, older, and backdated).
+  const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 50), 1), 200);
+  const offset = Math.max(0, Number(searchParams.get("offset") ?? 0));
+
+  if (clientId) {
+    const denied = await requireClientAccessResponse(user.id, clientId, "smartsteps.sessions.view");
+    if (denied) return denied;
+  }
+  const clientIds = clientId ? null : await accessibleClientIds(user.id, "smartsteps.sessions.view");
 
   try {
     const sessions = await prisma.session.findMany({
-      where: clientId ? { clientId } : {},
+      where: clientId ? { clientId } : (clientIds === "ALL" ? {} : { clientId: { in: clientIds as string[] } }),
       orderBy: { startedAt: "desc" },
       take: limit,
+      skip: offset,
       select: {
         id: true,
         startedAt: true,
@@ -55,19 +66,13 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) {
+  const user = await requireSession();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Guarantee the SSO user exists in the smart_steps.User table
-  await ensureUser({
-    id: userId,
-    email: session.user?.email,
-    name: session.user?.name,
-    role: (session.user as { role?: string })?.role,
-  });
+  const denied = await requirePermissionResponse(user.id, "smartsteps.sessions.create");
+  if (denied) return denied;
 
   try {
     const body = await req.json();
@@ -81,10 +86,12 @@ export async function POST(req: Request) {
     if (!clientId) {
       return NextResponse.json({ error: "clientId required" }, { status: 400 });
     }
+    const clientDenied = await requireClientAccessResponse(user.id, clientId, "smartsteps.sessions.view");
+    if (clientDenied) return clientDenied;
     const sessionRecord = await prisma.session.create({
       data: {
         clientId,
-        userId: providerId ?? userId,
+        userId: providerId ?? user.id,
         mode: mode || "DTT",
         ...(startedAt ? { startedAt: new Date(startedAt) } : {}),
         ...(endedAt ? { endedAt: new Date(endedAt) } : {}),

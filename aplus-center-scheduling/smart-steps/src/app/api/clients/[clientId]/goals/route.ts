@@ -1,14 +1,23 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireSession } from "@/lib/session";
+import { requireClientAccessResponse, requirePermissionResponse, hasAllScope } from "@/lib/permissions";
 import { prisma } from "@/lib/db";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { clientId } = await params;
+  const denied = await requireClientAccessResponse(user.id, clientId, "smartsteps.goals.view");
+  if (denied) return denied;
+
+  // BT visibility: users without the `.all` scope (e.g. Behavior Technicians,
+  // Parent Viewers) may only see goals currently "In Treatment" — i.e. targets
+  // in the ACQUISITION phase. BCBAs/Admins (holding `.all`) see everything.
+  const restrictToInTreatment = !(await hasAllScope(user.id, "smartsteps.goals.view"));
+  const targetPhaseWhere = restrictToInTreatment ? { phase: "ACQUISITION" as const } : {};
 
   try {
     const goals = await prisma.parentGoal.findMany({
@@ -23,20 +32,26 @@ export async function GET(
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
           include: {
             targets: {
-              where: { isActive: true },
+              where: { isActive: true, ...targetPhaseWhere },
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
             },
           },
         },
         targets: {
-          where: { isActive: true, subGoalId: null },
+          where: { isActive: true, subGoalId: null, ...targetPhaseWhere },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         },
         program: { select: { id: true, name: true } },
       },
     });
 
-    return NextResponse.json(goals);
+    // For restricted viewers, drop parent goals that have no In-Treatment
+    // targets (directly or via sub-goals) so New/Mastered/etc. goals stay hidden.
+    const result = restrictToInTreatment
+      ? goals.filter((g) => g.targets.length > 0 || g.subGoals.some((sg) => sg.targets.length > 0))
+      : goals;
+
+    return NextResponse.json(result);
   } catch (err) {
     console.error("GET /api/clients/[clientId]/goals error:", err);
     return NextResponse.json({ error: "Failed to load goals" }, { status: 500 });
@@ -47,8 +62,11 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireSession();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const denied = await requirePermissionResponse(user.id, "smartsteps.goals.create");
+  if (denied) return denied;
 
   const { clientId } = await params;
 
