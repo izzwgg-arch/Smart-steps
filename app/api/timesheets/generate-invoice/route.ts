@@ -7,6 +7,7 @@ import { logCreate } from '@/lib/audit'
 import { getWeekStart, getWeekEnd, getWeekKey } from '@/lib/weekUtils'
 import { utcToZonedTime, format } from 'date-fns-tz'
 import { minutesToUnits, calculateEntryTotals, calculateInvoiceTotals } from '@/lib/billing'
+import { nextInvoiceNumber } from '@/lib/invoiceNumber'
 
 /**
  * POST /api/timesheets/generate-invoice
@@ -178,8 +179,7 @@ export async function POST(request: NextRequest) {
       console.log(`[INVOICE_GEN] Added timesheet ${timesheet.id} to group ${weekKey} (Client: ${timesheet.client.name}, ${nonInvoicedEntries.length} non-invoiced entries)`)
     }
 
-    // Get initial invoice count for sequential numbering
-    let invoiceCounter = await prisma.invoice.count()
+    let invoiceOffset = 0
 
     console.log(`[INVOICE_GEN] Processing ${grouped.size} client+week groups`)
     console.log(`[INVOICE_GEN] Group keys:`, Array.from(grouped.keys()))
@@ -305,9 +305,9 @@ export async function POST(request: NextRequest) {
       const rateToUse = ratePerUnit
       const unitMinutesToUse = unitMinutes
 
-      // Generate invoice number (increment counter for each invoice)
-      invoiceCounter++
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(invoiceCounter).padStart(4, '0')}`
+      // Generate invoice number
+      const invoiceNumber = await nextInvoiceNumber(prisma, invoiceOffset)
+      invoiceOffset++
 
       // Create invoice entries (calculate per entry, then sum)
       // CRITICAL: For regular timesheets, SV entries = $0 (displayed but not charged)

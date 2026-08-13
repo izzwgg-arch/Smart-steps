@@ -109,10 +109,11 @@ export function formatTimeForInput(time: string): string {
  */
 export function formatDateOnly(date: Date, timezone: string = 'America/New_York'): string {
   try {
-    // Convert the date to the specified timezone to get the correct calendar day
-    const zonedDate = utcToZonedTime(date, timezone)
-    // Format as YYYY-MM-DD
-    return format(zonedDate, 'yyyy-MM-dd')
+    // Treat the Date as a date-only value from the picker (no TZ shift).
+    const year = date.getFullYear()
+    const month = `${date.getMonth() + 1}`.padStart(2, '0')
+    const day = `${date.getDate()}`.padStart(2, '0')
+    return `${year}-${month}-${day}`
   } catch (error) {
     console.error('[DATE_UTILS] Error formatting date only:', error, { date, timezone })
     // Fallback to simple date formatting
@@ -121,25 +122,35 @@ export function formatDateOnly(date: Date, timezone: string = 'America/New_York'
 }
 
 /**
- * Parse a date-only string (YYYY-MM-DD) as a Date object in the specified timezone
+ * Parse a date-only string (YYYY-MM-DD) or ISO string as a Date object in the specified timezone
  * This ensures dates are interpreted correctly regardless of server timezone
- * @param dateStr - Date string in YYYY-MM-DD format
+ * @param dateStr - Date string in YYYY-MM-DD format or ISO string (e.g., "2025-06-08T04:00:00.000Z")
  * @param timezone - IANA timezone identifier (e.g., "America/New_York", "Asia/Jerusalem")
  * @returns Date object representing midnight in the specified timezone
  */
 export function parseDateOnly(dateStr: string, timezone: string = 'America/New_York'): Date {
   try {
-    if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`)
+    // If it's an ISO string or YYYY-MM-DD, try timezone-aware parsing
+    let dateOnlyStr = dateStr
+    if (dateStr.includes('T')) {
+      // ISO string format: extract the date portion before 'T'
+      dateOnlyStr = dateStr.split('T')[0]
     }
-    // Parse as midnight in the target timezone
-    const [year, month, day] = dateStr.split('-').map(Number)
-    const dateStrWithTime = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T00:00:00`
-    // Convert to UTC Date object
-    return zonedTimeToUtc(dateStrWithTime, timezone)
+    
+    // Validate the extracted date portion is in YYYY-MM-DD format
+    if (dateOnlyStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // Parse as midnight in the target timezone
+      const [year, month, day] = dateOnlyStr.split('-').map(Number)
+      const dateStrWithTime = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T00:00:00`
+      // Convert to UTC Date object
+      return zonedTimeToUtc(dateStrWithTime, timezone)
+    }
+    
+    // Third try: fallback to simple Date parsing (handles any format JavaScript can parse)
+    return new Date(dateStr)
   } catch (error) {
     console.error('[DATE_UTILS] Error parsing date only:', error, { dateStr, timezone })
-    // Fallback to simple parsing
+    // Final fallback: simple Date parsing
     return new Date(dateStr)
   }
 }

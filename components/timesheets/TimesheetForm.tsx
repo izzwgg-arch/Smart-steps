@@ -1239,7 +1239,7 @@ export function TimesheetForm({
         timezone,
         defaultTimes,
         dayEntries: dayEntries.map(entry => ({
-          date: entry.date.toISOString(),
+          date: formatDateOnly(entry.date, timezone),
           drFrom: entry.drFrom,
           drTo: entry.drTo,
           drUse: entry.drUse,
@@ -1380,7 +1380,7 @@ export function TimesheetForm({
           const units = duration / 15
 
           result.push({
-            date: entry.date.toISOString(),
+            date: formatDateOnly(entry.date, timezone),
             startTime: timeAMPMTo24Hour(entry.drFrom),
             endTime: timeAMPMTo24Hour(entry.drTo),
             minutes: duration,
@@ -1411,7 +1411,7 @@ export function TimesheetForm({
           const units = duration / 15
 
           result.push({
-            date: entry.date.toISOString(),
+            date: formatDateOnly(entry.date, timezone),
             startTime: timeAMPMTo24Hour(entry.svFrom),
             endTime: timeAMPMTo24Hour(entry.svTo),
             minutes: duration,
@@ -1456,6 +1456,7 @@ export function TimesheetForm({
         router.refresh()
       } else {
         const data = await res.json()
+        console.error('[TIMESHEET] API error response:', data)
         if (data?.code === 'OVERLAP_CONFLICT' && Array.isArray(data?.conflicts)) {
           const next = (data.conflicts as Array<any>)
             .map((c) => {
@@ -1488,11 +1489,15 @@ export function TimesheetForm({
           }
           toast.error('Overlap conflicts detected. Please fix highlighted rows.')
         } else {
-          toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
+          const errorMsg = data?.error || data?.message || `Failed to ${timesheet ? 'update' : 'create'} timesheet`
+          const details = data?.details ? ` (${data.details})` : ''
+          console.error('[TIMESHEET] Error:', errorMsg, details, data)
+          toast.error(`${errorMsg}${details}`)
         }
       }
-    } catch (error) {
-      toast.error('An error occurred. Please try again.')
+    } catch (error: any) {
+      console.error('[TIMESHEET] Exception during submit:', error)
+      toast.error(error?.message || 'An error occurred. Please try again.')
     } finally {
       setLoading(false)
     }

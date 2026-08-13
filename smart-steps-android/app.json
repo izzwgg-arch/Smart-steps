@@ -1,0 +1,16 @@
+{
+  "name": "SmartSteps",
+  "displayName": "Smart Steps",
+  "expo": {
+    "name": "Smart Steps",
+    "slug": "smart-steps-aba",
+    "owner": "izz8457s-organization",
+    "version": "1.0.0",
+    "platforms": ["android"],
+    "extra": {
+      "eas": {
+        "projectId": "43142a92-794e-4f75-bac0-959108c1d111"
+      }
+    }
+  }
+}

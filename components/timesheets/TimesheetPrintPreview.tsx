@@ -3,7 +3,6 @@
 import React from 'react'
 import { X } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { format } from 'date-fns'
 import { formatDateInTimezone } from '@/lib/dateUtils'
 
 interface Timesheet {
@@ -171,8 +170,8 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
             {/* Period */}
             <div className="mb-4">
               <span className="font-semibold">Period:</span>{' '}
-              {format(new Date(timesheet.startDate), 'EEE M/d/yyyy').toLowerCase()} -{' '}
-              {format(new Date(timesheet.endDate), 'EEE M/d/yyyy').toLowerCase()}
+              {formatDateInTimezone(timesheet.startDate, 'EEE M/d/yyyy', timesheet.timezone || 'America/New_York').toLowerCase()} -{' '}
+              {formatDateInTimezone(timesheet.endDate, 'EEE M/d/yyyy', timesheet.timezone || 'America/New_York').toLowerCase()}
             </div>
 
             {/* Table */}

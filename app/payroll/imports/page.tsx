@@ -5,6 +5,10 @@ import { DashboardNav } from '@/components/DashboardNav'
 import { ImportsLibrary } from '@/components/payroll/ImportsLibrary'
 import { getUserPermissions } from '@/lib/permissions'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
+
 export default async function PayrollImportsPage() {
   const session = await getServerSession(authOptions)
   if (!session) {
@@ -25,9 +29,10 @@ export default async function PayrollImportsPage() {
     <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <ImportsLibrary 
-          permissions={permissions} 
-          userRole={session.user.role} 
+        <ImportsLibrary
+          permissions={permissions}
+          userRole={session.user.role}
+          canView={canView}
         />
       </main>
     </div>

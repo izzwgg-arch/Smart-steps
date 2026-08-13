@@ -12,15 +12,21 @@
 
 import { PrismaClient } from '@prisma/client'
 import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz'
-import { format, subDays, addDays } from 'date-fns'
+import { format, addDays } from 'date-fns'
 
 const prisma = new PrismaClient()
 
 async function fixSaturdayEntries() {
   console.log('🔍 Finding timesheet entries with Saturday dates...\n')
 
-  // Get all timesheet entries
+  // Get all BCBA timesheet entries (exclude deleted timesheets)
   const allEntries = await prisma.timesheetEntry.findMany({
+    where: {
+      timesheet: {
+        isBCBA: true,
+        deletedAt: null,
+      },
+    },
     include: {
       timesheet: {
         select: {
@@ -34,7 +40,7 @@ async function fixSaturdayEntries() {
     },
   })
 
-  console.log(`Found ${allEntries.length} total entries\n`)
+  console.log(`Found ${allEntries.length} total BCBA entries\n`)
 
   const saturdayEntries: Array<{
     entry: typeof allEntries[0]
@@ -62,21 +68,20 @@ async function fixSaturdayEntries() {
       // Since Saturday is not allowed, the original was likely Sunday (day 0)
       // Sunday midnight in UTC+2/UTC+3 becomes Saturday 22:00/21:00 UTC
       
-      // Saturday entries should always be converted to Sunday (the day before)
-      // This is because Sunday midnight in Israel (UTC+2/UTC+3) becomes Saturday 22:00/21:00 UTC
-      const prevDay = subDays(zonedDate, 1)
+      // Saturday entries should always be converted to Sunday (the next day).
+      // Sunday midnight in Israel (UTC+2/UTC+3) can appear as Saturday UTC.
+      const nextDay = addDays(zonedDate, 1)
       
       let correctedDate: Date | null = null
       
-      // Always convert Saturday to Sunday (previous day)
-      if (prevDay.getDay() === 0) {
-        correctedDate = zonedTimeToUtc(prevDay, timesheetTimezone)
-        console.log(`Entry ${entry.id}: Saturday ${format(zonedDate, 'yyyy-MM-dd')} -> Sunday ${format(prevDay, 'yyyy-MM-dd')}`)
+      // Always convert Saturday to the next Sunday
+      if (nextDay.getDay() === 0) {
+        correctedDate = zonedTimeToUtc(nextDay, timesheetTimezone)
+        console.log(`Entry ${entry.id}: Saturday ${format(zonedDate, 'yyyy-MM-dd')} -> Sunday ${format(nextDay, 'yyyy-MM-dd')}`)
       } else {
-        // If previous day is not Sunday, something is wrong, but still convert to Sunday
-        // by going back to the most recent Sunday
-        const daysBack = zonedDate.getDay() === 6 ? 1 : (7 - zonedDate.getDay() + 1)
-        const sundayDate = subDays(zonedDate, daysBack)
+        // If next day is not Sunday, move forward to the next Sunday
+        const daysForward = (7 - zonedDate.getDay()) % 7
+        const sundayDate = addDays(zonedDate, daysForward === 0 ? 1 : daysForward)
         correctedDate = zonedTimeToUtc(sundayDate, timesheetTimezone)
         console.log(`Entry ${entry.id}: Saturday ${format(zonedDate, 'yyyy-MM-dd')} -> Sunday ${format(sundayDate, 'yyyy-MM-dd')} (adjusted)`)
       }

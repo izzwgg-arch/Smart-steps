@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
 import { logCreate } from '@/lib/audit'
 import { calculateEntryTotals } from '@/lib/billing'
+import { nextInvoiceNumber } from '@/lib/invoiceNumber'
 
 export async function GET(request: NextRequest) {
   try {
@@ -91,7 +92,11 @@ export async function GET(request: NextRequest) {
           },
           payments: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [
+          { endDate: 'desc' },
+          { startDate: 'desc' },
+          { createdAt: 'desc' },
+        ],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -198,10 +203,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate invoice number
-    const invoiceCount = await prisma.invoice.count()
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${String(
-      invoiceCount + 1
-    ).padStart(5, '0')}`
+    const invoiceNumber = await nextInvoiceNumber(prisma)
 
     // Calculate totals using billing utility (ceil rounding per entry)
     let totalAmount = new Decimal(0)

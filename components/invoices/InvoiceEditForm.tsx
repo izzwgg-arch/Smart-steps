@@ -12,6 +12,8 @@ interface Invoice {
   status: string
   checkNumber: string | null
   notes: string | null
+  regularRatePerUnit: number | null
+  bcbaRatePerUnit: number | null
 }
 
 interface InvoiceEditFormProps {
@@ -24,6 +26,12 @@ export function InvoiceEditForm({ invoice }: InvoiceEditFormProps) {
   const [status, setStatus] = useState(invoice.status)
   const [checkNumber, setCheckNumber] = useState(invoice.checkNumber || '')
   const [notes, setNotes] = useState(invoice.notes || '')
+  const [regularRatePerUnit, setRegularRatePerUnit] = useState(
+    invoice.regularRatePerUnit !== null ? invoice.regularRatePerUnit.toString() : ''
+  )
+  const [bcbaRatePerUnit, setBcbaRatePerUnit] = useState(
+    invoice.bcbaRatePerUnit !== null ? invoice.bcbaRatePerUnit.toString() : ''
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,6 +46,8 @@ export function InvoiceEditForm({ invoice }: InvoiceEditFormProps) {
           status,
           checkNumber: checkNumber.trim() || null,
           notes: notes.trim() || null,
+          regularRatePerUnit: regularRatePerUnit ? Number(regularRatePerUnit) : null,
+          bcbaRatePerUnit: bcbaRatePerUnit ? Number(bcbaRatePerUnit) : null,
         }),
       })
 
@@ -125,6 +135,40 @@ export function InvoiceEditForm({ invoice }: InvoiceEditFormProps) {
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
                 placeholder="Enter notes (optional)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-semibold mb-4">Rate Per Unit</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Regular Rate Per Unit
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={regularRatePerUnit}
+                onChange={(e) => setRegularRatePerUnit(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                placeholder="Enter regular rate"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                BCBA Rate Per Unit
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={bcbaRatePerUnit}
+                onChange={(e) => setBcbaRatePerUnit(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                placeholder="Enter BCBA rate"
               />
             </div>
           </div>

@@ -1,76 +1,103 @@
 /**
  * Playwright PDF Generation
- * 
- * Provides a singleton browser instance for PDF generation using Playwright Chromium.
- * Reuses browser instance to avoid slow startup times.
+ *
+ * Provides a resilient singleton browser instance for PDF generation.
+ * Handles browser crashes by resetting the singleton and retrying.
+ * Reuses browser to avoid slow startup, but re-initializes automatically on failure.
  */
 
-import { chromium, Browser, Page } from 'playwright'
+import { chromium, Browser } from 'playwright'
 import { randomBytes } from 'crypto'
 
 // Global browser instance (singleton)
 let browserInstance: Browser | null = null
 let browserPromise: Promise<Browser> | null = null
 
+// Errors that indicate the browser is gone and we should reset + retry
+const BROWSER_CRASH_PATTERNS = [
+  'Target closed',
+  'Browser closed',
+  'disconnected',
+  'Connection closed',
+  'Page crashed',
+  'Protocol error',
+]
+
+function isBrowserCrashError(error: any): boolean {
+  const msg = String(error?.message || '')
+  return BROWSER_CRASH_PATTERNS.some(p => msg.includes(p))
+}
+
 /**
- * Get or create browser instance (singleton)
+ * Get or create a shared browser instance.
+ * On launch failure the promise is reset so subsequent calls can retry.
  */
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
     return browserInstance
   }
-  
+
   if (browserPromise) {
     return browserPromise
   }
-  
+
   browserPromise = (async () => {
     console.log('[PLAYWRIGHT_PDF] Launching Chromium browser...')
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'], // Required for server environments
-    })
+    let browser: Browser
+
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',  // Avoids /dev/shm exhaustion on Linux
+          '--disable-gpu',
+        ],
+      })
+    } catch (launchError: any) {
+      // Reset promise so the next caller can attempt a fresh launch
+      console.error('[PLAYWRIGHT_PDF] Browser launch failed, resetting singleton:', launchError?.message)
+      browserPromise = null
+      throw launchError
+    }
+
     console.log('[PLAYWRIGHT_PDF] Browser launched successfully')
-    
-    // Handle browser close events
+
     browser.on('disconnected', () => {
-      console.log('[PLAYWRIGHT_PDF] Browser disconnected, resetting instance')
+      console.log('[PLAYWRIGHT_PDF] Browser disconnected, resetting singleton')
       browserInstance = null
       browserPromise = null
     })
-    
+
     browserInstance = browser
-    
-    // Cleanup on process exit
-    if (typeof process !== 'undefined') {
-      process.on('SIGTERM', async () => {
-        if (browserInstance) {
-          await browserInstance.close()
-          browserInstance = null
-          browserPromise = null
-        }
-      })
-      process.on('SIGINT', async () => {
-        if (browserInstance) {
-          await browserInstance.close()
-          browserInstance = null
-          browserPromise = null
-        }
-      })
+
+    // Graceful shutdown hooks (register only once)
+    const cleanup = async () => {
+      if (browserInstance) {
+        try { await browserInstance.close() } catch (_) {}
+        browserInstance = null
+        browserPromise = null
+      }
     }
-    
+    process.once('SIGTERM', cleanup)
+    process.once('SIGINT', cleanup)
+
     return browser
   })()
-  
+
   return browserPromise
 }
 
 /**
- * Generate PDF from HTML string using Playwright
- * 
- * @param html HTML content to render
- * @param correlationId Optional correlation ID for logging
- * @returns PDF buffer
+ * Generate PDF from an HTML string using Playwright.
+ *
+ * Retries once with a fresh browser if the first attempt fails with a
+ * browser-crash error — this handles stale singleton state after batch
+ * creation or server activity that causes the browser to disconnect.
+ *
+ * @param html          HTML content to render
+ * @param correlationId Optional ID for log tracing
  */
 export async function generatePDFFromHTML(
   html: string,
@@ -78,18 +105,16 @@ export async function generatePDFFromHTML(
 ): Promise<Buffer> {
   const corrId = correlationId || `pdf-${Date.now()}-${randomBytes(4).toString('hex')}`
   const startTime = Date.now()
-  
+
   console.log(`[PLAYWRIGHT_PDF] ${corrId} Starting PDF generation`)
-  
-  try {
+
+  const attemptGenerate = async (): Promise<Buffer> => {
     const browser = await getBrowser()
     const page = await browser.newPage()
-    
+
     try {
-      // Set content and wait for load
       await page.setContent(html, { waitUntil: 'load' })
-      
-      // Generate PDF
+
       const pdfBuffer = await page.pdf({
         format: 'Letter',
         printBackground: true,
@@ -100,18 +125,43 @@ export async function generatePDFFromHTML(
           right: '0.5in',
         },
       })
-      
+
       const duration = Date.now() - startTime
       console.log(`[PLAYWRIGHT_PDF] ${corrId} PDF generated successfully`, {
         bytes: pdfBuffer.length,
         duration: `${duration}ms`,
       })
-      
+
       return Buffer.from(pdfBuffer)
     } finally {
-      await page.close()
+      try { await page.close() } catch (_) {}
     }
+  }
+
+  // First attempt
+  try {
+    return await attemptGenerate()
   } catch (error: any) {
+    if (isBrowserCrashError(error)) {
+      console.warn(`[PLAYWRIGHT_PDF] ${corrId} Browser crash detected on first attempt — resetting and retrying`, {
+        error: error?.message,
+      })
+
+      // Force-reset singleton so getBrowser() will launch a fresh one
+      await closeBrowser()
+
+      // Second attempt with a fresh browser
+      try {
+        return await attemptGenerate()
+      } catch (retryError: any) {
+        console.error(`[PLAYWRIGHT_PDF] ${corrId} PDF generation failed after retry`, {
+          error: retryError?.message,
+          stack: retryError?.stack,
+        })
+        throw retryError
+      }
+    }
+
     console.error(`[PLAYWRIGHT_PDF] ${corrId} PDF generation failed`, {
       error: error?.message,
       stack: error?.stack,
@@ -121,13 +171,15 @@ export async function generatePDFFromHTML(
 }
 
 /**
- * Close browser instance (useful for cleanup/testing)
+ * Close the shared browser instance (used for cleanup or forced reset).
  */
 export async function closeBrowser(): Promise<void> {
-  if (browserInstance) {
+  const instance = browserInstance
+  browserInstance = null
+  browserPromise = null
+
+  if (instance) {
     console.log('[PLAYWRIGHT_PDF] Closing browser instance')
-    await browserInstance.close()
-    browserInstance = null
-    browserPromise = null
+    try { await instance.close() } catch (_) {}
   }
 }

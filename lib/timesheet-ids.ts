@@ -34,7 +34,6 @@ export async function getNextTimesheetSequence(isBCBA: boolean): Promise<number>
       timesheetNumber: {
         startsWith: prefix,
       },
-      deletedAt: null,
     },
     orderBy: {
       timesheetNumber: 'desc',

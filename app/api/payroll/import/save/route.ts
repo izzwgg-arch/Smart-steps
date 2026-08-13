@@ -95,37 +95,72 @@ export async function POST(request: NextRequest) {
     // ALWAYS check for multiple punches per employee per day FIRST
     // If detected, treat as fingerprint scanner regardless of mapping
     // Helper function to parse date as local date (no timezone shift)
+    // CRITICAL: Excel serial conversion uses the correct epoch (accounts for Excel's fake Feb 29, 1900)
     const parseLocalDate = (dateValue: any): Date | null => {
       if (!dateValue) return null
       
+      let result: Date | null = null
+
       if (dateValue instanceof Date) {
-        const localDate = new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate())
-        localDate.setHours(0, 0, 0, 0)
-        return localDate
+        // Extract local components to strip any time/timezone offset
+        result = new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate())
       } else if (typeof dateValue === 'string') {
-        const dateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})/)
-        if (dateMatch) {
-          const year = parseInt(dateMatch[1])
-          const month = parseInt(dateMatch[2]) - 1
-          const day = parseInt(dateMatch[3])
-          return new Date(year, month, day)
+        const trimmed = String(dateValue).trim()
+        
+        // YYYY-MM-DD (ISO date part)
+        const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
+        if (isoMatch) {
+          result = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]))
         }
-        const parsed = new Date(dateValue)
-        if (!isNaN(parsed.getTime())) {
-          const localDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
-          localDate.setHours(0, 0, 0, 0)
-          return localDate
+        
+        // MM/DD/YYYY (US format — most common in fingerprint scanner exports)
+        if (!result) {
+          const mdyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+          if (mdyMatch) {
+            result = new Date(parseInt(mdyMatch[3]), parseInt(mdyMatch[1]) - 1, parseInt(mdyMatch[2]))
+          }
         }
-        return null
+
+        // MM-DD-YYYY
+        if (!result) {
+          const mdyDashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)
+          if (mdyDashMatch) {
+            result = new Date(parseInt(mdyDashMatch[3]), parseInt(mdyDashMatch[1]) - 1, parseInt(mdyDashMatch[2]))
+          }
+        }
+
+        // Fallback: parse as ISO string and extract UTC date components to avoid timezone shift
+        if (!result) {
+          const parsed = new Date(trimmed)
+          if (!isNaN(parsed.getTime())) {
+            // If the string looks like a full ISO datetime (has 'T' or 'Z'), use UTC components
+            if (trimmed.includes('T') || trimmed.includes('Z')) {
+              result = new Date(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate())
+            } else {
+              result = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+            }
+          }
+        }
       } else if (typeof dateValue === 'number') {
-        const excelEpoch = new Date(1900, 0, 1)
-        const daysSinceEpoch = dateValue - 1
-        const localDate = new Date(excelEpoch)
-        localDate.setDate(localDate.getDate() + daysSinceEpoch)
-        localDate.setHours(0, 0, 0, 0)
-        return localDate
+        // CORRECTED Excel serial date conversion.
+        // Excel's epoch is "January 0, 1900" (Dec 30, 1899 in real terms) because:
+        //   - Excel serial 1 = Jan 1, 1900
+        //   - Excel incorrectly includes Feb 29, 1900 as serial 60 (1900 is not a leap year)
+        // The standard formula: (serial - 25569) converts Excel serial → days since Unix epoch (Jan 1, 1970).
+        // 25569 = days from Excel's epoch to Unix epoch, with Excel's leap-year bug accounted for.
+        // We then extract UTC components to build a local-midnight Date, preventing any tz shift.
+        const MS_PER_DAY = 86400 * 1000
+        const utcMs = (dateValue - 25569) * MS_PER_DAY
+        const d = new Date(utcMs)
+        result = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
       }
-      return null
+
+      if (result) {
+        result.setHours(0, 0, 0, 0)
+      }
+
+      console.log(`[PAYROLL DATE] parseLocalDate: original=${JSON.stringify(dateValue)} → parsed=${result?.toISOString() ?? 'null'}`)
+      return result
     }
 
     const employeeDateCounts = new Map<string, number>()
@@ -581,43 +616,55 @@ export async function POST(request: NextRequest) {
         const employeeNameRaw = mapping.employeeName ? row[mapping.employeeName]?.toString().trim() : null
         const employeeExternalIdRaw = mapping.employeeExternalId ? row[mapping.employeeExternalId]?.toString().trim() : null
       
-      // Helper function to parse date as local date (no timezone shift)
+      // Helper: parse date as local date — same logic as outer parseLocalDate above
       const parseLocalDate = (dateValue: any): Date | null => {
         if (!dateValue) return null
-        
+
+        let result: Date | null = null
+
         if (dateValue instanceof Date) {
-          // If already a Date, create a new date with local components to avoid timezone issues
-          const localDate = new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate())
-          return localDate
+          result = new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate())
         } else if (typeof dateValue === 'string') {
-          // Parse string date as local date (YYYY-MM-DD format)
-          const dateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})/)
-          if (dateMatch) {
-            const year = parseInt(dateMatch[1])
-            const month = parseInt(dateMatch[2]) - 1 // Month is 0-indexed
-            const day = parseInt(dateMatch[3])
-            return new Date(year, month, day)
+          const trimmed = String(dateValue).trim()
+
+          const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
+          if (isoMatch) {
+            result = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]))
           }
-          // Try parsing as ISO string, then extract local date components
-          const parsed = new Date(dateValue)
-          if (!isNaN(parsed.getTime())) {
-            return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+
+          if (!result) {
+            const mdyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+            if (mdyMatch) {
+              result = new Date(parseInt(mdyMatch[3]), parseInt(mdyMatch[1]) - 1, parseInt(mdyMatch[2]))
+            }
           }
-          return null
+
+          if (!result) {
+            const mdyDashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)
+            if (mdyDashMatch) {
+              result = new Date(parseInt(mdyDashMatch[3]), parseInt(mdyDashMatch[1]) - 1, parseInt(mdyDashMatch[2]))
+            }
+          }
+
+          if (!result) {
+            const parsed = new Date(trimmed)
+            if (!isNaN(parsed.getTime())) {
+              if (trimmed.includes('T') || trimmed.includes('Z')) {
+                result = new Date(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate())
+              } else {
+                result = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+              }
+            }
+          }
         } else if (typeof dateValue === 'number') {
-          // Excel serial date - convert to local date (not UTC)
-          // Excel epoch is Jan 1, 1900 (serial 1), but Excel incorrectly treats 1900 as a leap year
-          // JavaScript epoch is Jan 1, 1970
-          // Formula: (Excel serial - 1) days from Jan 1, 1900
-          const excelEpoch = new Date(1900, 0, 1) // Jan 1, 1900 in local time
-          const daysSinceEpoch = dateValue - 1 // Excel serial 1 = Jan 1, 1900
-          const localDate = new Date(excelEpoch)
-          localDate.setDate(localDate.getDate() + daysSinceEpoch)
-          // Set time to local midnight to avoid timezone issues
-          localDate.setHours(0, 0, 0, 0)
-          return localDate
+          // Correct Excel serial → local date. See outer parseLocalDate for full explanation.
+          const utcMs = (dateValue - 25569) * 86400 * 1000
+          const d = new Date(utcMs)
+          result = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
         }
-        return null
+
+        if (result) result.setHours(0, 0, 0, 0)
+        return result
       }
 
       // Parse work date
@@ -798,7 +845,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Log sample of parsed data for debugging
+    // Log sample rows and validate dates before saving
     if (rows.length > 0) {
       const sampleRow = rows[0]
       console.log(`[PAYROLL IMPORT] Sample parsed row:`, {
@@ -809,6 +856,21 @@ export async function POST(request: NextRequest) {
         hoursWorked: sampleRow.hoursWorked,
         minutesWorked: sampleRow.minutesWorked,
       })
+
+      // Date validation: log originalDate / parsedDate / savedDate for every row (capped at 5 for brevity)
+      const sampleSize = Math.min(rows.length, 5)
+      for (let vi = 0; vi < sampleSize; vi++) {
+        const r = rows[vi]
+        const rawWorkDate = r.rawJson
+          ? (Array.isArray((r.rawJson as any)?.rawPunches)
+              ? (r.rawJson as any).rawPunches[0]?.[(mapping as any).workDate ?? '']
+              : (r.rawJson as any)?.[(mapping as any).workDate ?? ''])
+          : null
+        const savedDate = r.workDate instanceof Date
+          ? `${r.workDate.getFullYear()}-${String(r.workDate.getMonth() + 1).padStart(2, '0')}-${String(r.workDate.getDate()).padStart(2, '0')}`
+          : 'unknown'
+        console.log(`[PAYROLL DATE VALIDATION] Row ${vi + 1}: originalDate=${JSON.stringify(rawWorkDate)} parsedDate=${r.workDate?.toISOString() ?? 'null'} savedDate=${savedDate}`)
+      }
     }
 
     // Create all import rows in a transaction

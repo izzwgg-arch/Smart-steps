@@ -142,24 +142,46 @@ export async function POST(
         ? `Smart Steps ABA – BCBA Timesheet Approved`
         : `Smart Steps ABA – Timesheet Approved`
       
-      try {
-        await tx.emailQueueItem.create({
-          data: {
-            entityType: isBCBA ? 'BCBA' : 'REGULAR',
-            entityId: timesheetId,
-            queuedByUserId: session.user.id,
-            status: 'QUEUED',
-            toEmail: defaultRecipients,
-            subject: emailSubject,
-            context: 'MAIN', // Mark as MAIN email queue
-          },
-        })
-      } catch (queueError: any) {
-        // If unique constraint violation, item already exists - that's OK
-        if (queueError?.code === 'P2002') {
-          // Queue item already exists, continue
-        } else {
-          throw queueError // Re-throw other errors to rollback
+      // If a queue item already exists (unique constraint in DB), revive it instead of creating a duplicate
+      const reviveResult = await tx.emailQueueItem.updateMany({
+        where: {
+          entityType: isBCBA ? 'BCBA' : 'REGULAR',
+          entityId: timesheetId,
+        },
+        data: {
+          status: 'QUEUED',
+          deletedAt: null,
+          deletedByUserId: null,
+          errorMessage: null,
+          lastError: null,
+          attempts: 0,
+          queuedAt: new Date(),
+          toEmail: defaultRecipients,
+          subject: emailSubject,
+          context: 'MAIN',
+        },
+      })
+
+      if (reviveResult.count === 0) {
+        try {
+          await tx.emailQueueItem.create({
+            data: {
+              entityType: isBCBA ? 'BCBA' : 'REGULAR',
+              entityId: timesheetId,
+              queuedByUserId: session.user.id,
+              status: 'QUEUED',
+              toEmail: defaultRecipients,
+              subject: emailSubject,
+              context: 'MAIN', // Mark as MAIN email queue
+            },
+          })
+        } catch (queueError: any) {
+          // If unique constraint violation, item already exists - that's OK
+          if (queueError?.code === 'P2002') {
+            // Queue item already exists, continue
+          } else {
+            throw queueError // Re-throw other errors to rollback
+          }
         }
       }
 

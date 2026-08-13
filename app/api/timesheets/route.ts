@@ -8,6 +8,7 @@ import { startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns'
 import { parseDateOnly } from '@/lib/dateUtils'
 import { getTimesheetVisibilityScope } from '@/lib/permissions'
 import { startPerfLog } from '@/lib/api-performance'
+import { generateTimesheetNumber } from '@/lib/timesheet-ids'
 
 export async function GET(request: NextRequest) {
   const perf = startPerfLog('GET /api/timesheets')
@@ -84,6 +85,7 @@ export async function GET(request: NextRequest) {
             OR: [
               { client: { name: { contains: search, mode: 'insensitive' } } },
               { provider: { name: { contains: search, mode: 'insensitive' } } },
+              { timesheetNumber: { contains: search, mode: 'insensitive' } },
             ]
           }
         ]
@@ -92,6 +94,7 @@ export async function GET(request: NextRequest) {
         where.OR = [
           { client: { name: { contains: search, mode: 'insensitive' } } },
           { provider: { name: { contains: search, mode: 'insensitive' } } },
+          { timesheetNumber: { contains: search, mode: 'insensitive' } },
         ]
       }
     }
@@ -155,22 +158,50 @@ export async function GET(request: NextRequest) {
     const [timesheets, total] = await Promise.all([
       prisma.timesheet.findMany({
         where,
-        include: {
-          client: true,
-          provider: true,
-          bcba: true,
-          insurance: true,
-          entries: true,
+        select: {
+          id: true,
+          timesheetNumber: true,
+          userId: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          invoiceId: true,
+          client: { select: { id: true, name: true, phone: true } },
+          provider: { select: { name: true, phone: true, signature: true } },
+          bcba: { select: { name: true } },
+          invoice: { select: { invoiceNumber: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [
+          { endDate: 'desc' },
+          { startDate: 'desc' },
+          { createdAt: 'desc' },
+        ],
         skip: (page - 1) * limit,
         take: limit,
       }),
       prisma.timesheet.count({ where }),
     ])
 
+    const timesheetIds = timesheets.map((ts) => ts.id)
+    const totals = timesheetIds.length
+      ? await prisma.timesheetEntry.groupBy({
+          by: ['timesheetId'],
+          _sum: { minutes: true },
+          where: { timesheetId: { in: timesheetIds } },
+        })
+      : []
+    const totalsById = totals.reduce<Record<string, number>>((acc, row) => {
+      acc[row.timesheetId] = Number(row._sum.minutes || 0)
+      return acc
+    }, {})
+
+    const timesheetsWithTotals = timesheets.map((ts) => ({
+      ...ts,
+      totalMinutes: totalsById[ts.id] || 0,
+    }))
+
     const result = NextResponse.json({
-      timesheets,
+      timesheets: timesheetsWithTotals,
       total,
       page,
       limit,
@@ -393,65 +424,87 @@ export async function POST(request: NextRequest) {
       console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
     }
 
-    // Create timesheet
-    // Use transaction to create timesheet and then update bcbaInsuranceId if needed (since Prisma client may not recognize it yet)
-    const timesheet = await prisma.$transaction(async (tx) => {
-      const newTimesheet = await tx.timesheet.create({
-        data: {
-          userId: session.user.id,
-          providerId: finalProviderId, // Use placeholder provider for BCBA timesheets
-          clientId,
-          bcbaId,
-          insuranceId: insuranceId, // Required for both regular and BCBA timesheets
-          isBCBA: isBCBA === true,
-          serviceType: serviceType || null,
-          sessionData: sessionData || null,
-          startDate: parseDateOnly(startDate, timezone || 'America/New_York'),
-          endDate: parseDateOnly(endDate, timezone || 'America/New_York'),
-          timezone: timezone || 'America/New_York',
-          status: 'DRAFT',
-          lastEditedBy: session.user.id,
-          lastEditedAt: new Date(),
-          entries: {
-            create: entries.map((entry: any) => {
-            // Calculate units (1 unit = 15 minutes, no rounding)
-            const units = entry.minutes / 15
-            
-            return {
-              date: parseDateOnly(entry.date, timezone || 'America/New_York'),
-              startTime: entry.startTime, // Already validated as HH:mm
-              endTime: entry.endTime, // Already validated as HH:mm
-              minutes: entry.minutes, // Store actual minutes
-              units: units, // Store units (1 unit = 15 minutes)
-              notes: entry.notes || null,
-              invoiced: entry.invoiced || false,
-            }
-          }),
-        },
-      },
-      include: {
-        client: true,
-        provider: true,
-        bcba: true,
-        insurance: true,
-        entries: true,
-      },
-    })
+    // Create timesheet with retry to avoid timesheetNumber collisions
+    let timesheet
+    let retries = 0
+    const maxRetries = 5
 
-      // BCBA timesheets now use insuranceId (no separate bcbaInsuranceId needed)
+    while (retries < maxRetries) {
+      try {
+        const timesheetNumber = await generateTimesheetNumber(isBCBA === true)
 
-      // Fetch the updated timesheet
-      return await tx.timesheet.findUnique({
-        where: { id: newTimesheet.id },
-        include: {
-          client: true,
-          provider: true,
-          bcba: true,
-          insurance: true,
-          entries: true,
-        },
-      })
-    })
+        // Use transaction to create timesheet and then fetch it
+        timesheet = await prisma.$transaction(async (tx) => {
+          const newTimesheet = await tx.timesheet.create({
+            data: {
+              timesheetNumber,
+              userId: session.user.id,
+              providerId: finalProviderId, // Use placeholder provider for BCBA timesheets
+              clientId,
+              bcbaId,
+              insuranceId: insuranceId, // Required for both regular and BCBA timesheets
+              isBCBA: isBCBA === true,
+              serviceType: serviceType || null,
+              sessionData: sessionData || null,
+              startDate: parseDateOnly(startDate, timezone || 'America/New_York'),
+              endDate: parseDateOnly(endDate, timezone || 'America/New_York'),
+              timezone: timezone || 'America/New_York',
+              status: 'DRAFT',
+              lastEditedBy: session.user.id,
+              lastEditedAt: new Date(),
+              entries: {
+                create: entries.map((entry: any) => {
+                  // Calculate units (1 unit = 15 minutes, no rounding)
+                  const units = entry.minutes / 15
+
+                    return {
+                      date: parseDateOnly(entry.date, timezone || 'America/New_York'),
+                    startTime: entry.startTime, // Already validated as HH:mm
+                    endTime: entry.endTime, // Already validated as HH:mm
+                    minutes: entry.minutes, // Store actual minutes
+                    units: units, // Store units (1 unit = 15 minutes)
+                    notes: entry.notes || null,
+                    invoiced: entry.invoiced || false,
+                  }
+                }),
+              },
+            },
+            include: {
+              client: true,
+              provider: true,
+              bcba: true,
+              insurance: true,
+              entries: true,
+            },
+          })
+
+          // BCBA timesheets now use insuranceId (no separate bcbaInsuranceId needed)
+
+          return await tx.timesheet.findUnique({
+            where: { id: newTimesheet.id },
+            include: {
+              client: true,
+              provider: true,
+              bcba: true,
+              insurance: true,
+              entries: true,
+            },
+          })
+        })
+
+        break
+      } catch (error: any) {
+        if (error?.code === 'P2002' && error?.meta?.target?.includes('timesheetNumber')) {
+          retries++
+          if (retries >= maxRetries) {
+            throw new Error('Failed to generate unique timesheet number. Please try again.')
+          }
+          await new Promise((resolve) => setTimeout(resolve, Math.random() * 100))
+          continue
+        }
+        throw error
+      }
+    }
 
     return NextResponse.json(timesheet, { status: 201 })
   } catch (error) {

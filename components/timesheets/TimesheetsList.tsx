@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Download, Search, Printer, Edit, Trash2, Send, Check, X, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Download, Search, Printer, Edit, Trash2, Send, Check, X, FileText, FileSpreadsheet, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatDate } from '@/lib/utils'
 import { TimesheetPrintPreview } from './TimesheetPrintPreview'
@@ -13,7 +13,7 @@ import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 import { ConfirmDeleteModal } from '@/components/shared/ConfirmDeleteModal'
 import { formatInvoiceNumberForDisplay } from '@/lib/timesheet-ids'
 
-interface Timesheet {
+interface TimesheetListItem {
   id: string
   timesheetNumber?: string | null
   userId: string
@@ -27,7 +27,11 @@ interface Timesheet {
   client: { name: string; phone?: string | null; id?: string }
   provider: { name: string; phone?: string | null; signature?: string | null }
   bcba: { name: string }
-  entries: Array<{ 
+  totalMinutes: number
+}
+
+interface TimesheetDetail extends Omit<TimesheetListItem, 'entries'> {
+  entries: Array<{
     date: string
     startTime: string
     endTime: string
@@ -38,14 +42,14 @@ interface Timesheet {
 
 export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
   const router = useRouter()
-  const [timesheets, setTimesheets] = useState<Timesheet[]>([])
+  const [timesheets, setTimesheets] = useState<TimesheetListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(25)
-  const [printTimesheet, setPrintTimesheet] = useState<Timesheet | null>(null)
+  const [printTimesheet, setPrintTimesheet] = useState<TimesheetDetail | null>(null)
   const [userRole, setUserRole] = useState<string>('USER')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
@@ -57,6 +61,7 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
   const [canDeleteTimesheets, setCanDeleteTimesheets] = useState(false)
   const [canApproveTimesheets, setCanApproveTimesheets] = useState(false)
   const [canRejectTimesheets, setCanRejectTimesheets] = useState(false)
+  const [canUnapproveTimesheets, setCanUnapproveTimesheets] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -91,6 +96,7 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
         setCanDeleteTimesheets(true)
         setCanApproveTimesheets(true)
         setCanRejectTimesheets(true)
+        setCanUnapproveTimesheets(true)
         setCanCreateInvoice(true) // Admins always can create invoices
         return
       }
@@ -102,6 +108,7 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
         const hasDelete = permissionsData.permissions['timesheets.delete']?.canDelete === true
         const hasApprove = permissionsData.permissions['timesheets.approve']?.canApprove === true
         const hasReject = permissionsData.permissions['timesheets.reject']?.canApprove === true // Reject uses canApprove
+        const hasUnapprove = permissionsData.permissions['timesheets.unapprove']?.canApprove === true
         const hasViewTimesheets = permissionsData.permissions['timesheets.view']?.canView === true || hasViewAll || hasViewSelected
         const hasCreateInvoice = permissionsData.permissions['invoices.create']?.canCreate === true
         
@@ -110,6 +117,7 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
         setCanDeleteTimesheets(hasDelete)
         setCanApproveTimesheets(hasApprove)
         setCanRejectTimesheets(hasReject)
+        setCanUnapproveTimesheets(hasUnapprove)
         // User needs both view timesheets AND create invoice permissions
         setCanCreateInvoice(hasViewTimesheets && hasCreateInvoice)
         
@@ -296,6 +304,42 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
     }
   }
 
+  const handleUnapprove = async (id: string) => {
+    const confirmed = confirm('Unapprove this timesheet and return it to DRAFT?')
+    if (!confirmed) return
+
+    try {
+      const url = `/api/timesheets/${id}/unapprove`
+      console.log('[UNAPPROVE] Request:', { url, method: 'POST' })
+
+      const res = await fetch(url, { method: 'POST' })
+      const data = await res.json()
+
+      console.log('[UNAPPROVE] Response:', {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        data,
+      })
+
+      if (res.ok && data.ok !== false) {
+        toast.success('Timesheet moved back to draft')
+        fetchTimesheets()
+      } else {
+        const errorMsg = data.message || data.error || `Failed to unapprove timesheet (${res.status})`
+        console.error('[UNAPPROVE] Error:', { status: res.status, code: data.code, message: data.message, details: data.details })
+        toast.error(errorMsg)
+      }
+    } catch (error: any) {
+      console.error('[UNAPPROVE] Request failed:', {
+        url: `/api/timesheets/${id}/unapprove`,
+        error: error.message,
+        stack: error.stack,
+      })
+      toast.error(`Network error: ${error.message || 'Failed to unapprove timesheet'}`)
+    }
+  }
+
   const handleDeleteClick = (id: string) => {
     setDeletingTimesheetId(id)
     setDeleteModalOpen(true)
@@ -345,9 +389,8 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
     }
   }
 
-  const calculateTotalHours = (timesheet: Timesheet) => {
-    const totalMinutes = timesheet.entries.reduce((sum, entry) => sum + entry.minutes, 0)
-    return (totalMinutes / 60).toFixed(1)
+  const calculateTotalHours = (timesheet: TimesheetListItem) => {
+    return (timesheet.totalMinutes / 60).toFixed(1)
   }
 
   // Close export menu when clicking outside
@@ -866,6 +909,15 @@ export function TimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
                           </button>
                         )}
                       </>
+                    )}
+                    {timesheet.status === 'APPROVED' && (canUnapproveTimesheets || isAdmin) && (
+                      <button
+                        onClick={() => handleUnapprove(timesheet.id)}
+                        className="flex items-center w-full px-4 py-2 text-sm text-yellow-700 hover:bg-gray-100"
+                      >
+                        <Undo2 className="w-4 h-4 mr-2" />
+                        Unapprove
+                      </button>
                     )}
                     {((canDeleteTimesheets || isAdmin) || (timesheet.status === 'DRAFT' && currentUserId && timesheet.userId === currentUserId)) && (
                       <button

@@ -3,9 +3,7 @@
 These are documented from repo evidence only. Do not fix them unless explicitly requested.
 
 ## A Plus Scheduling
-- Core clinical routes such as appointments, payments list patterns, and client files often use `requireAuth` only. Intended data visibility rules are `UNKNOWN — verify before changing`.
-- `client/src/components/layout/Sidebar.jsx` exposes broad navigation; some pages gate controls by role and APIs may return 403. Exact intended UX by role is `UNKNOWN — verify before changing`.
-- `UserRole` includes `ADMIN`, `BCBA`, `STAFF`; some APIs allow `ADMIN, STAFF` but not `BCBA`. Intended BCBA matrix is `UNKNOWN — verify before changing`.
+- **RESOLVED (Phase 1 permission system, see `PERMISSIONS.md`)**: every route (appointments, payments, client files, etc.) now goes through `requirePermission("aplus.<area>.<action>")` instead of bare `requireAuth`/`requireRole`, and `Sidebar.jsx` filters nav via `usePermissions().can()`. The old flat `ADMIN/BCBA/STAFF` role gates no longer drive any access decision — see `PERMISSIONS.md` for the full catalog and the exact permission set each seeded role (including BCBA) was granted to preserve day-1 behavior.
 - A Plus assessment templates are currently global/authenticated-only because no Tenant/Organization model was confirmed. Add tenant scoping only after the intended isolation model is verified.
 - Assessment report PDF/DOCX export via server-side generation is deferred: `pdfkit` (already installed) supports only programmatic plain-text output and cannot render the rich HTML section content (headings, tables, lists). Phase 4 uses browser print / "Save as PDF" as the PDF path. Add server-side PDF only after approving an HTML-to-PDF library (e.g. Puppeteer, WeasyPrint).
 - Recurring appointment creation materializes rows and may silently skip conflicted occurrences. No series-wide update API was confirmed.
@@ -22,11 +20,9 @@ These are documented from repo evidence only. Do not fix them unless explicitly 
 - Exact production payload shapes for Payment Hub/Sola webhooks are `UNKNOWN — verify before changing`.
 
 ## SmartSteps ABA
-- Demo credentials exist in `smart-steps/src/auth.ts` for password `demo` or `password`. Whether production disables this is `UNKNOWN — verify before changing`.
-- Some SmartSteps APIs appear broad if parameters are omitted, e.g. sessions listing without `clientId`.
-- Some client-scoped SmartSteps routes were observed without assignment checks. Intended access model is `UNKNOWN — verify before changing`.
+- **RESOLVED (Phase 1 permission system, see `PERMISSIONS.md`)**: the demo-credentials path in `smart-steps/src/auth.ts` is now gated behind `ALLOW_DEMO_LOGIN === "true"` (default off). Every API route now resolves access via `requirePermission*`/`canForClient` against `ClientAssignment`, closing the previous gap where any authenticated RBT could read/write any client's data via the API. `middleware`/`auth.config.ts`'s `authorized()` was rewritten from a 4-substring gate to an explicit allow-list, so every non-public path (including `/assessments`, `/goal-library`, `/staff`, `/goals-and-targets`) now gets a real server-side auth redirect.
+- Some SmartSteps APIs appear broad if parameters are omitted, e.g. sessions listing without `clientId`. Re-verify against the Phase 1 `.assigned`/`.all` scoping in `PERMISSIONS.md` before assuming this is still a gap.
 - Schedule bridge joins A Plus scheduling clients by lower-trimmed full name; name mismatch risks missing schedule data.
-- `middleware` authorization list may not include every UI path such as `/assessments` and `/goals-and-targets`; live behavior with basePath is `UNKNOWN — verify before changing`.
 
 ## Payroll / Timesheets
 - Payroll, timesheet, and fingerprint scanner code was not found in `aplus-center-scheduling` by static search.

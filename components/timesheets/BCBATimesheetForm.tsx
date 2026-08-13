@@ -146,7 +146,7 @@ export function BCBATimesheetForm({
 }: BCBATimesheetFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  // BCBA timesheets use regular Insurance (insuranceId) - but insurance is derived from client
+  // BCBA timesheets use regular Insurance (insuranceId) - selectable by user
   const [insuranceId, setInsuranceId] = useState(timesheet?.insuranceId || '')
   const [startDate, setStartDate] = useState<Date | null>(() => {
     try {
@@ -198,6 +198,14 @@ export function BCBATimesheetForm({
   // Get DLB from client
   const selectedClient = clients.find(c => c.id === clientId)
   const dlb = selectedClient?.dlb || ''
+
+  useEffect(() => {
+    if (!clientId || insuranceId) return
+    const clientInsuranceId = (selectedClient as any)?.insuranceId || (selectedClient as any)?.insurance?.id
+    if (clientInsuranceId) {
+      setInsuranceId(clientInsuranceId)
+    }
+  }, [clientId, insuranceId, selectedClient])
 
   const [defaultTimes, setDefaultTimes] = useState<DefaultTimes>({
     sun: {
@@ -889,13 +897,10 @@ export function BCBATimesheetForm({
       return
     }
 
-    // Get client's insurance from the selected client
-    const selectedClient = clients.find(c => c.id === clientId)
-    const clientInsuranceId = (selectedClient as any)?.insuranceId || (selectedClient as any)?.insurance?.id
-    if (!selectedClient || !clientInsuranceId) {
-      toast.error('Selected client must have insurance assigned')
-      return
-    }
+  if (!insuranceId) {
+    toast.error('Please select an insurance')
+    return
+  }
 
     // Check if at least one entry has a service type
     const entriesWithServiceType = dayEntries.filter(e => e.use && e.serviceType)
@@ -984,7 +989,7 @@ export function BCBATimesheetForm({
           providerId: '', // BCBA timesheets don't use provider
           clientId,
           bcbaId,
-          insuranceId: clientInsuranceId, // Use client's insurance
+          insuranceId, // Use selected insurance
           isBCBA: true,
           serviceType: serviceType || null, // Keep for backward compatibility
           sessionData: sessionData || null, // Keep for backward compatibility
@@ -1231,6 +1236,27 @@ export function BCBATimesheetForm({
                   return (
                     <option key={bcba.id} value={bcba.id}>
                       {bcba.name || 'Unnamed BCBA'}
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Insurance <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={insuranceId}
+                onChange={(e) => setInsuranceId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">Select insurance</option>
+                {Array.isArray(insurances) && insurances.map((insurance) => {
+                  if (!insurance || !insurance.id) return null
+                  return (
+                    <option key={insurance.id} value={insurance.id}>
+                      {insurance.name || 'Unnamed Insurance'}
                     </option>
                   )
                 })}

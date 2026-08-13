@@ -41,6 +41,7 @@ const permissions = [
   { name: 'timesheets.submit', description: 'Submit timesheets', category: 'timesheets' },
   { name: 'timesheets.approve', description: 'Approve timesheets', category: 'timesheets' },
   { name: 'timesheets.reject', description: 'Reject timesheets', category: 'timesheets' },
+  { name: 'timesheets.unapprove', description: 'Unapprove timesheets', category: 'timesheets' },
   { name: 'timesheets.export', description: 'Export timesheets', category: 'timesheets' },
   
   // BCBA Timesheets
@@ -52,6 +53,7 @@ const permissions = [
   { name: 'bcbaTimesheets.delete', description: 'Delete BCBA timesheets', category: 'bcbaTimesheets' },
   { name: 'bcbaTimesheets.approve', description: 'Approve BCBA timesheets', category: 'bcbaTimesheets' },
   { name: 'bcbaTimesheets.reject', description: 'Reject BCBA timesheets', category: 'bcbaTimesheets' },
+  { name: 'bcbaTimesheets.unapprove', description: 'Unapprove BCBA timesheets', category: 'bcbaTimesheets' },
   { name: 'bcbaTimesheets.export', description: 'Export BCBA timesheets', category: 'bcbaTimesheets' },
   
   // Invoices

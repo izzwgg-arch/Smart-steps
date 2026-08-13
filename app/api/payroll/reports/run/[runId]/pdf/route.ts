@@ -18,91 +18,93 @@ export async function GET(
 
     const { runId } = await Promise.resolve(params)
 
-    // Fetch run with all related data
-    // @ts-ignore - Prisma client may not have payrollRun yet
-    const run: any = await (prisma as any).payrollRun?.findUnique({
+    console.log(`[PAYROLL PDF] Generating run summary: runId=${runId}`)
+
+    // Fetch run with all related data — always fresh from DB
+    const run = await prisma.payrollRun.findUnique({
       where: { id: runId },
       include: {
         lines: {
-          include: {
-            employee: true,
-          },
+          include: { employee: true },
           orderBy: { employee: { fullName: 'asc' } },
         },
       },
     })
 
     if (!run) {
+      console.warn(`[PAYROLL PDF] Run not found: ${runId}`)
       return NextResponse.json({ error: 'Payroll run not found' }, { status: 404 })
     }
 
-    // Calculate summary
-    const totalGross = (run.lines || []).reduce((sum: number, line: any) => sum + parseFloat((line.grossPay?.toString() || '0')), 0)
-    const totalPaid = (run.lines || []).reduce((sum: number, line: any) => sum + parseFloat((line.amountPaid?.toString() || '0')), 0)
-    const totalOwed = (run.lines || []).reduce((sum: number, line: any) => sum + parseFloat((line.amountOwed?.toString() || '0')), 0)
-    const employeeCount = (run.lines || []).length
+    const lines = run.lines ?? []
 
-    // Build employee data
-    const employees = (run.lines || []).map((line: any) => ({
+    // Pre-generation validation
+    if (lines.length === 0) {
+      console.warn(`[PAYROLL PDF] Run ${runId} has no employee lines — generating empty report`)
+    }
+
+    // Calculate summary
+    const totalGross    = lines.reduce((s, l) => s + parseFloat(l.grossPay?.toString()   || '0'), 0)
+    const totalPaid     = lines.reduce((s, l) => s + parseFloat(l.amountPaid?.toString() || '0'), 0)
+    const totalOwed     = lines.reduce((s, l) => s + parseFloat(l.amountOwed?.toString() || '0'), 0)
+    const employeeCount = lines.length
+
+    const employees = lines.map(line => ({
       employeeName: line.employee.fullName,
-      totalHours: parseFloat(line.totalHours.toString()),
-      hourlyRate: parseFloat(line.hourlyRateUsed.toString()),
-      grossPay: parseFloat(line.grossPay.toString()),
-      amountPaid: parseFloat(line.amountPaid.toString()),
-      amountOwed: parseFloat(line.amountOwed.toString()),
+      totalHours:   parseFloat(line.totalHours.toString()),
+      hourlyRate:   parseFloat(line.hourlyRateUsed.toString()),
+      grossPay:     parseFloat(line.grossPay.toString()),
+      amountPaid:   parseFloat(line.amountPaid.toString()),
+      amountOwed:   parseFloat(line.amountOwed.toString()),
     }))
 
-    // Generate HTML
     const html = generateRunSummaryReportHTML({
       run: {
-        id: run.id,
-        name: run.name,
+        id:         run.id,
+        name:       run.name,
         periodStart: run.periodStart,
-        periodEnd: run.periodEnd,
-        status: run.status,
-        createdAt: run.createdAt,
+        periodEnd:  run.periodEnd,
+        status:     run.status,
+        createdAt:  run.createdAt,
       },
-      summary: {
-        totalGross,
-        totalPaid,
-        totalOwed,
-        employeeCount,
-      },
+      summary: { totalGross, totalPaid, totalOwed, employeeCount },
       employees,
     })
 
-    // Generate PDF
+    // Generate PDF — stateless, re-initializes on every request
     const pdfBuffer = await generatePDFFromHTML(html, `run-summary-${runId}`)
 
-    // Save artifact (optional - for tracking generated reports)
+    console.log(`[PAYROLL PDF] Run summary done: runId=${runId} employees=${employeeCount} bytes=${pdfBuffer.length}`)
+
+    // Track artifact (non-fatal)
     try {
-      // @ts-ignore - Prisma client may not have payrollReportArtifact yet
-      await (prisma as any).payrollReportArtifact?.create({
+      await prisma.payrollReportArtifact.create({
         data: {
-          type: 'RUN_SUMMARY',
-          runId: runId,
+          type:             'RUN_SUMMARY',
+          runId,
           storageKeyOrPath: `run-${runId}-${format(new Date(), 'yyyy-MM-dd')}.pdf`,
           generatedByUserId: session.user.id,
         },
       })
     } catch (artifactError) {
-      // Log but don't fail if artifact creation fails
-      console.warn('Failed to save report artifact:', artifactError)
+      console.warn('[PAYROLL PDF] Failed to save run artifact (non-fatal):', artifactError)
     }
 
-    // Return PDF
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type':        'application/pdf',
         'Content-Disposition': `attachment; filename="payroll-run-${run.name.replace(/\s+/g, '-')}-${format(run.periodStart, 'yyyy-MM-dd')}.pdf"`,
-        'Content-Length': pdfBuffer.length.toString(),
+        'Content-Length':      pdfBuffer.length.toString(),
       },
     })
   } catch (error: any) {
-    console.error('Error generating run summary report PDF:', error)
+    console.error('[PAYROLL PDF] Run summary generation failed', {
+      error: error?.message,
+      stack: error?.stack,
+    })
     return NextResponse.json(
-      { error: 'Failed to generate PDF', details: error.message },
+      { error: 'Failed to generate PDF', details: error?.message ?? 'Unknown error' },
       { status: 500 }
     )
   }

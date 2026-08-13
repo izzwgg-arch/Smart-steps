@@ -638,7 +638,7 @@ export async function canAccessRoute(userId: string, route: string): Promise<boo
     // Unknown community route - deny by default
     return false
   }
-  
+
   // Map routes to dashboard section names
   const routeSectionMap: Record<string, string> = {
     '/providers': 'providers',

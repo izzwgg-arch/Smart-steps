@@ -236,8 +236,8 @@ export async function PUT(
         clientId: timesheetData.clientId || timesheet.clientId,
         bcbaId: timesheetData.bcbaId || timesheet.bcbaId,
         insuranceId: (timesheetData as any).insuranceId !== undefined ? (timesheetData as any).insuranceId : (timesheet.insuranceId || ((timesheet as any).bcbaInsuranceId || null)), // Fallback to bcbaInsuranceId for migration
-        startDate: (timesheetData as any).startDate ? parseDateOnly((timesheetData as any).startDate, (timesheetData as any).timezone || timesheet.timezone) : timesheet.startDate,
-        endDate: (timesheetData as any).endDate ? parseDateOnly((timesheetData as any).endDate, (timesheetData as any).timezone || timesheet.timezone) : timesheet.endDate,
+        startDate: (timesheetData as any).startDate ? new Date((timesheetData as any).startDate) : timesheet.startDate, // Accept any date format
+        endDate: (timesheetData as any).endDate ? new Date((timesheetData as any).endDate) : timesheet.endDate, // Accept any date format
         timezone: (timesheetData as any).timezone || timesheet.timezone,
         lastEditedBy: session.user.id,
         lastEditedAt: new Date(),

@@ -34,6 +34,8 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [rows, setRows] = useState<FormRow[]>([{ id: '1', serviceDate: null, signature: null }])
   const [loading, setLoading] = useState(false)
+  const [clientSignature, setClientSignature] = useState<string | null>(null)
+  const [signatureLoading, setSignatureLoading] = useState(false)
   const [canEdit, setCanEdit] = useState(true) // Default to true, will be updated by permission check
 
   const months = [
@@ -89,6 +91,48 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
     }
   }, [clientId, month])
 
+  useEffect(() => {
+    let isActive = true
+
+    const fetchClientSignature = async () => {
+      if (!clientId) {
+        setClientSignature(null)
+        setSignatureLoading(false)
+        setRows((prev) => prev.map((row) => ({ ...row, signature: null })))
+        return
+      }
+
+      setSignatureLoading(true)
+      try {
+        const res = await fetch(`/api/clients/${clientId}`)
+        if (!res.ok) {
+          throw new Error('Failed to fetch client')
+        }
+        const client = await res.json()
+        if (!isActive) return
+        const signature = client?.signature || null
+        setClientSignature(signature)
+        setRows((prev) =>
+          prev.map((row) =>
+            row.signature ? row : { ...row, signature }
+          )
+        )
+      } catch (error) {
+        console.error('Error fetching client signature:', error)
+        if (!isActive) return
+        setClientSignature(null)
+      } finally {
+        if (isActive) setSignatureLoading(false)
+      }
+    }
+
+    fetchClientSignature()
+
+    return () => {
+      isActive = false
+    }
+  }, [clientId])
+
   const loadForm = async () => {
     try {
       const currentYear = new Date().getFullYear()
@@ -102,21 +146,23 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
             form.payload.rows.map((row: any, idx: number) => ({
               id: `row-${idx}`,
               serviceDate: row.serviceDate ? new Date(row.serviceDate) : null,
-              signature: row.signature || null,
+              signature: row.signature || clientSignature || null,
             }))
           )
           if (form.payload.rows.length === 0) {
-            setRows([{ id: '1', serviceDate: null, signature: null }])
+            setRows([
+              { id: '1', serviceDate: null, signature: clientSignature || null },
+            ])
           }
         } else {
-          setRows([{ id: '1', serviceDate: null, signature: null }])
+          setRows([{ id: '1', serviceDate: null, signature: clientSignature || null }])
         }
       } else {
-        setRows([{ id: '1', serviceDate: null, signature: null }])
+        setRows([{ id: '1', serviceDate: null, signature: clientSignature || null }])
       }
     } catch (error) {
       console.error('Error loading form:', error)
-      setRows([{ id: '1', serviceDate: null, signature: null }])
+      setRows([{ id: '1', serviceDate: null, signature: clientSignature || null }])
     }
   }
 
@@ -125,7 +171,14 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
       toast.error('You do not have permission to edit forms')
       return
     }
-    setRows([...rows, { id: Date.now().toString(), serviceDate: null, signature: null }])
+    setRows([
+      ...rows,
+      {
+        id: Date.now().toString(),
+        serviceDate: null,
+        signature: clientSignature,
+      },
+    ])
   }
 
   const handleRemoveRow = (id: string) => {
@@ -634,6 +687,9 @@ export function ParentTrainingForm({ clients }: ParentTrainingFormProps) {
                         />
                       </td>
                       <td className="px-4 py-2">
+                        {signatureLoading && !row.signature && (
+                          <div className="text-xs text-gray-500 mb-2">Loading signature...</div>
+                        )}
                         <SignatureCapture
                           value={row.signature}
                           onChange={(sig) => handleRowChange(row.id, 'signature', sig)}

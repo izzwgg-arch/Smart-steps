@@ -103,15 +103,74 @@ export async function PUT(
     }
 
     const data = await request.json()
-    const { status, checkNumber, notes } = data
+    const { status, checkNumber, notes, regularRatePerUnit, bcbaRatePerUnit } = data
 
-    const updated = await prisma.invoice.update({
-      where: { id: params.id },
-      data: {
-        status: status || invoice.status,
-        checkNumber: checkNumber !== undefined ? checkNumber : invoice.checkNumber,
-        notes: notes !== undefined ? notes : invoice.notes,
-      },
+    const shouldUpdateRates =
+      (regularRatePerUnit !== null && regularRatePerUnit !== undefined) ||
+      (bcbaRatePerUnit !== null && bcbaRatePerUnit !== undefined)
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (shouldUpdateRates) {
+        const entries = await tx.invoiceEntry.findMany({
+          where: { invoiceId: params.id },
+          include: { timesheet: { select: { isBCBA: true } } },
+        })
+
+        let totalAmount = new Decimal(0)
+        for (const entry of entries) {
+          const isBCBA = entry.timesheet?.isBCBA === true
+          const rate =
+            isBCBA && bcbaRatePerUnit !== null && bcbaRatePerUnit !== undefined
+              ? new Decimal(bcbaRatePerUnit)
+              : !isBCBA && regularRatePerUnit !== null && regularRatePerUnit !== undefined
+                ? new Decimal(regularRatePerUnit)
+                : new Decimal(entry.rate.toString())
+
+          const units = new Decimal(entry.units.toString())
+          const shouldCharge = isBCBA || new Decimal(entry.amount.toString()).greaterThan(0)
+          const amount = shouldCharge ? units.times(rate) : new Decimal(0)
+
+          await tx.invoiceEntry.update({
+            where: { id: entry.id },
+            data: {
+              rate: rate,
+              amount: amount,
+            },
+          })
+
+          totalAmount = totalAmount.plus(amount)
+        }
+
+        const paidAmount = new Decimal(invoice.paidAmount.toString())
+        const adjustments = new Decimal(invoice.adjustments.toString())
+        const outstanding = totalAmount.plus(adjustments).minus(paidAmount)
+        let newStatus = status || invoice.status
+        if (outstanding.lessThanOrEqualTo(0)) {
+          newStatus = 'PAID'
+        } else if (paidAmount.greaterThan(0)) {
+          newStatus = 'PARTIALLY_PAID'
+        }
+
+        return tx.invoice.update({
+          where: { id: params.id },
+          data: {
+            status: newStatus,
+            checkNumber: checkNumber !== undefined ? checkNumber : invoice.checkNumber,
+            notes: notes !== undefined ? notes : invoice.notes,
+            totalAmount,
+            outstanding,
+          },
+        })
+      }
+
+      return tx.invoice.update({
+        where: { id: params.id },
+        data: {
+          status: status || invoice.status,
+          checkNumber: checkNumber !== undefined ? checkNumber : invoice.checkNumber,
+          notes: notes !== undefined ? notes : invoice.notes,
+        },
+      })
     })
 
     return NextResponse.json(updated)

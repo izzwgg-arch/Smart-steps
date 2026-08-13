@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Download, Search, Edit, Trash2, FileText, FileSpreadsheet, Upload } from 'lucide-react'
+import { Plus, Download, Search, Edit, Trash2, FileText, FileSpreadsheet, Upload, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { exportToCSV, exportToExcel, formatProvidersForExport } from '@/lib/exportUtils'
 import { ImportModal } from '@/components/shared/ImportModal'
@@ -23,6 +23,7 @@ export function ProvidersList() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [sendingId, setSendingId] = useState<string | null>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -56,6 +57,36 @@ export function ProvidersList() {
       }
     } catch (error) {
       toast.error('Failed to delete provider')
+    }
+  }
+
+  const handleSendSignature = async (provider: Provider) => {
+    if (!provider.email) {
+      toast.error('Provider email is missing')
+      return
+    }
+
+    setSendingId(provider.id)
+    try {
+      const res = await fetch('/api/signature-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityType: 'PROVIDER',
+          entityId: provider.id,
+        }),
+      })
+
+      if (res.ok) {
+        toast.success('Signature link sent')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to send signature link')
+      }
+    } catch (error) {
+      toast.error('Failed to send signature link')
+    } finally {
+      setSendingId(null)
     }
   }
 
@@ -225,6 +256,14 @@ export function ProvidersList() {
                     {provider.active ? 'ACTIVE' : 'INACTIVE'}
                   </span>
                   <RowActionsMenu>
+                    <button
+                      onClick={() => handleSendSignature(provider)}
+                      disabled={sendingId === provider.id}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px] disabled:opacity-50"
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      {sendingId === provider.id ? 'Sending...' : 'Send Signature Link'}
+                    </button>
                     <Link
                       href={`/providers/${provider.id}/edit`}
                       className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 min-h-[44px]"

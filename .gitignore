@@ -33,5 +33,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# prisma
-/prisma/migrations
+# local one-off script containing a hardcoded admin password
+aplus-center-scheduling/set_admin_password.mjs

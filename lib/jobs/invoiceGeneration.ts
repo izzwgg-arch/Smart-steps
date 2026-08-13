@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { Decimal } from '@prisma/client/runtime/library'
 import { calculateWeeklyBillingPeriod, formatBillingPeriod } from '@/lib/billingPeriodUtils'
+import { nextInvoiceNumber } from '@/lib/invoiceNumber'
 
 export interface InvoiceGenerationResult {
   success: boolean
@@ -266,10 +267,7 @@ async function generateInvoiceForClient(
   }
 
   // Generate invoice number
-  const invoiceCount = await prisma.invoice.count()
-  const invoiceNumber = `INV-${new Date().getFullYear()}-${String(
-    invoiceCount + 1
-  ).padStart(5, '0')}`
+  const invoiceNumber = await nextInvoiceNumber(prisma)
 
   // Get client to find their insurance
   const client = await prisma.client.findUnique({

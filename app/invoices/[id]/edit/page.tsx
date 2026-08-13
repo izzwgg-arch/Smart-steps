@@ -24,6 +24,15 @@ export default async function EditInvoicePage({
   // Fetch invoice
   const invoice = await prisma.invoice.findUnique({
     where: { id: params.id },
+    include: {
+      entries: {
+        include: {
+          timesheet: {
+            select: { isBCBA: true },
+          },
+        },
+      },
+    },
   })
 
   if (!invoice || invoice.deletedAt) {
@@ -36,12 +45,17 @@ export default async function EditInvoicePage({
   }
 
   // Transform invoice to match form interface
+  const regularEntry = invoice.entries.find((entry) => !entry.timesheet?.isBCBA)
+  const bcbaEntry = invoice.entries.find((entry) => entry.timesheet?.isBCBA)
+
   const invoiceData = {
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     status: invoice.status,
     checkNumber: invoice.checkNumber,
     notes: invoice.notes,
+    regularRatePerUnit: regularEntry ? Number(regularEntry.rate) : null,
+    bcbaRatePerUnit: bcbaEntry ? Number(bcbaEntry.rate) : null,
   }
 
   return (

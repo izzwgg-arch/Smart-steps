@@ -82,7 +82,7 @@ export function formatClientsForExport(clients: any[]) {
  */
 export function formatTimesheetsForExport(timesheets: any[]) {
   return timesheets.map((ts) => {
-    const totalMinutes = ts.entries?.reduce((sum: number, e: any) => sum + e.minutes, 0) || 0
+    const totalMinutes = (ts.totalMinutes ?? ts.entries?.reduce((sum: number, e: any) => sum + e.minutes, 0)) || 0
     
     return {
       Client: ts.client?.name || '',

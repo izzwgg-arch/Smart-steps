@@ -98,6 +98,7 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [loading, setLoading] = useState(true)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [editingPayment, setEditingPayment] = useState<Invoice['payments'][number] | null>(null)
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false)
   const [showDebugPanel, setShowDebugPanel] = useState(false)
   const [debugData, setDebugData] = useState<any>(null)
@@ -536,7 +537,10 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
               <h2 className="text-lg font-semibold">Payments</h2>
               {userRole === 'ADMIN' && (
                 <button
-                  onClick={() => setShowPaymentModal(true)}
+                  onClick={() => {
+                    setEditingPayment(null)
+                    setShowPaymentModal(true)
+                  }}
                   className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm flex items-center space-x-1"
                 >
                   <Plus className="w-4 h-4" />
@@ -565,6 +569,19 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
                         </div>
                       )}
                     </div>
+                    {userRole === 'ADMIN' && (
+                      <button
+                        onClick={() => {
+                          setEditingPayment(payment)
+                          setShowPaymentModal(true)
+                        }}
+                        className="text-primary-600 hover:text-primary-900 flex items-center text-sm"
+                        title="Edit payment"
+                      >
+                        <Edit className="w-4 h-4 mr-1" />
+                        <span>Edit</span>
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -760,9 +777,11 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
       {showPaymentModal && userRole === 'ADMIN' && (
         <PaymentModal
           invoiceId={invoiceId}
+          payment={editingPayment}
           onClose={() => setShowPaymentModal(false)}
           onSuccess={() => {
             setShowPaymentModal(false)
+            setEditingPayment(null)
             refreshInvoice()
           }}
         />
@@ -786,10 +805,12 @@ export function InvoiceDetail({ invoiceId, userRole }: InvoiceDetailProps) {
 // Payment Modal Component
 function PaymentModal({
   invoiceId,
+  payment,
   onClose,
   onSuccess,
 }: {
   invoiceId: string
+  payment?: Invoice['payments'][number] | null
   onClose: () => void
   onSuccess: () => void
 }) {
@@ -798,6 +819,20 @@ function PaymentModal({
   const [paymentDate, setPaymentDate] = useState(new Date())
   const [referenceNumber, setReferenceNumber] = useState('')
   const [notes, setNotes] = useState('')
+
+  useEffect(() => {
+    if (payment) {
+      setAmount(payment.amount.toString())
+      setPaymentDate(new Date(payment.paymentDate))
+      setReferenceNumber(payment.referenceNumber || '')
+      setNotes(payment.notes || '')
+    } else {
+      setAmount('')
+      setPaymentDate(new Date())
+      setReferenceNumber('')
+      setNotes('')
+    }
+  }, [payment])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -810,8 +845,12 @@ function PaymentModal({
     setLoading(true)
 
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/payments`, {
-        method: 'POST',
+      const isEdit = Boolean(payment?.id)
+      const url = isEdit
+        ? `/api/invoices/${invoiceId}/payments/${payment!.id}`
+        : `/api/invoices/${invoiceId}/payments`
+      const res = await fetch(url, {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: parseFloat(amount),
@@ -822,11 +861,11 @@ function PaymentModal({
       })
 
       if (res.ok) {
-        toast.success('Payment recorded successfully')
+        toast.success(isEdit ? 'Payment updated successfully' : 'Payment recorded successfully')
         onSuccess()
       } else {
         const data = await res.json()
-        toast.error(data.error || 'Failed to record payment')
+        toast.error(data.error || 'Failed to save payment')
       }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
@@ -838,7 +877,7 @@ function PaymentModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-        <h2 className="text-xl font-bold mb-4">Record Payment</h2>
+        <h2 className="text-xl font-bold mb-4">{payment ? 'Edit Payment' : 'Record Payment'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -901,7 +940,7 @@ function PaymentModal({
               disabled={loading}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
             >
-              {loading ? 'Recording...' : 'Record Payment'}
+              {loading ? (payment ? 'Updating...' : 'Recording...') : payment ? 'Update Payment' : 'Record Payment'}
             </button>
           </div>
         </form>

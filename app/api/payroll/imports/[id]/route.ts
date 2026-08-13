@@ -114,12 +114,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Import not found' }, { status: 404 })
     }
 
-    // Check if import is used in any payroll runs
+    // If any payroll runs reference this import, detach them so the import can be deleted.
     if (payrollImport.runs.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete import that is used in payroll runs. Please delete the associated payroll runs first.' },
-        { status: 400 }
-      )
+      await prisma.payrollRun.updateMany({
+        where: { sourceImportId: id },
+        data: { sourceImportId: null },
+      })
     }
 
     // Delete import (rows will be cascade deleted per Prisma schema)

@@ -23,10 +23,23 @@ interface PayrollImport {
   }
 }
 
-export function ImportsLibrary({ permissions, userRole }: { permissions: any, userRole: string }) {
+export function ImportsLibrary({
+  permissions,
+  userRole,
+  canView,
+}: {
+  permissions: any
+  userRole: string
+  canView?: boolean
+}) {
   const [imports, setImports] = useState<PayrollImport[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const canDelete = canView === true ||
+    permissions['PAYROLL_IMPORT_EDIT']?.canView === true ||
+    permissions['PAYROLL_VIEW']?.canView === true ||
+    userRole === 'ADMIN' ||
+    userRole === 'SUPER_ADMIN'
 
   useEffect(() => {
     fetchImports()
@@ -130,35 +143,35 @@ export function ImportsLibrary({ permissions, userRole }: { permissions: any, us
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 text-xs">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rows</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded By</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded At</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-4 py-2 text-left font-medium text-gray-500 uppercase">File Name</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Rows</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Period</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Uploaded By</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Uploaded At</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {imports.map((importItem) => (
                 <tr key={importItem.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3">
                     <div className="flex items-center">
                       <FileSpreadsheet className="w-5 h-5 text-gray-400 mr-2" />
                       <span className="text-sm font-medium text-gray-900">{importItem.originalFileName}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3 whitespace-nowrap">
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(importItem.status)}`}>
                       {importItem.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                     {importItem._count.rows}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 text-sm text-gray-500">
                     {importItem.periodStart && importItem.periodEnd ? (
                       <div className="flex items-center">
                         <Calendar className="w-4 h-4 mr-1" />
@@ -168,31 +181,35 @@ export function ImportsLibrary({ permissions, userRole }: { permissions: any, us
                       '-'
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 text-sm text-gray-500">
                     <div className="flex items-center">
                       <User className="w-4 h-4 mr-1" />
                       {importItem.uploadedBy.username || importItem.uploadedBy.email || 'Unknown'}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
                     {format(new Date(importItem.uploadedAt), 'MM/dd/yyyy HH:mm')}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm">
                     <div className="flex items-center space-x-3">
                       <Link
                         href={`/payroll/imports/${importItem.id}`}
                         className="text-primary-600 hover:text-primary-900 flex items-center"
+                        title="View/Edit"
                       >
-                        View/Edit <ArrowRight className="w-4 h-4 ml-1" />
+                        <span className="text-sm">View/Edit</span>
+                        <ArrowRight className="w-4 h-4 ml-1" />
                       </Link>
-                      <button
-                        onClick={() => handleDelete(importItem.id, importItem.originalFileName)}
-                        disabled={deletingId === importItem.id}
-                        className="text-red-600 hover:text-red-900 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Delete import"
-                      >
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDelete(importItem.id, importItem.originalFileName)}
+                          disabled={deletingId === importItem.id}
+                          className="text-red-600 hover:text-red-900 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete import"
+                        >
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

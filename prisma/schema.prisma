@@ -34,6 +34,25 @@ enum InvoiceStatus {
   VOID
 }
 
+enum InsuranceCodeServiceType {
+  Assessment
+  DirectCare
+  Supervision
+  TreatmentPlanning
+  ParentTraining
+}
+
+enum InsuranceCodeAppliesTo {
+  REGULAR
+  BCBA
+  BOTH
+}
+
+enum SignatureEntityType {
+  CLIENT
+  PROVIDER
+}
+
 enum AuditAction {
   CREATE
   UPDATE
@@ -97,6 +116,7 @@ model User {
   payrollPaymentsCreated    PayrollPayment[]          @relation("PayrollPaymentCreator")
   payrollReportsCreated     PayrollReportArtifact[]   @relation("PayrollReportCreator")
   signatureImportBatches    SignatureImportBatch[]    @relation("SignatureImportBatchCreator")
+  signatureRequestTokens   SignatureRequestToken[]
 }
 
 model Role {
@@ -164,6 +184,7 @@ model Provider {
   email     String?
   phone     String?
   signature String? // Base64 or file path
+  signatureUpdatedAt DateTime?
   dlb       String? // DLB field for BCBA timesheets
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
@@ -186,6 +207,7 @@ model Client {
   dlb         String? // DLB field for BCBA timesheets
   insuranceId String
   signature   String? // Base64 or file path
+  signatureUpdatedAt DateTime?
   active      Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -198,6 +220,7 @@ model Client {
   parentABCData         ParentABCData[]
   visitAttestations     VisitAttestation[]
   formDocuments         FormDocument[]
+  insuranceCodeAuthorizations InsuranceCodeAuthorization[]
 }
 
 model BCBA {
@@ -211,6 +234,49 @@ model BCBA {
   deletedAt DateTime?
 
   timesheets Timesheet[]
+}
+
+model InsuranceCodeAuthorization {
+  id              String                  @id @default(cuid())
+  clientId        String
+  insuranceId     String
+  cptCode         String
+  codeName        String
+  serviceType     InsuranceCodeServiceType
+  appliesTo       InsuranceCodeAppliesTo
+  startDate       DateTime
+  endDate         DateTime
+  authorizedUnits Int
+  notes           String?
+  isActive        Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  client    Client    @relation(fields: [clientId], references: [id])
+  insurance Insurance @relation(fields: [insuranceId], references: [id])
+
+  @@index([clientId])
+  @@index([insuranceId])
+  @@index([serviceType])
+  @@index([isActive])
+  @@unique([clientId, insuranceId, cptCode, serviceType, startDate, endDate, appliesTo, isActive])
+}
+
+model SignatureRequestToken {
+  id             String               @id @default(cuid())
+  entityType     SignatureEntityType
+  entityId       String
+  email          String
+  tokenHash      String               @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime             @default(now())
+  createdByUserId String
+
+  createdByUser User                 @relation(fields: [createdByUserId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([expiresAt])
 }
 
 model Insurance {
@@ -232,6 +298,7 @@ model Insurance {
   timesheets     Timesheet[]            @relation("TimesheetInsurance")
   invoiceEntries InvoiceEntry[]
   rateHistory    InsuranceRateHistory[]
+  insuranceCodeAuthorizations InsuranceCodeAuthorization[]
 }
 
 model BcbaInsurance {

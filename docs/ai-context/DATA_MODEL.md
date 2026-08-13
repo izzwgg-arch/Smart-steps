@@ -9,9 +9,16 @@ Schemas:
 
 ### User
 - Purpose: staff/admin accounts.
-- Role enum: `ADMIN`, `BCBA`, `STAFF`.
+- Legacy role enum: `ADMIN`, `BCBA`, `STAFF` (kept for display/backward compat; no longer drives access decisions).
+- `roleId` (nullable FK to `Role`) — the actual access-control assignment as of the Phase 1 permission system; see `Role`/`Permission`/`RolePermission` below and `PERMISSIONS.md`.
 - Sensitive fields: password hash/reset/invite fields if present in schema.
 - Risk: auth/permissions.
+
+### Role / Permission / RolePermission (Phase 1 permission system)
+- `Role`: `id, key, name, description, isSystem, isActive`. Seeded system roles: Admin, BCBA, Staff (legacy-faithful), plus Owner, Office Admin, Scheduler, Billing Manager, Receptionist, Provider, Read Only.
+- `Permission`: `id, key (unique), category, label` — seeded from `server/src/config/permissions.js`, the single source of truth for the ~70-key catalog.
+- `RolePermission`: join table, `@@unique([roleId, permissionId])` — boolean grant model.
+- See `docs/ai-context/PERMISSIONS.md` for the full architecture, catalog, and enforcement helpers.
 
 ### Client
 - Purpose: clinic clients.
@@ -77,8 +84,15 @@ Schemas:
 ## SmartSteps Important Models
 
 ### User / Role
-- Role enum: `RBT`, `BCBA`, `ADMIN`.
+- Legacy role enum: `RBT`, `BCBA`, `ADMIN` (kept for display/backward compat; no longer drives access decisions).
+- `appRoleId` (nullable FK to `AppRole`) — the actual access-control assignment as of the Phase 1 permission system; see `AppRole`/`AppPermission`/`AppRolePermission` below and `PERMISSIONS.md`.
 - Relationships: assignments, sessions, notes, completed assessments, target annotations.
+
+### AppRole / AppPermission / AppRolePermission (Phase 1 permission system)
+- `AppRole`: `id, key, name, description, isSystem, isActive`. Seeded system roles: RBT, BCBA, Admin (legacy-faithful), plus Supervisor, Parent Viewer, Read Only.
+- `AppPermission`: `id, key (unique), category, label` — seeded from `smart-steps/src/lib/permissionKeys.ts`. Client-scoped keys encode scope directly, e.g. `smartsteps.clients.view.assigned` vs `smartsteps.clients.view.all`.
+- `AppRolePermission`: join table, boolean grant model.
+- See `docs/ai-context/PERMISSIONS.md` for the full architecture, catalog, and enforcement helpers (including `ClientAssignment`-based scoping for `.assigned` keys).
 
 ### Client
 - Purpose: ABA client profile.
