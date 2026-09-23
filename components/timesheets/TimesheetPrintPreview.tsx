@@ -59,8 +59,8 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
   // The performing clinician's name always appears; a supervising BCBA is shown as an
   // ADDITIONAL line. Only the signature switches to the supervisor, because the work was
   // delivered under that person's license. See generateTimesheetHTML for the same logic.
-  const signingBcba = timesheet.supervisingBcba || timesheet.bcba
-  const signatureLabel = timesheet.supervisingBcba ? 'Supervising BCBA Signature:' : 'BCBA Signature:'
+  // Both clinicians sign when there is a supervisor - see generateTimesheetHTML.
+  const hasSupervisor = Boolean(timesheet.supervisingBcba)
   
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
@@ -292,15 +292,15 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
 
             {/* Signatures */}
             {isBCBATimesheet ? (
-              <div className="mb-6">
+              <div className={`mb-6 ${hasSupervisor ? 'grid grid-cols-2 gap-8' : ''}`}>
                 <div>
                   <div className="mb-2">
-                    <span className="font-semibold">{signatureLabel}</span>
+                    <span className="font-semibold">BCBA Signature:</span>
                   </div>
-                  {signingBcba.signature ? (
+                  {timesheet.bcba.signature ? (
                     <div className="mb-2">
                       <img
-                        src={signingBcba.signature}
+                        src={timesheet.bcba.signature}
                         alt="BCBA Signature"
                         className="max-h-20 max-w-full object-contain border border-gray-300 print:max-h-16"
                         style={{ maxHeight: '80px' }}
@@ -313,6 +313,28 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                     </>
                   )}
                 </div>
+                {timesheet.supervisingBcba && (
+                  <div>
+                    <div className="mb-2">
+                      <span className="font-semibold">Supervising BCBA Signature:</span>
+                    </div>
+                    {timesheet.supervisingBcba.signature ? (
+                      <div className="mb-2">
+                        <img
+                          src={timesheet.supervisingBcba.signature}
+                          alt="Supervising BCBA Signature"
+                          className="max-h-20 max-w-full object-contain border border-gray-300 print:max-h-16"
+                          style={{ maxHeight: '80px' }}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="h-12 border-b border-gray-400 mb-1"></div>
+                        <div className="text-xs text-gray-400 italic">(No signature on file)</div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-8 mb-6">

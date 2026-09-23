@@ -80,8 +80,9 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   // shown as an ADDITIONAL line, never as a replacement.
   // The signature is the supervising BCBA's when there is one, because the work was
   // delivered under that person's license.
-  const signingBcba = timesheet.supervisingBcba || timesheet.bcba
-  const signatureLabel = timesheet.supervisingBcba ? 'Supervising BCBA Signature' : 'BCBA Signature'
+  // Both clinicians sign when there is a supervisor: the performer for their own hours,
+  // the supervising BCBA because the work was delivered under that person's license.
+  const hasSupervisor = Boolean(timesheet.supervisingBcba)
   
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
@@ -308,7 +309,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     
     .signatures {
       display: grid;
-      grid-template-columns: ${isBCBA ? '1fr' : '1fr 1fr'};
+      grid-template-columns: ${isBCBA && !hasSupervisor ? '1fr' : '1fr 1fr'};
       gap: 20px;
       margin-bottom: 12px;
     }
@@ -479,11 +480,19 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   <div class="signatures">
     ${isBCBA ? `
     <div>
-      <div class="signature-label">${signatureLabel}</div>
-      ${signingBcba.signature
-        ? `<div class="signature-container"><img src="${signingBcba.signature}" alt="BCBA Signature" /></div>`
+      <div class="signature-label">BCBA Signature</div>
+      ${timesheet.bcba.signature
+        ? `<div class="signature-container"><img src="${timesheet.bcba.signature}" alt="BCBA Signature" /></div>`
         : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'}
     </div>
+    ${hasSupervisor ? `
+    <div>
+      <div class="signature-label">Supervising BCBA Signature</div>
+      ${timesheet.supervisingBcba!.signature
+        ? `<div class="signature-container"><img src="${timesheet.supervisingBcba!.signature}" alt="Supervising BCBA Signature" /></div>`
+        : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'}
+    </div>
+    ` : ''}
     ` : `
     <div>
       <div class="signature-label">Client Signature:</div>

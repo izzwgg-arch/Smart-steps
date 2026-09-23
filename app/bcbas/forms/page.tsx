@@ -1,33 +1,18 @@
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
-import { DashboardNav } from '@/components/DashboardNav'
-import { FormsDashboard } from '@/components/bcbas/forms/FormsDashboard'
-import { getUserPermissions } from '@/lib/permissions'
 
-export default async function BCBAFormsPage() {
-  const session = await getServerSession(authOptions)
-
-  if (!session) {
-    redirect('/login')
-  }
-
-  // Check permissions
-  const permissions = await getUserPermissions(session.user.id)
-  const canView = permissions['FORMS_VIEW']?.canView === true || 
-                  session.user.role === 'ADMIN' || 
-                  session.user.role === 'SUPER_ADMIN'
-
-  if (!canView) {
-    redirect('/dashboard?error=not-authorized')
-  }
-
-  return (
-    <div className="min-h-screen">
-      <DashboardNav userRole={session.user.role} />
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <FormsDashboard />
-      </main>
-    </div>
-  )
+/**
+ * Retired route - redirects to /forms
+ *
+ * This page was backed by the ParentABCData / ParentTrainingSignIn /
+ * VisitAttestation tables, which do NOT exist in the production database
+ * (verified 2026-09-23 - only FormDocument does), so any real use threw. The
+ * ABC variant also still applied one behavior to every row, which the live form
+ * no longer does.
+ *
+ * The working implementation lives under /forms and stores everything in
+ * FormDocument. Kept as a redirect so existing links and bookmarks land
+ * somewhere that works; the original implementation is in git history.
+ */
+export default function RetiredFormRoute() {
+  redirect('/forms')
 }

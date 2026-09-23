@@ -313,7 +313,8 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
     // Allow saving with ONE complete row (ignore extra incomplete rows)
     // Start and end times are optional, but if provided, both must be valid and end > start
     const validRows = rows.filter((r) => {
-      if (!r.date || !r.antecedent || !r.consequence) {
+      // Behavior is required on every row - each day logs what the behavior was.
+      if (!r.date || !r.antecedent || !r.behavior.trim() || !r.consequence) {
         return false
       }
       // If start time is provided, validate it
@@ -331,7 +332,25 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
       return true
     })
     if (validRows.length === 0) {
-      toast.error('Please add at least one complete row (Date, Antecedent, Consequence)')
+      toast.error('Please add at least one complete row (Date, Antecedent, Behavior, Consequence)')
+      return
+    }
+
+    // A row the user started but left without a behavior would be silently dropped by the
+    // filter above, so call it out instead of saving a partial sheet.
+    const startedRows = rows.filter(
+      (r) => r.date || r.antecedent || r.behavior.trim() || r.consequence || r.notes
+    )
+    const incomplete = startedRows.filter((r) => !validRows.includes(r))
+    if (incomplete.length > 0) {
+      const missingBehaviorOnly = incomplete.filter(
+        (r) => r.date && r.antecedent && r.consequence && !r.behavior.trim()
+      )
+      toast.error(
+        missingBehaviorOnly.length === incomplete.length
+          ? `Behavior is required on every row — ${incomplete.length} row(s) are missing it.`
+          : `${incomplete.length} row(s) are incomplete and will not be saved. Each row needs Date, Antecedent, Behavior and Consequence.`
+      )
       return
     }
 
@@ -891,7 +910,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Start Time</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">End Time</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Antecedent</th>
-                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Behavior</th>
+                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">
+                    Behavior <span className="text-red-500">*</span>
+                  </th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Consequence</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Notes</th>
                   {canEdit && <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Actions</th>}
@@ -949,7 +970,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                         onChange={(e) => handleRowChange(row.id, 'behavior', e.target.value)}
                         disabled={!canEdit}
                         className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
-                        placeholder="Behavior"
+                        placeholder="Required"
                       />
                     </td>
                     <td className="px-4 py-2">

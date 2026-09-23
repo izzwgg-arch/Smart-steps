@@ -182,12 +182,24 @@ printed headers.
 - **Back-compat:** when a sheet saved under the old scheme is opened, its single
   page-level `behavior` seeds every row, so historical records still read
   correctly. Re-saving writes the per-row values.
-- Behavior is free text (like the old field), not a dropdown, and is not
-  required — a row still needs Date, Antecedent and Consequence to save.
+- Behavior is free text (like the old field), not a dropdown, and is **required on
+  every row** — a row needs Date, Antecedent, Behavior and Consequence to save.
+  A row that is started but left without a behavior blocks the save with a message
+  naming how many rows are missing it, rather than being silently dropped.
 
-Note the older `/bcbas/forms/parent-abc-data` route (backed by the
-`ParentABCData` / `ParentABCDataRow` tables) is **not** linked from the dashboard
-and still applies one `behaviorText` to every row. The live path is `/forms`.
+### The `/bcbas/forms` routes are retired (2026-09-23)
+
+Every route under `/bcbas/forms` was backed by tables that **do not exist in the
+production database** — `ParentABCData`, `ParentABCDataRow`,
+`ParentTrainingSignIn`, `ParentTrainingSignInRow`, `VisitAttestation`,
+`VisitAttestationRow` are all absent; only `FormDocument` exists. Any real use
+threw, and the ABC variant still applied one behavior to every row.
+
+All seven pages are now thin `redirect()` stubs pointing at the working `/forms`
+equivalents, so old links and bookmarks land somewhere that works. The original
+implementations (and the unused `app/api/bcbas/forms/*` routes) remain in git
+history. The `ParentABCData*` / `ParentTrainingSignIn*` / `VisitAttestation*`
+models are still declared in `schema.prisma` but are unused by the live app.
 
 ## Supervising BCBA on BCBA timesheets
 
@@ -217,9 +229,10 @@ entirely, so that raises no schedule conflict.
   existing `BCBA` line, plus an additional `Supervising BCBA` line. The performer is
   never replaced — these timesheets are the practice's own record of who delivered the
   sessions, and the biller decides what goes to the payer.
-- Only the **signature** switches to the supervising BCBA, since the work was delivered
-  under that person's license; the block is relabelled `Supervising BCBA Signature`.
-  With no supervisor set, it stays `BCBA Signature` with the performer's signature
+- **Both clinicians sign.** With a supervisor set, the signature area becomes two
+  columns: `BCBA Signature` (the performing clinician, for their own hours) and
+  `Supervising BCBA Signature` (because the work was delivered under that license).
+  With no supervisor it stays a single `BCBA Signature` block, exactly as before
   (`lib/pdf/timesheetHtmlTemplate.ts`, `components/timesheets/TimesheetPrintPreview.tsx`).
 - The batch email summary lists the performing clinician, matching the PDF's `BCBA` line.
 - The BCBA timesheet list shows the performer with `under <supervisor>` beneath it.
