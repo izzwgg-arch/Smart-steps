@@ -11,6 +11,8 @@ A comprehensive web application for managing ABA (Applied Behavior Analysis) ope
 - **BCBA Management**: Manage Board Certified Behavior Analysts
 - **Insurance Management**: Configure insurance rates (rate changes don't affect existing invoices)
 - **Timesheet System**: Create, submit, approve, and lock timesheets with workflow
+- **Parent ABC notes**: Per-row behavior tracking (Antecedent / Behavior /
+  Consequence on every line, not one behavior per sheet)
 - **Supervising BCBA (limited permit / LBA support)**: A BCBA timesheet can name an
   optional **Supervising BCBA** — the licensed BCBA whose license the work is billed
   under when the performing clinician holds a limited permit. See
@@ -161,6 +163,31 @@ a-plus-center/
 ├── deploy/               # Deployment configs
 └── public/               # Static assets
 ```
+
+## Parent ABC notes: behavior is per row
+
+On the Parent ABC data sheet (`/forms/parent-abc`,
+`components/forms/ParentABCForm.tsx`) **each row records its own behavior**. The
+table follows true A-B-C order — Antecedent, **Behavior**, Consequence — so one
+sheet can log several different behaviors across the month.
+
+Behavior used to be a single page-level header field, which forced every incident
+on a sheet to share one behavior. That field is gone from both the on-screen and
+printed headers.
+
+- **Storage:** each row in `FormDocument.payload.rows` carries a `behavior`.
+- **`FormDocument.behavior`** (the old header column) is kept populated with the
+  distinct behaviors on the sheet, comma-separated, so the column stays
+  informative. It is no longer the source of truth.
+- **Back-compat:** when a sheet saved under the old scheme is opened, its single
+  page-level `behavior` seeds every row, so historical records still read
+  correctly. Re-saving writes the per-row values.
+- Behavior is free text (like the old field), not a dropdown, and is not
+  required — a row still needs Date, Antecedent and Consequence to save.
+
+Note the older `/bcbas/forms/parent-abc-data` route (backed by the
+`ParentABCData` / `ParentABCDataRow` tables) is **not** linked from the dashboard
+and still applies one `behaviorText` to every row. The live path is `/forms`.
 
 ## Supervising BCBA on BCBA timesheets
 

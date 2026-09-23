@@ -24,6 +24,7 @@ interface FormRow {
   startTime: string
   endTime: string
   antecedent: string
+  behavior: string // Per-row: each incident records its own behavior
   consequence: string
   notes: string
 }
@@ -55,7 +56,6 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
   const forceReadOnly = mode === 'view'
   const [clientId, setClientId] = useState('')
   const [month, setMonth] = useState(new Date().getMonth() + 1)
-  const [behavior, setBehavior] = useState('')
   const [rows, setRows] = useState<FormRow[]>([
     {
       id: '1',
@@ -63,6 +63,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
       startTime: '',
       endTime: '',
       antecedent: '',
+      behavior: '',
       consequence: '',
       notes: '',
     },
@@ -132,7 +133,6 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
     if (clientId && month) {
       loadForm()
     } else {
-      setBehavior('')
       setRows([
         {
           id: '1',
@@ -140,6 +140,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           startTime: '',
           endTime: '',
           antecedent: '',
+          behavior: '',
           consequence: '',
           notes: '',
         },
@@ -156,7 +157,9 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
       if (res.ok) {
         const form = await res.json()
         if (form) {
-          setBehavior(form.behavior || '')
+          // Back-compat: forms saved before behavior became per-row carry a single
+          // page-level value. Seed every row with it so old records still read correctly.
+          const legacyBehavior = form.behavior || ''
           if (form.payload && Array.isArray(form.payload.rows)) {
             setRows(
               form.payload.rows.map((row: any, idx: number) => ({
@@ -165,6 +168,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                 startTime: row.startTime || '',
                 endTime: row.endTime || '',
                 antecedent: row.antecedent || '',
+                behavior: row.behavior || legacyBehavior,
                 consequence: row.consequence || '',
                 notes: row.notes || '',
               }))
@@ -177,6 +181,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   startTime: '',
                   endTime: '',
                   antecedent: '',
+                  behavior: '',
                   consequence: '',
                   notes: '',
                 },
@@ -190,13 +195,13 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                 startTime: '',
                 endTime: '',
                 antecedent: '',
+                behavior: '',
                 consequence: '',
                 notes: '',
               },
             ])
           }
         } else {
-          setBehavior('')
           setRows([
             {
               id: '1',
@@ -204,13 +209,13 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
               startTime: '',
               endTime: '',
               antecedent: '',
+              behavior: '',
               consequence: '',
               notes: '',
             },
           ])
         }
       } else {
-        setBehavior('')
         setRows([
           {
             id: '1',
@@ -218,6 +223,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
             startTime: '',
             endTime: '',
             antecedent: '',
+            behavior: '',
             consequence: '',
             notes: '',
           },
@@ -225,7 +231,6 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
       }
     } catch (error) {
       console.error('Error loading form:', error)
-      setBehavior('')
       setRows([
         {
           id: '1',
@@ -233,6 +238,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           startTime: '',
           endTime: '',
           antecedent: '',
+          behavior: '',
           consequence: '',
           notes: '',
         },
@@ -253,6 +259,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
         startTime: '',
         endTime: '',
         antecedent: '',
+        behavior: '',
         consequence: '',
         notes: '',
       },
@@ -332,16 +339,21 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
     try {
       const currentYear = new Date().getFullYear()
       const payload = {
-        header: { behavior },
         rows: validRows.map((r) => ({
           date: r.date!.toISOString(),
           startTime: r.startTime || '',
           endTime: r.endTime || '',
           antecedent: r.antecedent,
+          behavior: r.behavior || '',
           consequence: r.consequence,
           notes: r.notes || undefined,
         })),
       }
+      // Behavior now lives on each row. FormDocument.behavior stays populated with the
+      // distinct behaviors on the sheet so that column remains informative.
+      const behaviorSummary = Array.from(
+        new Set(validRows.map((r) => r.behavior.trim()).filter(Boolean))
+      ).join(', ')
 
       const res = await fetch('/api/forms', {
         method: 'POST',
@@ -351,7 +363,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
           clientId,
           month,
           year: currentYear,
-          behavior,
+          behavior: behaviorSummary || null,
           payload,
         }),
       })
@@ -864,20 +876,6 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   </div>
                   <div className="print-only info-value">{months[month - 1]}</div>
                 </div>
-                <div>
-                  <div className="info-label">Behavior</div>
-                  <div className="no-print">
-                    <input
-                      type="text"
-                      value={behavior}
-                      onChange={(e) => setBehavior(e.target.value)}
-                      disabled={!canEdit || forceReadOnly}
-                      className="w-full border-2 border-gray-300 rounded-lg px-4 py-2.5 disabled:bg-gray-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                      placeholder="Enter behavior description"
-                    />
-                  </div>
-                  <div className="print-only info-value">{behavior || 'N/A'}</div>
-                </div>
               </div>
             </div>
           </div>
@@ -893,6 +891,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Start Time</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">End Time</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Antecedent</th>
+                  <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Behavior</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Consequence</th>
                   <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Notes</th>
                   {canEdit && <th className="px-4 py-2 text-left font-semibold border-b border-gray-300">Actions</th>}
@@ -944,6 +943,16 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                       </select>
                     </td>
                     <td className="px-4 py-2">
+                      <input
+                        type="text"
+                        value={row.behavior}
+                        onChange={(e) => handleRowChange(row.id, 'behavior', e.target.value)}
+                        disabled={!canEdit}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 disabled:bg-gray-100"
+                        placeholder="Behavior"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
                       <select
                         value={row.consequence}
                         onChange={(e) => handleRowChange(row.id, 'consequence', e.target.value)}
@@ -988,7 +997,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
 
           {/* Print View - Modern Table Design */}
           <div className="print-only mt-6">
-            {rows.length > 0 && rows.some((r) => r.date || r.antecedent || r.consequence) ? (
+            {rows.length > 0 && rows.some((r) => r.date || r.antecedent || r.behavior || r.consequence) ? (
               <>
                 {/* Duplicate header for page 2+ - placed BEFORE table */}
                 <div className="print-header-duplicate print-only" style={{ pageBreakBefore: 'always', breakBefore: 'page', marginBottom: '20pt' }}>
@@ -1009,10 +1018,6 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                           <div className="info-label">Month</div>
                           <div className="print-only info-value">{months[month - 1]}</div>
                         </div>
-                        <div>
-                          <div className="info-label">Behavior</div>
-                          <div className="print-only info-value">{behavior || 'N/A'}</div>
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -1025,13 +1030,14 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                         <th className="table-header">Start Time</th>
                         <th className="table-header">End Time</th>
                         <th className="table-header">Antecedent</th>
+                        <th className="table-header">Behavior</th>
                         <th className="table-header">Consequence</th>
                         <th className="table-header">Notes</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows
-                        .filter((r) => r.date || r.antecedent || r.consequence)
+                        .filter((r) => r.date || r.antecedent || r.behavior || r.consequence)
                         .map((row, idx) => (
                           <tr key={idx} className={idx % 2 === 0 ? 'table-row-even' : 'table-row-odd'}>
                             <td className="table-cell">
@@ -1042,6 +1048,7 @@ export function ParentABCForm({ clients }: ParentABCFormProps) {
                             <td className="table-cell">{row.startTime ? formatTime12(row.startTime) : '—'}</td>
                             <td className="table-cell">{row.endTime ? formatTime12(row.endTime) : '—'}</td>
                             <td className="table-cell">{row.antecedent || '—'}</td>
+                            <td className="table-cell">{row.behavior || '—'}</td>
                             <td className="table-cell">{row.consequence || '—'}</td>
                             <td className="table-cell">{row.notes || '—'}</td>
                           </tr>
