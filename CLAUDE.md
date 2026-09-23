@@ -265,17 +265,40 @@ leaves PDF generation without fonts.
 
 ### If the change includes a Prisma migration
 
-Run the migration BEFORE the build/restart, from `/var/www/aplus-center`:
+**`prisma migrate deploy` is NOT usable on this server (verified 2026-09-23).**
+The production database has **no `_prisma_migrations` table** — it has never been
+managed by `prisma migrate`. With no baseline, `migrate deploy` would try to
+apply the entire `prisma/migrations/` history against an already-populated
+database: it will fail, and it can do damage. Baselining the DB
+(`prisma migrate resolve --applied ...` for every existing migration) is a
+separate task that needs explicit approval.
+
+Until that is done, apply a schema change to production as a **single idempotent
+SQL statement via `psql`**, then regenerate and rebuild:
 
 ```
-cd /var/www/aplus-center && npx prisma migrate deploy && npx prisma generate
+ssh ... root@66.94.105.43 "sudo -u postgres psql -d apluscenter -f /tmp/<change>.sql && cd /var/www/aplus-center && npx prisma generate"
 ```
 
-`prisma/migrations/` is the migration history — use `migrate deploy` in
-production. Several older docs say `npx prisma db push`; **do not use it on
-production**, it can drop columns to match the schema. Confirm any schema
-change with the user first (`docs/ai-context/RULES.md` lists migrations as
-high-risk/no-go without explicit approval).
+Guard every statement so re-running is harmless: `ADD COLUMN IF NOT EXISTS`,
+`CREATE INDEX IF NOT EXISTS`, and a `pg_constraint` existence check before
+`ADD CONSTRAINT`. Still **never `prisma db push`** — it drops columns to match
+the schema. Confirm any schema change with the user first
+(`docs/ai-context/RULES.md` lists migrations as high-risk/no-go without explicit
+approval).
+
+### Schema drift: the server has a model this repo does not (verified 2026-09-23)
+
+The server's `prisma/schema.prisma` is byte-identical to this repo's **plus** an
+appended `AppEventLog` model — Ops Center event logging, `@@map("appeventlog")`.
+The `appeventlog` table **exists in the live database**; the model exists in **no
+repo**. It came in with the `feature/ops-center-logging` commits.
+
+**Copying this repo's `schema.prisma` over the server's would delete that model**,
+so the next `prisma generate` would drop `prisma.appEventLog` from the client and
+break the live Ops Center logging code. When a schema change has to reach
+production, either edit the server's schema in place or re-append the
+`AppEventLog` block, then diff to confirm it survived.
 
 ### First-time setup on the server
 
