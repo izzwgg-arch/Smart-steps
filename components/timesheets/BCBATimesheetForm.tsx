@@ -1281,9 +1281,10 @@ export function BCBATimesheetForm({
               </select>
               <p className="mt-1 text-xs text-gray-500">
                 For a clinician on a limited permit (LBA): the licensed BCBA whose license
-                the work is billed under. The printed timesheet goes out under the
-                supervising BCBA&apos;s name and signature. Their own hours, reports and
-                schedule are not affected.
+                the work is billed under. Both names print on the timesheet — the
+                performing clinician above and the supervising BCBA here — and the
+                supervising BCBA signs it. Their own hours, reports and schedule are not
+                affected.
               </p>
             </div>
             <div>

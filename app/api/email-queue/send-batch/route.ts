@@ -196,9 +196,8 @@ export async function POST(request: NextRequest) {
           type: item.entityType === 'BCBA' ? 'BCBA_TIMESHEET' : 'REGULAR_TIMESHEET',
           clientName: item.timesheet.client.name,
           providerName: item.timesheet.provider.name,
-          // Name of record - matches the attached PDF, which is issued under the
-          // supervising BCBA's license when the performer holds a limited permit.
-          bcbaName: item.timesheet.supervisingBcba?.name || item.timesheet.bcba.name,
+          // The performing clinician - matches the BCBA line on the attached PDF.
+          bcbaName: item.timesheet.bcba.name,
           startDate: item.timesheet.startDate.toISOString(),
           endDate: item.timesheet.endDate.toISOString(),
           totalHours: item.totalHours,

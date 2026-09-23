@@ -186,12 +186,15 @@ entirely, so that raises no schedule conflict.
 
 **What changes when a Supervising BCBA is set**
 
-- The printed timesheet and the generated PDF are issued under the **supervising BCBA's
-  name**, with the **supervising BCBA's signature** in the signature block
-  (`lib/pdf/timesheetHtmlTemplate.ts`, `components/timesheets/TimesheetPrintPreview.tsx`
-  both resolve a single `signingBcba`).
-- The batch email summary lists the same name of record, so the email body and its
-  attached PDF agree (`app/api/email-queue/send-batch`, `send-selected`).
+- The printed timesheet and PDF show **both names**: the performing clinician on the
+  existing `BCBA` line, plus an additional `Supervising BCBA` line. The performer is
+  never replaced — these timesheets are the practice's own record of who delivered the
+  sessions, and the biller decides what goes to the payer.
+- Only the **signature** switches to the supervising BCBA, since the work was delivered
+  under that person's license; the block is relabelled `Supervising BCBA Signature`.
+  With no supervisor set, it stays `BCBA Signature` with the performer's signature
+  (`lib/pdf/timesheetHtmlTemplate.ts`, `components/timesheets/TimesheetPrintPreview.tsx`).
+- The batch email summary lists the performing clinician, matching the PDF's `BCBA` line.
 - The BCBA timesheet list shows the performer with `under <supervisor>` beneath it.
 
 **What deliberately does NOT change — the supervising BCBA is never "interrupted"**

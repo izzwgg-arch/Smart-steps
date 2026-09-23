@@ -56,9 +56,11 @@ interface TimesheetPrintPreviewProps {
 export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPreviewProps) {
   // Detect if this is a BCBA timesheet (use isBCBA flag or check entries)
   const isBCBATimesheet = timesheet.isBCBA === true || !timesheet.entries.some((e) => e.notes === 'DR' || e.notes === 'SV')
-  // The BCBA of record on the printed document - see generateTimesheetHTML for the
-  // matching logic. Hours stay attributed internally to timesheet.bcba.
+  // The performing clinician's name always appears; a supervising BCBA is shown as an
+  // ADDITIONAL line. Only the signature switches to the supervisor, because the work was
+  // delivered under that person's license. See generateTimesheetHTML for the same logic.
   const signingBcba = timesheet.supervisingBcba || timesheet.bcba
+  const signatureLabel = timesheet.supervisingBcba ? 'Supervising BCBA Signature:' : 'BCBA Signature:'
   
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
@@ -136,8 +138,14 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
             {isBCBATimesheet ? (
               <div className="mb-6">
                 <div className="mb-2">
-                  <span className="font-semibold">BCBA:</span> {signingBcba.name}
+                  <span className="font-semibold">BCBA:</span> {timesheet.bcba.name}
                 </div>
+                {timesheet.supervisingBcba && (
+                  <div className="mb-2">
+                    <span className="font-semibold">Supervising BCBA:</span>{' '}
+                    {timesheet.supervisingBcba.name}
+                  </div>
+                )}
                 <div className="mb-2">
                   <span className="font-semibold">Client:</span> {timesheet.client.name || ''}
                 </div>
@@ -166,7 +174,7 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                   <span className="font-semibold">Provider:</span> {timesheet.provider.name}
                 </div>
                 <div className="mb-2">
-                  <span className="font-semibold">BCBA:</span> {signingBcba.name}
+                  <span className="font-semibold">BCBA:</span> {timesheet.bcba.name}
                 </div>
                 <div className="mb-2">
                   <span className="font-semibold">Child:</span> {timesheet.client.name || ''}
@@ -287,7 +295,7 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
               <div className="mb-6">
                 <div>
                   <div className="mb-2">
-                    <span className="font-semibold">BCBA Signature:</span>
+                    <span className="font-semibold">{signatureLabel}</span>
                   </div>
                   {signingBcba.signature ? (
                     <div className="mb-2">

@@ -177,9 +177,8 @@ export async function POST(request: NextRequest) {
       timesheetUrl: `${process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://app.smartstepsabapc.org'}/timesheets/${item.timesheet.id}`,
       clientName: item.timesheet.client.name,
       providerName: item.timesheet.provider.name,
-      // Name of record - matches the attached PDF, which is issued under the
-      // supervising BCBA's license when the performer holds a limited permit.
-      bcbaName: item.timesheet.supervisingBcba?.name || item.timesheet.bcba?.name || 'N/A',
+      // The performing clinician - matches the BCBA line on the attached PDF.
+      bcbaName: item.timesheet.bcba?.name || 'N/A',
       startDate: item.timesheet.startDate,
       endDate: item.timesheet.endDate,
       totalHours: item.timesheet.totalHours,
