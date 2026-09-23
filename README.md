@@ -176,6 +176,14 @@ Set it on the BCBA timesheet form (Assignment section). The dropdown excludes wh
 already selected as the performing BCBA, and the API rejects a supervisor equal to the
 performer.
 
+**Being a supervisor never restricts that BCBA's own timesheets.** The performing **BCBA**
+dropdown has no exclusions — every active BCBA is always selectable, including one who is
+named as Supervising BCBA elsewhere. The exclusion above is scoped to a single timesheet
+(so nobody is their own supervisor) and there is no unique constraint, so the same BCBA can
+be supervisor on any number of an LBA's timesheets *and* the performing BCBA on her own,
+covering the same dates and the same hours. BCBA timesheets skip overlap detection
+entirely, so that raises no schedule conflict.
+
 **What changes when a Supervising BCBA is set**
 
 - The printed timesheet and the generated PDF are issued under the **supervising BCBA's
