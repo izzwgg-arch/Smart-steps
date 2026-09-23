@@ -237,6 +237,45 @@ Production runs from `/var/www/aplus-center` under PM2 process `aplus-center`.
 **Always confirm with the user before deploying**, and never deploy a change
 that has not been built locally first (`npm run build`).
 
+### Targeted merge deploy — the procedure that works today (used 2026-09-23)
+
+Until the clone is re-pointed, this is how a change actually reaches production.
+It never runs `git pull` and never overwrites the server's unsaved work.
+
+1. **Diff before you copy.** For every file the change touches, fetch the
+   server's copy and diff it against the commit your work branched from. Do not
+   skip this: on 2026-09-23 the server's `app/api/timesheets/route.ts` and
+   `app/api/timesheets/[id]/route.ts` turned out to carry **Ops Center audit
+   logging (`createAuditLog` from `@/lib/audit`) that exists in no repo**. A
+   straight copy would have silently deleted it.
+2. **3-way merge, don't overwrite.** For any file that differs, merge with
+   `git merge-file -p --diff3 <mine> <base> <server>` where `<base>` is the
+   commit you branched from. Files identical to base are a clean fast-forward.
+   Preserve each server file's existing line endings (they are mixed: some CRLF,
+   some LF) so you don't add whole-file noise to `git status`.
+3. **Merge `prisma/schema.prisma` the same way** so `AppEventLog` survives
+   (see "Schema drift" below), and confirm it afterwards.
+4. **Back up first** to `/root/deploy-backups/$(date +%Y%m%d_%H%M%S)/`: a tar of
+   the files being replaced, `cp -a .next next-backup`, and
+   `sudo -u postgres pg_dump -Fc apluscenter > apluscenter.dump`.
+5. **Apply the schema change** as guarded SQL via `psql` (see the migration
+   section), and verify the column, index and FK exist.
+6. **Upload, then sanity-check before building.** Confirm the server-only code
+   survived (`grep -c createAuditLog`, `grep -c 'model AppEventLog'`), that your
+   feature is present, and that `git status --porcelain | wc -l` grew by exactly
+   the number of files you sent — nothing else.
+7. `npx prisma generate && npm run build && pm2 restart aplus-center`.
+   No `npm install` unless dependencies actually changed.
+8. **Verify properly.** `/` returns **307** — that is the NextAuth redirect and
+   is correct. Follow it: `curl -sL` must end at `/login` with **200** and the
+   title `Smart Steps - ABA Management Platform`. Then confirm the new code is in
+   the running build (`grep -rl '<new symbol>' .next/server`) and that
+   `/root/.pm2/logs/aplus-center-error.log` stops growing while idle.
+
+`Failed to find Server Action "x"` errors right after a restart are **expected** —
+they come from browser tabs still holding the previous build's action IDs and
+clear on refresh. Judge them by whether the log keeps growing, not by presence.
+
 ### Routine deploy — BLOCKED until the clone is re-pointed
 
 There is **no working git-based deploy** for this app right now. The production
