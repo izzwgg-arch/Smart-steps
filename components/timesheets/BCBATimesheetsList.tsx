@@ -27,6 +27,7 @@ interface TimesheetListItem {
   client: { name: string; phone?: string | null; id?: string }
   provider: { name: string; phone?: string | null; signature?: string | null }
   bcba: { name: string }
+  supervisingBcba?: { name: string } | null
   totalMinutes: number
 }
 
@@ -744,8 +745,13 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                 <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900 overflow-hidden text-ellipsis max-w-[200px]">
                   {timesheet.client.name}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 overflow-hidden text-ellipsis max-w-[200px]">
+                <td className="px-3 py-2 text-xs text-gray-500 overflow-hidden text-ellipsis max-w-[200px]">
                   {timesheet.bcba.name}
+                  {timesheet.supervisingBcba && (
+                    <div className="text-[11px] text-gray-400">
+                      under {timesheet.supervisingBcba.name}
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                   {formatDate(timesheet.startDate)}

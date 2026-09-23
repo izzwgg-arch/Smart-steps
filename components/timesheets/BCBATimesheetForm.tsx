@@ -53,6 +53,7 @@ interface Client {
 interface BCBA {
   id: string
   name: string
+  signature?: string | null
 }
 
 interface Insurance {
@@ -78,6 +79,7 @@ interface Timesheet {
   providerId: string
   clientId: string
   bcbaId: string
+  supervisingBcbaId?: string | null
   insuranceId?: string | null // BCBA timesheets use regular Insurance
   serviceType?: string | null
   sessionData?: string | null
@@ -184,6 +186,9 @@ export function BCBATimesheetForm({
   })
   const [clientId, setClientId] = useState(timesheet?.clientId || '')
   const [bcbaId, setBcbaId] = useState(timesheet?.bcbaId || '')
+  // Licensed BCBA whose license the work is billed under, for a clinician on a
+  // limited permit (LBA). Optional, and never counted as the supervisor's own hours.
+  const [supervisingBcbaId, setSupervisingBcbaId] = useState(timesheet?.supervisingBcbaId || '')
   const [serviceType, setServiceType] = useState(timesheet?.serviceType || '')
   const [sessionData, setSessionData] = useState(timesheet?.sessionData || '')
   const [dayEntries, setDayEntries] = useState<DayEntry[]>([])
@@ -989,6 +994,7 @@ export function BCBATimesheetForm({
           providerId: '', // BCBA timesheets don't use provider
           clientId,
           bcbaId,
+          supervisingBcbaId: supervisingBcbaId || null, // Billing identity only - not the supervisor's own hours
           insuranceId, // Use selected insurance
           isBCBA: true,
           serviceType: serviceType || null, // Keep for backward compatibility
@@ -1227,7 +1233,14 @@ export function BCBATimesheetForm({
               <select
                 required
                 value={bcbaId}
-                onChange={(e) => setBcbaId(e.target.value)}
+                onChange={(e) => {
+                  const nextBcbaId = e.target.value
+                  setBcbaId(nextBcbaId)
+                  // Never let the same person end up in both roles
+                  if (nextBcbaId && nextBcbaId === supervisingBcbaId) {
+                    setSupervisingBcbaId('')
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select BCBA</option>
@@ -1240,6 +1253,38 @@ export function BCBATimesheetForm({
                   )
                 })}
               </select>
+              <p className="mt-1 text-xs text-gray-500">
+                The clinician who actually performed these sessions. All hours on this
+                timesheet count toward this person.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Supervising BCBA <span className="text-gray-400">(optional)</span>
+              </label>
+              <select
+                value={supervisingBcbaId}
+                onChange={(e) => setSupervisingBcbaId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">None</option>
+                {Array.isArray(bcbas) && bcbas.map((bcba) => {
+                  if (!bcba || !bcba.id) return null
+                  // The performing clinician cannot also be their own supervisor
+                  if (bcba.id === bcbaId) return null
+                  return (
+                    <option key={bcba.id} value={bcba.id}>
+                      {bcba.name || 'Unnamed BCBA'}
+                    </option>
+                  )
+                })}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                For a clinician on a limited permit (LBA): the licensed BCBA whose license
+                the work is billed under. The printed timesheet goes out under the
+                supervising BCBA&apos;s name and signature. Their own hours, reports and
+                schedule are not affected.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

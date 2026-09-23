@@ -233,7 +233,11 @@ model BCBA {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  timesheets Timesheet[]
+  timesheets           Timesheet[] @relation("TimesheetBcba")
+  // BCBA timesheets this BCBA supervises (e.g. an LBA on a limited permit working
+  // under this BCBA's license). Deliberately separate from `timesheets` so a
+  // supervisor never accumulates the supervisee's hours.
+  supervisedTimesheets Timesheet[] @relation("TimesheetSupervisingBcba")
 }
 
 model InsuranceCodeAuthorization {
@@ -336,6 +340,11 @@ model Timesheet {
   providerId      String
   clientId        String
   bcbaId          String
+  // Licensed BCBA whose license the work is billed under, for a clinician working
+  // on a limited permit (LBA). Informational / billing-identity only: the hours stay
+  // attributed to bcbaId, so naming a supervisor here never adds to the supervisor's
+  // own hours, analytics, reports, or schedule-overlap checks.
+  supervisingBcbaId String?
   insuranceId     String? // Optional for BCBA timesheets
   isBCBA          Boolean         @default(false) // Flag to mark BCBA timesheets
   serviceType     String? // Service Type for BCBA: Assessment, Direct Care, Supervision, Treatment Planning, Parent Training
@@ -362,7 +371,8 @@ model Timesheet {
   user           User             @relation(fields: [userId], references: [id])
   provider       Provider         @relation(fields: [providerId], references: [id])
   client         Client           @relation(fields: [clientId], references: [id])
-  bcba           BCBA             @relation(fields: [bcbaId], references: [id])
+  bcba           BCBA             @relation("TimesheetBcba", fields: [bcbaId], references: [id])
+  supervisingBcba BCBA?           @relation("TimesheetSupervisingBcba", fields: [supervisingBcbaId], references: [id])
   insurance      Insurance?       @relation("TimesheetInsurance", fields: [insuranceId], references: [id])
   bcbaInsurance  BcbaInsurance?   @relation("TimesheetBcbaInsurance", fields: [bcbaInsuranceId], references: [id])
   entries        TimesheetEntry[]
@@ -381,6 +391,7 @@ model Timesheet {
   @@index([clientId]) // PERFORMANCE: Index for client filtering
   @@index([providerId]) // PERFORMANCE: Index for provider filtering
   @@index([bcbaId]) // PERFORMANCE: Index for BCBA filtering
+  @@index([supervisingBcbaId]) // Index for supervising BCBA lookup
   @@index([status]) // PERFORMANCE: Index for status filtering
   @@index([createdAt]) // PERFORMANCE: Index for date range queries
   @@index([startDate, endDate]) // PERFORMANCE: Composite index for date range

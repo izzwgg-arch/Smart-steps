@@ -11,6 +11,10 @@ A comprehensive web application for managing ABA (Applied Behavior Analysis) ope
 - **BCBA Management**: Manage Board Certified Behavior Analysts
 - **Insurance Management**: Configure insurance rates (rate changes don't affect existing invoices)
 - **Timesheet System**: Create, submit, approve, and lock timesheets with workflow
+- **Supervising BCBA (limited permit / LBA support)**: A BCBA timesheet can name an
+  optional **Supervising BCBA** — the licensed BCBA whose license the work is billed
+  under when the performing clinician holds a limited permit. See
+  "Supervising BCBA on BCBA timesheets" below.
 - **Automatic Invoicing**: Scheduled weekly invoice generation (Fridays at 4 PM ET)
 - **Manual Invoicing**: Create invoices by date range
 - **Payment Tracking**: Record payments with partial payment support
@@ -157,6 +161,50 @@ a-plus-center/
 ├── deploy/               # Deployment configs
 └── public/               # Static assets
 ```
+
+## Supervising BCBA on BCBA timesheets
+
+A clinician working on a **limited permit** (an LBA) delivers BCBA-level services under
+a licensed BCBA's license. A BCBA timesheet therefore carries two people:
+
+| Field | Meaning |
+| --- | --- |
+| **BCBA** (`bcbaId`, required) | The clinician who actually performed the sessions. **All hours on the timesheet count toward this person.** |
+| **Supervising BCBA** (`supervisingBcbaId`, optional) | The licensed BCBA whose license the work is billed under. Billing identity only. |
+
+Set it on the BCBA timesheet form (Assignment section). The dropdown excludes whoever is
+already selected as the performing BCBA, and the API rejects a supervisor equal to the
+performer.
+
+**What changes when a Supervising BCBA is set**
+
+- The printed timesheet and the generated PDF are issued under the **supervising BCBA's
+  name**, with the **supervising BCBA's signature** in the signature block
+  (`lib/pdf/timesheetHtmlTemplate.ts`, `components/timesheets/TimesheetPrintPreview.tsx`
+  both resolve a single `signingBcba`).
+- The batch email summary lists the same name of record, so the email body and its
+  attached PDF agree (`app/api/email-queue/send-batch`, `send-selected`).
+- The BCBA timesheet list shows the performer with `under <supervisor>` beneath it.
+
+**What deliberately does NOT change — the supervising BCBA is never "interrupted"**
+
+- **Hours stay attributed to `bcbaId`.** `supervisingBcbaId` appears in no aggregation,
+  no `where` clause, and no totals anywhere in the app. Naming a supervisor cannot add
+  a single minute to that person's own numbers.
+- **Analytics and Reports** filter on `bcbaId` only (`app/api/analytics/route.ts`,
+  `lib/reports/queryBuilder.ts`), so the supervisor's own totals are unaffected and the
+  LBA keeps their own line.
+- **Schedule / overlap detection is untouched.** `lib/server/timesheetOverlapValidation.ts`
+  matches on `providerId` and `clientId` only and skips BCBA timesheets entirely
+  (`isBCBA: false`), so a supervisor can never be flagged as double-booked for sessions
+  they did not personally deliver.
+- **Payroll is unrelated** — it is driven by scanner imports through `PayrollEmployee`
+  and never reads `bcbaId` or `supervisingBcbaId`.
+- **Invoicing** groups by client and insurance, not by BCBA.
+
+The field is nullable and additive (migration
+`prisma/migrations/20260923120000_add_timesheet_supervising_bcba`); existing timesheets
+are untouched and behave exactly as before.
 
 ## Environment Variables
 

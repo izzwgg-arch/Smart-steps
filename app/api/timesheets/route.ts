@@ -169,6 +169,7 @@ export async function GET(request: NextRequest) {
           client: { select: { id: true, name: true, phone: true } },
           provider: { select: { name: true, phone: true, signature: true } },
           bcba: { select: { name: true } },
+          supervisingBcba: { select: { name: true } },
           invoice: { select: { invoiceNumber: true } },
         },
         orderBy: [
@@ -231,6 +232,7 @@ export async function POST(request: NextRequest) {
       providerId,
       clientId,
       bcbaId,
+      supervisingBcbaId,
       insuranceId,
       isBCBA,
       serviceType,
@@ -273,6 +275,28 @@ export async function POST(request: NextRequest) {
         { error: 'Insurance is required' },
         { status: 400 }
       )
+    }
+
+    // Supervising BCBA: the licensed BCBA whose license an LBA on a limited permit
+    // works under. Optional, and never the same person as the performing BCBA.
+    const finalSupervisingBcbaId = supervisingBcbaId || null
+    if (finalSupervisingBcbaId) {
+      if (finalSupervisingBcbaId === bcbaId) {
+        return NextResponse.json(
+          { error: 'Supervising BCBA must be a different person than the BCBA on the timesheet' },
+          { status: 400 }
+        )
+      }
+      const supervisor = await prisma.bCBA.findFirst({
+        where: { id: finalSupervisingBcbaId, deletedAt: null },
+        select: { id: true },
+      })
+      if (!supervisor) {
+        return NextResponse.json(
+          { error: 'Supervising BCBA not found' },
+          { status: 400 }
+        )
+      }
     }
 
     // For BCBA timesheets, use a placeholder provider or find first active provider
@@ -442,6 +466,7 @@ export async function POST(request: NextRequest) {
               providerId: finalProviderId, // Use placeholder provider for BCBA timesheets
               clientId,
               bcbaId,
+              supervisingBcbaId: finalSupervisingBcbaId, // Billing identity only - not counted as the supervisor's own hours
               insuranceId: insuranceId, // Required for both regular and BCBA timesheets
               isBCBA: isBCBA === true,
               serviceType: serviceType || null,
@@ -473,6 +498,7 @@ export async function POST(request: NextRequest) {
               client: true,
               provider: true,
               bcba: true,
+              supervisingBcba: true,
               insurance: true,
               entries: true,
             },
@@ -486,6 +512,7 @@ export async function POST(request: NextRequest) {
               client: true,
               provider: true,
               bcba: true,
+              supervisingBcba: true,
               insurance: true,
               entries: true,
             },

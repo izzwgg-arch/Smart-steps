@@ -25,6 +25,7 @@ export default async function EditBCBATimesheetPage({
         client: true,
         provider: true,
         bcba: true,
+        supervisingBcba: true,
         insurance: true, // BCBA timesheets now use regular Insurance
         entries: {
           orderBy: { date: 'asc' },
@@ -74,6 +75,7 @@ export default async function EditBCBATimesheetPage({
     providerId: timesheet.providerId,
     clientId: timesheet.clientId,
     bcbaId: timesheet.bcbaId,
+    supervisingBcbaId: timesheet.supervisingBcbaId || null,
     // Use insuranceId if available, otherwise fallback to bcbaInsuranceId (for migration)
     insuranceId: timesheet.insuranceId || (timesheet as any).bcbaInsuranceId || null,
     serviceType: timesheet.serviceType || null,

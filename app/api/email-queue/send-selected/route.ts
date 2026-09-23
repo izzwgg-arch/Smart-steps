@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
             client: { select: { name: true } },
             provider: { select: { name: true } },
             bcba: { select: { name: true } },
+            supervisingBcba: { select: { name: true } },
             entries: { select: { minutes: true } },
           },
         })
@@ -176,7 +177,9 @@ export async function POST(request: NextRequest) {
       timesheetUrl: `${process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://app.smartstepsabapc.org'}/timesheets/${item.timesheet.id}`,
       clientName: item.timesheet.client.name,
       providerName: item.timesheet.provider.name,
-      bcbaName: item.timesheet.bcba?.name || 'N/A',
+      // Name of record - matches the attached PDF, which is issued under the
+      // supervising BCBA's license when the performer holds a limited permit.
+      bcbaName: item.timesheet.supervisingBcba?.name || item.timesheet.bcba?.name || 'N/A',
       startDate: item.timesheet.startDate,
       endDate: item.timesheet.endDate,
       totalHours: item.timesheet.totalHours,

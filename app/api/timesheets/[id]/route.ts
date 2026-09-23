@@ -23,6 +23,7 @@ export async function GET(
         client: true,
         provider: true,
         bcba: true,
+        supervisingBcba: true,
         insurance: true,
         entries: {
           orderBy: { date: 'asc' },
@@ -202,6 +203,29 @@ export async function PUT(
       prisma.client.findUnique({ where: { id: clientId }, select: { name: true } }),
     ])
 
+    // Supervising BCBA: the licensed BCBA whose license an LBA on a limited permit
+    // works under. Optional, and never the same person as the performing BCBA.
+    if ((timesheetData as any).supervisingBcbaId) {
+      const supervisingBcbaId = (timesheetData as any).supervisingBcbaId as string
+      const performingBcbaId = timesheetData.bcbaId || timesheet.bcbaId
+      if (supervisingBcbaId === performingBcbaId) {
+        return NextResponse.json(
+          { error: 'Supervising BCBA must be a different person than the BCBA on the timesheet' },
+          { status: 400 }
+        )
+      }
+      const supervisor = await prisma.bCBA.findFirst({
+        where: { id: supervisingBcbaId, deletedAt: null },
+        select: { id: true },
+      })
+      if (!supervisor) {
+        return NextResponse.json(
+          { error: 'Supervising BCBA not found' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Skip overlap validation for BCBA timesheets - they allow overlaps
     if (!isBCBA) {
       const overlapConflicts = await detectTimesheetOverlaps({
@@ -258,6 +282,13 @@ export async function PUT(
         updateData.sessionData = (timesheetData as any).sessionData
       }
 
+      // Supervising BCBA - the licensed BCBA whose license an LBA on a limited permit
+      // works under. Billing identity only; the hours stay attributed to bcbaId, so this
+      // never adds to the supervisor's own hours, analytics, reports or overlap checks.
+      if ((timesheetData as any).supervisingBcbaId !== undefined) {
+        updateData.supervisingBcbaId = (timesheetData as any).supervisingBcbaId || null
+      }
+
       updateData.entries = {
         create: entries.map((entry: any) => {
           // Calculate units (1 unit = 15 minutes, no rounding)
@@ -282,6 +313,7 @@ export async function PUT(
           client: true,
           provider: true,
           bcba: true,
+          supervisingBcba: true,
           insurance: true,
           entries: true,
         },

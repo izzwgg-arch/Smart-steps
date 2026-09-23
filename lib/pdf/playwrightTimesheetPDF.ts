@@ -51,6 +51,12 @@ export async function generateTimesheetPDFFromId(
             signature: true,
           },
         },
+        supervisingBcba: {
+          select: {
+            name: true,
+            signature: true,
+          },
+        },
         entries: {
           orderBy: { date: 'asc' },
           select: {
@@ -84,6 +90,7 @@ export async function generateTimesheetPDFFromId(
       client: timesheet.client as any,
       provider: timesheet.provider as any,
       bcba: timesheet.bcba,
+      supervisingBcba: timesheet.supervisingBcba || null,
       startDate: timesheet.startDate,
       endDate: timesheet.endDate,
       isBCBA: timesheet.isBCBA,

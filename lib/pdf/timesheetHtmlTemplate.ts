@@ -28,6 +28,13 @@ interface TimesheetForHTML {
     name: string
     signature?: string | null
   }
+  // Licensed BCBA whose license the work is billed under, when the performing
+  // clinician holds a limited permit (LBA). When present the document goes out
+  // under this person's name and signature.
+  supervisingBcba?: {
+    name: string
+    signature?: string | null
+  } | null
   startDate: Date | string
   endDate: Date | string
   isBCBA: boolean
@@ -68,6 +75,11 @@ function formatTime(time: string): string {
  */
 export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
   const isBCBA = timesheet.isBCBA
+  // The BCBA of record on the printed document. When a supervising BCBA is set, the
+  // work was performed under that person's license, so the document is issued in
+  // their name and carries their signature. The hours stay attributed internally to
+  // timesheet.bcba, which is what keeps the supervisor's own totals untouched.
+  const signingBcba = timesheet.supervisingBcba || timesheet.bcba
   
   // Calculate totals
   const drEntries = timesheet.entries.filter((e) => e.notes === 'DR')
@@ -358,7 +370,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     ${isBCBA ? `
     <div class="info-item">
       <span class="info-label">BCBA</span>
-      <div class="info-value">${timesheet.bcba.name}</div>
+      <div class="info-value">${signingBcba.name}</div>
     </div>
     <div class="info-item">
       <span class="info-label">Client</span>
@@ -379,7 +391,7 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     </div>
     <div class="info-item">
       <span class="info-label">BCBA</span>
-      <div class="info-value">${timesheet.bcba.name}</div>
+      <div class="info-value">${signingBcba.name}</div>
     </div>
     <div class="info-item">
       <span class="info-label">Child</span>
@@ -460,8 +472,8 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
     ${isBCBA ? `
     <div>
       <div class="signature-label">BCBA Signature</div>
-      ${timesheet.bcba.signature
-        ? `<div class="signature-container"><img src="${timesheet.bcba.signature}" alt="BCBA Signature" /></div>`
+      ${signingBcba.signature
+        ? `<div class="signature-container"><img src="${signingBcba.signature}" alt="BCBA Signature" /></div>`
         : '<div style="height: 48px; border-bottom: 1px solid #666; margin-bottom: 4px;"></div><div style="font-size: 10px; color: #999; font-style: italic;">(No signature on file)</div>'}
     </div>
     ` : `
