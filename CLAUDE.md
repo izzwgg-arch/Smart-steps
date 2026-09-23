@@ -63,31 +63,67 @@ ssh offers that key first.
 Never generate a new key, never ask for a password, and never print or copy the
 **private** key anywhere (not into files, commits, logs, or chat).
 
-Server layout (from repo evidence — `deploy/pm2.config.js`, `README.md`,
-`DEPLOY_COMMANDS.md`, `smartsteps-abapc.nginx`):
+Server layout — **verified live on 2026-09-23** (hostname `vmi3008231`):
 
 - App runs from `/var/www/aplus-center` under PM2 process **`aplus-center`**
-  (`deploy/pm2.config.js`: `npm start`, cluster mode, 2 instances, `PORT=3000`).
-- PM2 logs: `/var/log/aplus-center/error.log` and `/var/log/aplus-center/out.log`.
+  (id 0), started as `npm run start -- -H 127.0.0.1`, **fork mode, 1 instance,
+  as user `root`**.
+- **Port 3000.** `next-server` listens on `127.0.0.1:3000`; nginx proxies to
+  `http://127.0.0.1:3000`. The `3001` in `smartsteps-abapc.nginx` is **stale** —
+  that file is not the live config.
+- **PM2 logs are at `/root/.pm2/logs/aplus-center-out.log` and
+  `-error.log`** — NOT `/var/log/aplus-center/`. Those exist but were last
+  written 2026-01-09; they are dead files from an older setup.
+- nginx: `app.smartstepsabapc.org` on 443 with **certbot TLS**
+  (`/etc/letsencrypt/live/app.smartstepsabapc.org/`), port 80 301-redirects to
+  HTTPS. `client_max_body_size 25m`. Security headers come from
+  `/etc/nginx/snippets/smartsteps-security.conf`.
 - PostgreSQL on `localhost:5432`, database `apluscenter`, user `aplususer`.
-- nginx: `app.smartstepsabapc.org` → `127.0.0.1` (see port note below).
-- `TZ=America/New_York`. A node-cron invoice job runs in-process.
+- Runtime: node `v20.19.6`, npm `10.8.2`, PM2 `6.0.14`.
+- Cron lives in **`lib/cron.ts`**, `TIMEZONE = 'America/New_York'`:
+  - `INVOICE_GENERATION_SCHEDULE = '0 7 * * 2'` — Tuesdays 07:00 ET.
+  - `SCHEDULED_EMAIL_CHECK_SCHEDULE = '* * * * *'` — every minute.
+  `README.md`'s "Fridays at 4:00 PM ET" is **wrong**; the code is authoritative.
 
-**`UNKNOWN — verify before changing`** (unresolved conflicts in the repo docs;
-confirm against the live server before relying on any of these):
+**`deploy/pm2.config.js` does not describe the live process.** It specifies
+cluster mode, 2 instances and `/var/log/aplus-center/*` logs; the live process
+is fork mode, 1 instance, logging to `/root/.pm2`. Do not `pm2 start
+deploy/pm2.config.js` on a whim — it would change the process topology. To
+restart what is actually running, use `pm2 restart aplus-center`.
 
-- **Production port.** `deploy/pm2.config.js` sets `PORT=3000` and most docs
-  `curl http://localhost:3000`, but `smartsteps-abapc.nginx` proxies to
-  `127.0.0.1:3001`. Check `pm2 describe aplus-center` and the live nginx site.
-- **Whether `/var/www/aplus-center` is a git clone.**
-  `DEPLOY_GIT_INSTRUCTIONS.md` recorded it as *not* a git repo; the git-based
-  deploy in Rule 5 assumes it is. Run
-  `git -C /var/www/aplus-center rev-parse --git-dir` before the first git deploy.
-- **The invoice cron schedule.** `README.md` says Fridays 4:00 PM ET;
-  `DEPLOYMENT_QUICK_START.md` and `PRODUCTION_SERVER_DEPLOYMENT.md` say
-  Tuesdays 7:00 AM ET (`0 7 * * 2`). Read the code, not the docs.
-- **Which nginx site file is live**, and whether TLS is via certbot.
-  `deploy/nginx.conf` is still a `your-domain.com` template.
+## The production clone points at the WRONG repo (found 2026-09-23)
+
+**Read this before any git-based deploy.** `/var/www/aplus-center` *is* a git
+clone, but:
+
+- its `origin` is **`git@github.com:izzwgg-arch/aplus.git`** — the other repo;
+- it is on branch **`feature/ops-center-logging`** at `fcc9e90`, level with
+  `origin/feature/ops-center-logging`;
+- it has **17 uncommitted changes** (modified payroll routes, dashboard, PDF
+  helpers, `middleware.ts`, `next.config.js`, plus added
+  `lib/payroll/employeeMonthlyReportBuilder.ts` and an untracked
+  `app/api/payroll/reports/employee/[employeeId]/route.ts`);
+- there is **no `Smart-steps` remote configured** at all.
+
+Consequences:
+
+- **Never run `git pull origin main` in `/var/www/aplus-center`.** That would
+  pull the post-split `aplus` main, which does not contain this app at its root
+  — it would overwrite production with a different product's tree.
+- The live `.next` build is from **2026-06-01 23:37**, just after the newest
+  source file (2026-06-01 23:34), so the running app matches that working tree —
+  including the uncommitted changes. Those 17 files are **live code that exists
+  in no repo**.
+- Production and `Smart-steps` `main` have **diverged**. Comparing 6 files with
+  line endings normalized: `middleware.ts`, `next.config.js` and
+  `lib/payroll/employeeMonthlyReportBuilder.ts` match, while
+  `lib/pdf/playwrightPDF.ts`, `app/dashboard/page.tsx` and
+  `app/api/payroll/import/save/route.ts` differ. Which side is newer has not
+  been established per file.
+
+Reconciling this (committing the server's work somewhere, then re-pointing the
+clone at `izzwgg-arch/Smart-steps`) is a **user decision, not a routine task**.
+Back up `/var/www/aplus-center` before attempting it.
 
 ## Rule 3: Git — commit and push after EVERY task
 
@@ -122,9 +158,17 @@ the matching doc under `docs/ai-context/` instead.
 
 - `CLAUDE.md` (this file) — rules, server access, deploy. Highest authority.
 - `README.md` — features, stack, local setup, structure.
-- `DEPLOYMENT_CHECKLIST.md` — first-time server setup steps.
-- `deploy/pm2.config.js`, `deploy/nginx.conf`, `smartsteps-abapc.nginx` — the
-  actual config files, and better evidence than any prose doc.
+- `DEPLOYMENT_CHECKLIST.md` — first-time server setup steps, but it describes an
+  older topology than what runs today (see Rule 5).
+
+**Config files in this repo that do NOT match production** (verified
+2026-09-23 — the live server is the only authority here):
+
+- `deploy/pm2.config.js` — says cluster/2 instances and `/var/log/aplus-center`
+  logs; live is fork/1 instance logging to `/root/.pm2`.
+- `smartsteps-abapc.nginx` — proxies `3001` and is HTTP-only; the live site is
+  certbot TLS on 443 proxying `3000`.
+- `deploy/nginx.conf` — still a `your-domain.com` template, unused.
 
 **Useful but partly stale:**
 
@@ -193,14 +237,27 @@ Production runs from `/var/www/aplus-center` under PM2 process `aplus-center`.
 **Always confirm with the user before deploying**, and never deploy a change
 that has not been built locally first (`npm run build`).
 
-### Routine deploy (git-based, after pushing to `main`)
+### Routine deploy — BLOCKED until the clone is re-pointed
+
+There is **no working git-based deploy** for this app right now. The production
+clone tracks the wrong repo and carries 17 uncommitted live changes (see "The
+production clone points at the WRONG repo" above), so `git pull` is not a safe
+step. Do not invent one; raise it with the user.
+
+Once the clone has been reconciled and actually tracks
+`izzwgg-arch/Smart-steps` on `main`, the deploy is:
 
 ```
-ssh -i "C:\Users\A Plus Server\.ssh\id_ed25519_smartsteps" -o IdentitiesOnly=yes root@66.94.105.43 "cd /var/www/aplus-center && git pull origin main && npm install --production --legacy-peer-deps && npx prisma generate && npm run build && pm2 restart aplus-center && sleep 5 && curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/"
+ssh -i "C:\Users\A Plus Server\.ssh\id_ed25519_smartsteps" -o IdentitiesOnly=yes root@66.94.105.43 "cd /var/www/aplus-center && git status --porcelain && git pull origin main && npm install --legacy-peer-deps && npx prisma generate && npm run build && pm2 restart aplus-center && sleep 5 && curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/"
 ```
 
-Expect `200` at the end. If it is not 200, check
+Expect an empty `git status` first (stop if it is not empty — that is live work
+nobody has saved) and `200` at the end. If it is not 200, check
 `pm2 logs aplus-center --lines 50` before touching anything else.
+
+Note `--production` is wrong for this app: `npm run build` needs devDependencies
+(`typescript`, `tailwindcss`, `autoprefixer`, `postcss`, `prisma`), so use
+`npm install --legacy-peer-deps`. Several older docs get this wrong.
 
 `npm run postbuild` runs automatically after `build` (it runs
 `create-prerender.js` and `copy-pdfkit-fonts.js`) — a build that skips it
@@ -230,6 +287,11 @@ See `DEPLOYMENT_CHECKLIST.md`. In short: `/var/www/aplus-center` for the app,
 Note `deploy/pm2.config.js` parses `.env` itself and merges it into the PM2
 env, so PM2 does not need a dotenv preload — but it does mean **`.env` changes
 only take effect on `pm2 restart`/`startOrReload`**, not on a rebuild.
+
+**That checklist describes a setup that is not what runs today** (it predates
+the live process — see Rule 2). Treat it as first-time-install reference only,
+and never run its `pm2 start deploy/pm2.config.js` against the live server
+while `aplus-center` is already online.
 
 ### Verify and roll back
 
