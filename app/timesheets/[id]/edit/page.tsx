@@ -28,6 +28,7 @@ export default async function EditTimesheetPage({
       client: true,
       provider: true,
       bcba: true,
+      supervisingBcba: true,
       insurance: true,
       entries: {
         orderBy: { date: 'asc' },
@@ -77,6 +78,7 @@ export default async function EditTimesheetPage({
     providerId: timesheet.providerId,
     clientId: timesheet.clientId,
     bcbaId: timesheet.bcbaId,
+    supervisingBcbaId: timesheet.supervisingBcbaId || null,
     insuranceId: timesheet.insuranceId || '',
     startDate: timesheet.startDate.toISOString(),
     endDate: timesheet.endDate.toISOString(),

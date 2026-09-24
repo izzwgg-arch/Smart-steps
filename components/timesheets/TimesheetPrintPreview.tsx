@@ -176,6 +176,12 @@ export function TimesheetPrintPreview({ timesheet, onClose }: TimesheetPrintPrev
                 <div className="mb-2">
                   <span className="font-semibold">BCBA:</span> {timesheet.bcba.name}
                 </div>
+                {timesheet.supervisingBcba && (
+                  <div className="mb-2">
+                    <span className="font-semibold">Supervising BCBA:</span>{' '}
+                    {timesheet.supervisingBcba.name}
+                  </div>
+                )}
                 <div className="mb-2">
                   <span className="font-semibold">Child:</span> {timesheet.client.name || ''}
                 </div>

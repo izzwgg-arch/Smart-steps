@@ -77,6 +77,7 @@ interface Timesheet {
   providerId: string
   clientId: string
   bcbaId: string
+  supervisingBcbaId?: string | null
   insuranceId: string | null
   startDate: string
   endDate: string
@@ -199,6 +200,9 @@ export function TimesheetForm({
   const [providerId, setProviderId] = useState(timesheet?.providerId || '')
   const [clientId, setClientId] = useState(timesheet?.clientId || '')
   const [bcbaId, setBcbaId] = useState(timesheet?.bcbaId || '')
+  // Licensed BCBA whose license the BCBA above works under, when that person holds a
+  // limited permit (LBA). Optional, and never counted as the supervisor's own hours.
+  const [supervisingBcbaId, setSupervisingBcbaId] = useState(timesheet?.supervisingBcbaId || '')
   const [insuranceId, setInsuranceId] = useState(timesheet?.insuranceId || '')
   
   // Auto-select insurance when client changes
@@ -1233,6 +1237,7 @@ export function TimesheetForm({
         providerId,
         clientId,
         bcbaId,
+        supervisingBcbaId: supervisingBcbaId || null,
         insuranceId: insuranceId || null,
         startDate: startDate ? formatDateOnly(startDate, timezone) : null,
         endDate: endDate ? formatDateOnly(endDate, timezone) : null,
@@ -1274,6 +1279,7 @@ export function TimesheetForm({
             setProviderId(draft.providerId || '')
             setClientId(draft.clientId || '')
             setBcbaId(draft.bcbaId || '')
+            setSupervisingBcbaId(draft.supervisingBcbaId || '')
             setInsuranceId(draft.insuranceId || '')
             if (draft.startDate) setStartDate(new Date(draft.startDate))
             if (draft.endDate) setEndDate(new Date(draft.endDate))
@@ -1441,6 +1447,7 @@ export function TimesheetForm({
           providerId,
           clientId,
           bcbaId,
+          supervisingBcbaId: supervisingBcbaId || null, // Billing identity only - not the supervisor's own hours
           insuranceId: insuranceId, // Use selected insurance for regular timesheets
           startDate: formatDateOnly(startDate, timezone),
           endDate: formatDateOnly(endDate, timezone),
@@ -1887,7 +1894,14 @@ export function TimesheetForm({
               <select
                 required
                 value={bcbaId}
-                onChange={(e) => setBcbaId(e.target.value)}
+                onChange={(e) => {
+                  const nextBcbaId = e.target.value
+                  setBcbaId(nextBcbaId)
+                  // Never let the same person end up in both roles
+                  if (nextBcbaId && nextBcbaId === supervisingBcbaId) {
+                    setSupervisingBcbaId('')
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="">Select BCBA</option>
@@ -1900,6 +1914,33 @@ export function TimesheetForm({
                   )
                 })}
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Supervising BCBA <span className="text-gray-400">(optional)</span>
+              </label>
+              <select
+                value={supervisingBcbaId}
+                onChange={(e) => setSupervisingBcbaId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="">None</option>
+                {Array.isArray(bcbas) && bcbas.map((bcba) => {
+                  if (!bcba || !bcba.id) return null
+                  // The BCBA on the timesheet cannot also be their own supervisor
+                  if (bcba.id === bcbaId) return null
+                  return (
+                    <option key={bcba.id} value={bcba.id}>
+                      {bcba.name || 'Unnamed BCBA'}
+                    </option>
+                  )
+                })}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                If the BCBA above holds a limited permit (LBA): the licensed BCBA whose
+                license they work under. Prints on the timesheet. Their own hours, reports
+                and schedule are not affected.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

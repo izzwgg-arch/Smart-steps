@@ -201,17 +201,20 @@ implementations (and the unused `app/api/bcbas/forms/*` routes) remain in git
 history. The `ParentABCData*` / `ParentTrainingSignIn*` / `VisitAttestation*`
 models are still declared in `schema.prisma` but are unused by the live app.
 
-## Supervising BCBA on BCBA timesheets
+## Supervising BCBA (BCBA *and* regular timesheets)
 
 A clinician working on a **limited permit** (an LBA) delivers BCBA-level services under
-a licensed BCBA's license. A BCBA timesheet therefore carries two people:
+a licensed BCBA's license. Both timesheet types therefore carry two BCBAs:
 
 | Field | Meaning |
 | --- | --- |
-| **BCBA** (`bcbaId`, required) | The clinician who actually performed the sessions. **All hours on the timesheet count toward this person.** |
-| **Supervising BCBA** (`supervisingBcbaId`, optional) | The licensed BCBA whose license the work is billed under. Billing identity only. |
+| **BCBA** (`bcbaId`, required) | On a BCBA timesheet, the clinician who performed the sessions; on a regular timesheet, the BCBA of record for the provider's work. **All hours count toward this person.** |
+| **Supervising BCBA** (`supervisingBcbaId`, optional) | The licensed BCBA whose license that person works under. Billing identity only. |
 
-Set it on the BCBA timesheet form (Assignment section). The dropdown excludes whoever is
+`supervisingBcbaId` lives on the shared `Timesheet` model and both API routes handle it
+without an `isBCBA` gate, so the same field serves both types.
+
+Set it in the Assignment section of either form. The dropdown excludes whoever is
 already selected as the performing BCBA, and the API rejects a supervisor equal to the
 performer.
 
@@ -225,17 +228,19 @@ entirely, so that raises no schedule conflict.
 
 **What changes when a Supervising BCBA is set**
 
-- The printed timesheet and PDF show **both names**: the performing clinician on the
-  existing `BCBA` line, plus an additional `Supervising BCBA` line. The performer is
+- The printed timesheet and PDF show **both names** on both timesheet types: the existing
+  `BCBA` line plus an additional `Supervising BCBA` line. The performer is
   never replaced — these timesheets are the practice's own record of who delivered the
   sessions, and the biller decides what goes to the payer.
-- **Both clinicians sign.** With a supervisor set, the signature area becomes two
-  columns: `BCBA Signature` (the performing clinician, for their own hours) and
+- **Signatures, BCBA timesheets only.** With a supervisor set, the signature area becomes
+  two columns: `BCBA Signature` (the performing clinician, for their own hours) and
   `Supervising BCBA Signature` (because the work was delivered under that license).
   With no supervisor it stays a single `BCBA Signature` block, exactly as before
   (`lib/pdf/timesheetHtmlTemplate.ts`, `components/timesheets/TimesheetPrintPreview.tsx`).
+  **Regular timesheets are unchanged here** — they sign Client + Provider and have never
+  had a BCBA signature block, so the supervising BCBA appears by name only.
 - The batch email summary lists the performing clinician, matching the PDF's `BCBA` line.
-- The BCBA timesheet list shows the performer with `under <supervisor>` beneath it.
+- Both timesheet lists show the BCBA with `under <supervisor>` beneath the name.
 
 **What deliberately does NOT change — the supervising BCBA is never "interrupted"**
 

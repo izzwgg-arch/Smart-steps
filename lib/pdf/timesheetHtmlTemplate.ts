@@ -402,6 +402,12 @@ export function generateTimesheetHTML(timesheet: TimesheetForHTML): string {
       <span class="info-label">BCBA</span>
       <div class="info-value">${timesheet.bcba.name}</div>
     </div>
+    ${timesheet.supervisingBcba ? `
+    <div class="info-item">
+      <span class="info-label">Supervising BCBA</span>
+      <div class="info-value">${timesheet.supervisingBcba.name}</div>
+    </div>
+    ` : ''}
     <div class="info-item">
       <span class="info-label">Child</span>
       <div class="info-value">${timesheet.client.name || 'N/A'}</div>
