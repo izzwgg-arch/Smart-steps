@@ -299,12 +299,12 @@ export function BCBATimesheetForm({
         })
 
         const entries = daysWithoutSaturday
-          .map((date) => {
+          .flatMap((date) => {
             try {
               // Validate date
               if (!date || isNaN(date.getTime())) {
                 console.error('[BCBA TIMESHEET] Invalid date in entry generation:', date)
-                return null
+                return []
               }
 
               let dateStr: string
@@ -312,7 +312,7 @@ export function BCBATimesheetForm({
                 dateStr = format(date, 'yyyy-MM-dd')
               } catch (error) {
                 console.error('[BCBA TIMESHEET] Error formatting date:', error, date)
-                return null as any
+                return []
               }
 
               const dayEntries = timesheetWithoutSaturdays.entries.filter((entry) => {
@@ -333,9 +333,13 @@ export function BCBATimesheetForm({
                 }
               })
 
-              // BCBA timesheets have single entry (no DR/SV distinction)
-              const entry = dayEntries[0]
+              // One row per saved entry, so a day holding both Treatment Planning and
+              // Supervision keeps both. A day with no entries still gets one blank row.
+              // (This used to take dayEntries[0] only, which silently dropped the rest.)
+              const entriesForDay: Array<(typeof dayEntries)[number] | undefined> =
+                dayEntries.length > 0 ? dayEntries : [undefined]
 
+              return entriesForDay.map((entry): DayEntry => {
               let fromMinutes: number | null = null
               let toMinutes: number | null = null
 
@@ -413,14 +417,13 @@ export function BCBATimesheetForm({
                   time: null,
                 },
               }
+              })
             } catch (error) {
               console.error('[BCBA TIMESHEET] Error processing entry in edit mode:', error, date)
-              return null // Return null instead of crashing
+              return [] // Skip the day instead of crashing
             }
           })
-          .filter((entry): entry is DayEntry => {
-            return entry !== null && entry !== undefined
-          }) // Filter out nulls
+          .filter((entry) => entry !== null && entry !== undefined)
 
         setDayEntries(entries)
         calculateTotalHours(entries)
@@ -781,6 +784,53 @@ export function BCBATimesheetForm({
     })
   }
 
+  // A BCBA can deliver more than one service on the same day (e.g. Treatment Planning
+  // and Supervision), so a day may hold several rows. Each row carries its own service
+  // type and time range and is saved as its own entry.
+  const sameDayCount = (entries: DayEntry[], date: Date) => {
+    const key = formatDateOnly(date, timezone)
+    return entries.filter((e) => formatDateOnly(e.date, timezone) === key).length
+  }
+
+  const addRowForDay = (index: number) => {
+    if (timesheet?.status === 'LOCKED') return
+    setDayEntries((prev) => {
+      const src = prev[index]
+      if (!src) return prev
+      const next = [...prev]
+      next.splice(index + 1, 0, {
+        date: src.date,
+        dayName: src.dayName,
+        from: null,
+        to: null,
+        hours: 0,
+        use: true,
+        invoiced: false,
+        serviceType: null,
+        touched: { from: false, to: false },
+        errors: { time: null },
+      })
+      return next
+    })
+    // Row indices shift, so any index-keyed selection is no longer meaningful
+    setSelectedRows(new Set())
+  }
+
+  const removeRowForDay = (index: number) => {
+    if (timesheet?.status === 'LOCKED') return
+    setDayEntries((prev) => {
+      const row = prev[index]
+      if (!row) return prev
+      // Never remove a day's last row - that row is the day's skeleton
+      if (sameDayCount(prev, row.date) <= 1) {
+        toast.error('Each day keeps at least one row. Untick USE to exclude the day.')
+        return prev
+      }
+      return prev.filter((_, i) => i !== index)
+    })
+    setSelectedRows(new Set())
+  }
+
   const resetRowToDefault = (index: number) => {
     if (timesheet) return
     if (!startDate || !endDate) return
@@ -1012,7 +1062,25 @@ export function BCBATimesheetForm({
         router.refresh()
       } else {
         const data = await res.json()
-        toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
+        // Overlap conflicts now apply to BCBA timesheets too: several services on one day
+        // are fine, but their times must not clash, and the client and BCBA must be free.
+        if (data?.code === 'OVERLAP_CONFLICT' && Array.isArray(data?.conflicts)) {
+          const byDate = new Map<string, string>()
+          for (const c of data.conflicts as Array<any>) {
+            if (c?.date && c?.message && !byDate.has(c.date)) byDate.set(c.date, c.message)
+          }
+          setDayEntries((prev) =>
+            prev.map((entry) => {
+              const key = formatDateOnly(entry.date, timezone)
+              const message = byDate.get(key)
+              return message ? { ...entry, overlapConflict: { message } } : { ...entry, overlapConflict: undefined }
+            })
+          )
+          const first = (data.conflicts as Array<any>)[0]?.message
+          toast.error(first || 'Overlap conflicts detected. Please fix the highlighted rows.')
+        } else {
+          toast.error(data.error || `Failed to ${timesheet ? 'update' : 'create'} timesheet`)
+        }
       }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
@@ -1432,15 +1500,12 @@ export function BCBATimesheetForm({
                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">TO</th>
                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">HOURS</th>
                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">USE</th>
-                    {!timesheet && (
-                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">ACTIONS</th>
-                    )}
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {dayEntries.map((entry, index) => {
-                    // BCBA timesheets don't have overlap conflicts
-                    const hasConflict = false
+                    const hasConflict = Boolean(entry.overlapConflict)
                     return (
                       <tr
                         key={index}
@@ -1498,10 +1563,13 @@ export function BCBATimesheetForm({
                           {entry.errors.time && (
                             <div className="text-xs text-red-600 mt-1">{entry.errors.time}</div>
                           )}
+                          {entry.overlapConflict && (
+                            <div className="text-xs text-red-600 mt-1">{entry.overlapConflict.message}</div>
+                          )}
                         </td>
-                        {!timesheet && (
-                          <td className="px-2 py-2 text-center">
-                            {(entry.touched.from || entry.touched.to) && (
+                        <td className="px-2 py-2 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
+                            {!timesheet && (entry.touched.from || entry.touched.to) && (
                               <button
                                 type="button"
                                 onClick={() => resetRowToDefault(index)}
@@ -1511,8 +1579,28 @@ export function BCBATimesheetForm({
                                 Reset
                               </button>
                             )}
-                          </td>
-                        )}
+                            <button
+                              type="button"
+                              onClick={() => addRowForDay(index)}
+                              disabled={timesheet?.status === 'LOCKED'}
+                              className="text-xs text-primary-600 hover:text-primary-800 hover:underline disabled:opacity-50"
+                              title="Add another service on this day (e.g. Treatment Planning and Supervision)"
+                            >
+                              + Add
+                            </button>
+                            {sameDayCount(dayEntries, entry.date) > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeRowForDay(index)}
+                                disabled={timesheet?.status === 'LOCKED'}
+                                className="text-xs text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                                title="Remove this row"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}

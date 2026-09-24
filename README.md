@@ -13,6 +13,8 @@ A comprehensive web application for managing ABA (Applied Behavior Analysis) ope
 - **Timesheet System**: Create, submit, approve, and lock timesheets with workflow
 - **Parent ABC notes**: Per-row behavior tracking (Antecedent / Behavior /
   Consequence on every line, not one behavior per sheet)
+- **Multiple services per day**: A BCBA can log Treatment Planning and Supervision on the
+  same day, with overlap checks keeping client, provider and BCBA times from colliding
 - **Supervising BCBA (limited permit / LBA support)**: A BCBA timesheet can name an
   optional **Supervising BCBA** — the licensed BCBA whose license the work is billed
   under when the performing clinician holds a limited permit. See
@@ -200,6 +202,41 @@ equivalents, so old links and bookmarks land somewhere that works. The original
 implementations (and the unused `app/api/bcbas/forms/*` routes) remain in git
 history. The `ParentABCData*` / `ParentTrainingSignIn*` / `VisitAttestation*`
 models are still declared in `schema.prisma` but are unused by the live app.
+
+## Overlap rules and multiple services per day
+
+A BCBA can deliver more than one service on the same day — Treatment Planning **and**
+Supervision, for example. Each day row on the BCBA timesheet has **`+ Add`**, which adds
+another row for that same date with its own service type and time range; each row is
+saved as its own entry. `Remove` appears only on extra rows, so a day always keeps at
+least one (untick USE to exclude the day).
+
+Overlap detection (`lib/server/timesheetOverlapValidation.ts`) now runs for **both**
+timesheet types — it used to be skipped entirely for BCBA timesheets:
+
+| Who | Matched against |
+| --- | --- |
+| **Client** (the child) | **Both** types — a child cannot be in two services at once, even across a regular and a BCBA timesheet |
+| **Provider** | Regular ↔ regular only |
+| **BCBA** | BCBA ↔ BCBA only |
+| **Within one timesheet** | Always — this is what stops same-day Treatment Planning and Supervision from overlapping each other |
+
+Two deliberate asymmetries, both load-bearing:
+
+- **BCBA timesheets store a placeholder `providerId`** (the first active provider — see
+  the POST route). Matching on it would raise conflicts against a provider who was never
+  involved, so provider matching is restricted to regular timesheets.
+- **A regular timesheet's BCBA is a supervisor of record**, not someone physically
+  present, so that is not treated as a scheduling clash. `bcbaId` is only matched between
+  BCBA timesheets, where it is the person who actually delivered the service.
+
+Conflicts come back as `code: 'OVERLAP_CONFLICT'` with a `conflicts` array; both forms
+highlight the offending rows and show the reason.
+
+**Fixed alongside this:** the BCBA edit form used to load a day with
+`dayEntries[0]` — it filtered every entry for a date then kept only the first, so a
+timesheet with two same-day entries lost the second on edit + save. It now builds one row
+per saved entry.
 
 ## Supervising BCBA (BCBA *and* regular timesheets)
 

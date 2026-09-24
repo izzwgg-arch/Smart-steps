@@ -226,8 +226,8 @@ export async function PUT(
       }
     }
 
-    // Skip overlap validation for BCBA timesheets - they allow overlaps
-    if (!isBCBA) {
+    // Overlap validation runs for BOTH timesheet types - see the POST route for why.
+    {
       const overlapConflicts = await detectTimesheetOverlaps({
         providerId: finalProviderId || '',
         clientId,
@@ -235,6 +235,8 @@ export async function PUT(
         clientName: client?.name || 'Unknown Client',
         entries,
         excludeTimesheetId: params.id,
+        isBCBA: isBCBA === true,
+        bcbaId: timesheetData.bcbaId || timesheet.bcbaId,
       })
 
       if (overlapConflicts.length > 0) {
@@ -243,8 +245,6 @@ export async function PUT(
           { status: 400 }
         )
       }
-    } else {
-      console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
     }
 
     // Update timesheet

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { utcToZonedTime, format } from 'date-fns-tz'
 
 export type TimesheetEntryType = 'DR' | 'SV' | 'UNKNOWN'
-export type OverlapScope = 'provider' | 'client' | 'both' | 'internal'
+export type OverlapScope = 'provider' | 'client' | 'bcba' | 'both' | 'internal'
 
 export interface IncomingTimesheetEntry {
   date: string // ISO string
@@ -63,8 +63,23 @@ export async function detectTimesheetOverlaps(params: {
   clientName: string
   entries: IncomingTimesheetEntry[]
   excludeTimesheetId?: string
+  /** True when validating a BCBA timesheet. */
+  isBCBA?: boolean
+  /** The BCBA delivering the service. Only meaningful on BCBA timesheets. */
+  bcbaId?: string
+  bcbaName?: string
 }): Promise<OverlapConflict[]> {
-  const { providerId, clientId, providerName, clientName, entries, excludeTimesheetId } = params
+  const {
+    providerId,
+    clientId,
+    providerName,
+    clientName,
+    entries,
+    excludeTimesheetId,
+    isBCBA = false,
+    bcbaId,
+    bcbaName,
+  } = params
 
   // Build normalized entries with minutes
   const normalized = entries
@@ -144,9 +159,23 @@ export async function detectTimesheetOverlaps(params: {
     ]
   })
 
+  // Which existing timesheets can clash with this one:
+  //  - the CLIENT (the child) is matched across BOTH timesheet types - a child cannot
+  //    receive two services at once, whether the other one is a BCBA timesheet or not;
+  //  - the PROVIDER is matched only between regular timesheets. BCBA timesheets store a
+  //    PLACEHOLDER providerId (the first active provider), so matching on it there would
+  //    raise false conflicts against a provider who was never involved;
+  //  - the BCBA is matched only between BCBA timesheets, where bcbaId is the person who
+  //    actually delivered the service. On a regular timesheet the BCBA is a supervisor of
+  //    record, not someone present, so it is not a scheduling clash.
+  const timesheetMatch: any[] = [{ clientId }]
+  if (isBCBA) {
+    if (bcbaId) timesheetMatch.push({ isBCBA: true, bcbaId })
+  } else if (providerId) {
+    timesheetMatch.push({ isBCBA: false, providerId })
+  }
+
   // CRITICAL: Only fetch entries from active (non-deleted) timesheets
-  // CRITICAL: Exclude BCBA timesheets - they allow overlaps
-  // Double-check that deletedAt is explicitly null
   const existing = await prisma.timesheetEntry.findMany({
     where: {
       AND: [
@@ -154,9 +183,8 @@ export async function detectTimesheetOverlaps(params: {
         {
           timesheet: {
             deletedAt: null, // CRITICAL: Only check entries from non-deleted timesheets
-            isBCBA: false, // CRITICAL: Exclude BCBA timesheets - they allow overlaps
             ...(excludeTimesheetId ? { id: { not: excludeTimesheetId } } : {}),
-            OR: [{ providerId }, { clientId }],
+            OR: timesheetMatch,
           },
         },
       ],
@@ -167,9 +195,12 @@ export async function detectTimesheetOverlaps(params: {
           id: true,
           providerId: true,
           clientId: true,
+          bcbaId: true,
+          isBCBA: true,
           deletedAt: true, // Include deletedAt to verify filtering
           provider: { select: { name: true } },
           client: { select: { name: true } },
+          bcba: { select: { name: true } },
         },
       },
     },
@@ -191,14 +222,25 @@ export async function detectTimesheetOverlaps(params: {
       // Check if times actually overlap
       if (!rangesOverlap(inc.startMinutes, inc.endMinutes, exStart, exEnd)) continue
 
-      const providerMatch = ex.timesheet.providerId === providerId
       const clientMatch = ex.timesheet.clientId === clientId
-      
-      // CRITICAL: Only report overlap if there's an actual match (provider OR client)
-      // AND the times actually overlap
-      if (!providerMatch && !clientMatch) continue
-      
-      const scope: OverlapScope = providerMatch && clientMatch ? 'both' : providerMatch ? 'provider' : 'client'
+      // Provider only counts between two regular timesheets (BCBA rows carry a placeholder
+      // providerId); BCBA only counts between two BCBA timesheets (where it is the doer).
+      const providerMatch =
+        !isBCBA && !ex.timesheet.isBCBA && !!providerId && ex.timesheet.providerId === providerId
+      const bcbaMatch =
+        isBCBA && !!ex.timesheet.isBCBA && !!bcbaId && ex.timesheet.bcbaId === bcbaId
+
+      // CRITICAL: Only report overlap when someone actually collides AND times overlap
+      if (!providerMatch && !clientMatch && !bcbaMatch) continue
+
+      const scope: OverlapScope =
+        clientMatch && (providerMatch || bcbaMatch)
+          ? 'both'
+          : providerMatch
+            ? 'provider'
+            : bcbaMatch
+              ? 'bcba'
+              : 'client'
       
       // Additional validation: Verify the timesheet is not deleted
       // Double-check that we're not comparing against deleted timesheets
@@ -230,13 +272,14 @@ export async function detectTimesheetOverlaps(params: {
           clientId: ex.timesheet.clientId,
           deletedAt: ex.timesheet.deletedAt,
         },
-        matches: { providerMatch, clientMatch },
+        matches: { providerMatch, clientMatch, bcbaMatch },
         timesOverlap: rangesOverlap(inc.startMinutes, inc.endMinutes, exStart, exEnd),
       })
 
       const exType = toEntryType(ex.notes)
       const providerLabel = ex.timesheet.provider?.name || providerName
       const clientLabel = ex.timesheet.client?.name || clientName
+      const bcbaLabel = ex.timesheet.bcba?.name || bcbaName || 'BCBA'
 
       conflicts.push({
         code: 'OVERLAP_CONFLICT',
@@ -256,10 +299,16 @@ export async function detectTimesheetOverlaps(params: {
         },
         message:
           scope === 'both'
-            ? `Overlap detected on ${inc.date}: ${inc.entryType} ${inc.raw.startTime}–${inc.raw.endTime} overlaps with existing ${exType} ${ex.startTime}–${ex.endTime} for Provider ${providerLabel} and Client ${clientLabel}.`
+            ? `Overlap detected on ${inc.date}: ${inc.raw.startTime}–${inc.raw.endTime} overlaps with existing ${ex.startTime}–${ex.endTime} for ${
+                bcbaMatch ? `BCBA ${bcbaLabel}` : `Provider ${providerLabel}`
+              } and Client ${clientLabel}.`
             : scope === 'provider'
               ? `Overlap detected on ${inc.date}: Provider ${providerLabel} already scheduled ${ex.startTime}–${ex.endTime}.`
-              : `Overlap detected on ${inc.date}: Client ${clientLabel} already scheduled ${ex.startTime}–${ex.endTime}.`,
+              : scope === 'bcba'
+                ? `Overlap detected on ${inc.date}: BCBA ${bcbaLabel} already scheduled ${ex.startTime}–${ex.endTime}.`
+                : `Overlap detected on ${inc.date}: Client ${clientLabel} already scheduled ${ex.startTime}–${ex.endTime}${
+                    ex.timesheet.isBCBA ? ' (BCBA timesheet)' : ''
+                  }.`,
       })
     }
   }

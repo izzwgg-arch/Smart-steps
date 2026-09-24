@@ -427,15 +427,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Overlap validation (provider OR client OR both)
-    // Skip overlap validation for BCBA timesheets - they allow overlaps
-    if (!isBCBA) {
+    // Overlap validation runs for BOTH timesheet types: a child cannot be in two
+    // services at once, a provider cannot be in two places, and a BCBA cannot either.
+    // A BCBA may log several services on one day (e.g. Treatment Planning and
+    // Supervision) as long as the times do not overlap - that is what this enforces.
+    {
       const overlapConflicts = await detectTimesheetOverlaps({
         providerId: finalProviderId || '',
         clientId,
         providerName: provider?.name || '',
         clientName: client.name,
         entries,
+        isBCBA: isBCBA === true,
+        bcbaId,
       })
 
       if (overlapConflicts.length > 0) {
@@ -444,8 +448,6 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
-    } else {
-      console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
     }
 
     // Create timesheet with retry to avoid timesheetNumber collisions

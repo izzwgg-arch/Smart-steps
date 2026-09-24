@@ -19,49 +19,61 @@ export async function POST(request: NextRequest) {
     const {
       providerId,
       clientId,
+      bcbaId, // Required for BCBA timesheets: the BCBA delivering the service
       entries,
       excludeTimesheetId, // Optional: exclude current timesheet when editing
-      isBCBA, // Optional: if true, skip overlap check
+      isBCBA, // True when checking a BCBA timesheet
     } = data
 
-    // Skip overlap check for BCBA timesheets - they allow overlaps
-    if (isBCBA === true) {
-      console.log('[OVERLAP] Skipped overlap validation for BCBA timesheet')
-      return NextResponse.json({
-        hasOverlaps: false,
-        conflicts: [],
-      })
-    }
-
-    if (!providerId || !clientId || !entries || !Array.isArray(entries)) {
+    // Both timesheet types are checked now. A BCBA timesheet has no real provider
+    // (the stored providerId is a placeholder), so it needs clientId + bcbaId instead.
+    if (!clientId || !entries || !Array.isArray(entries)) {
       return NextResponse.json(
-        { error: 'providerId, clientId, and entries array are required' },
+        { error: 'clientId and entries array are required' },
+        { status: 400 }
+      )
+    }
+    if (isBCBA === true ? !bcbaId : !providerId) {
+      return NextResponse.json(
+        {
+          error: isBCBA === true
+            ? 'bcbaId is required for BCBA timesheets'
+            : 'providerId is required',
+        },
         { status: 400 }
       )
     }
 
-    // Fetch provider and client names for error messages
+    // Fetch names for error messages
     const { prisma } = await import('@/lib/prisma')
-    const [provider, client] = await Promise.all([
-      prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } }),
+    const [provider, client, bcba] = await Promise.all([
+      providerId
+        ? prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } })
+        : Promise.resolve(null),
       prisma.client.findUnique({ where: { id: clientId }, select: { name: true } }),
+      bcbaId
+        ? prisma.bCBA.findUnique({ where: { id: bcbaId }, select: { name: true } })
+        : Promise.resolve(null),
     ])
 
-    if (!provider || !client) {
+    if (!client || (isBCBA === true ? !bcba : !provider)) {
       return NextResponse.json(
-        { error: 'Provider or Client not found' },
+        { error: 'Provider, BCBA or Client not found' },
         { status: 404 }
       )
     }
 
     // Check for overlaps
     const overlapConflicts = await detectTimesheetOverlaps({
-      providerId,
+      providerId: providerId || '',
       clientId,
-      providerName: provider.name,
+      providerName: provider?.name || '',
       clientName: client.name,
       entries,
       excludeTimesheetId,
+      isBCBA: isBCBA === true,
+      bcbaId,
+      bcbaName: bcba?.name,
     })
 
     return NextResponse.json({
