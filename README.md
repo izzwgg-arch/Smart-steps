@@ -236,14 +236,23 @@ Three deliberate asymmetries, all load-bearing:
   present, so that is not treated as a scheduling clash. `bcbaId` is only matched between
   BCBA timesheets, where it is the person who actually delivered the service.
 
+**Supervision is deliberately recorded twice.** The same supervision session appears as an
+`SV` entry on the provider's regular timesheet and as a `Supervision` entry on the BCBA's
+timesheet — 415 exact-match pairs (same client, date and time) exist in production. Because
+client matching is same-type only, both sides save. Do not "fix" this as duplication.
+
 Conflicts come back as `code: 'OVERLAP_CONFLICT'` with a `conflicts` array; both forms
-highlight the offending rows and show the reason.
+highlight the offending rows and show the reason. **Both forms also flag live while you
+edit** (debounced `POST /api/timesheets/check-overlaps`), so a clash surfaces before the
+save attempt. The BCBA form's live check keys its effect on a signature of the
+time-relevant row fields, never on the row array itself — it writes conflict state back
+into that array and would otherwise retrigger forever.
 
 Known pre-existing violations (checked 2026-10-05): 6 pairs where one BCBA is booked with
 two **different** clients at the same time. Those timesheets cannot be saved until the
 times are corrected — which is the point, since one person cannot be in two places.
 
-## Choosing whose hours you are sending
+## Seeing and choosing whose hours you are sending
 
 The BCBA timesheets list has a **BCBA** dropdown (defaults to `All BCBAs`) next to the
 search box. Picking one filters the list to that person and shows a banner saying Select
@@ -252,6 +261,13 @@ whose hours are being submitted. The free-text search now matches **BCBA name** 
 just client, provider and timesheet ID; on BCBA timesheets the provider is a placeholder,
 so the BCBA was previously not searchable at all. Server side it is a `bcbaId` query
 parameter on `GET /api/timesheets`.
+
+Above the table, an **Hours by BCBA** panel shows one chip per BCBA with that person's
+hours and timesheet count, plus a running total. It is computed server-side over the
+**whole filtered set** (`bcbaTotals` in the list response), not the current page — a
+page-only sum would mislead with 25-row pagination. Each chip toggles the filter for that
+BCBA, so the panel doubles as the picker. A failure computing the summary is caught and
+logged so it can never break the list itself.
 
 **Fixed alongside this:** the BCBA edit form used to load a day with
 `dayEntries[0]` — it filtered every entry for a date then kept only the first, so a

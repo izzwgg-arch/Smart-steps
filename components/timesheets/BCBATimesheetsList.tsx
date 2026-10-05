@@ -41,6 +41,11 @@ interface TimesheetDetail extends Omit<TimesheetListItem, 'entries'> {
   }>
 }
 
+// Same one-decimal convention the per-row hours column uses.
+function formatHoursFromMinutes(minutes: number): string {
+  return (Number(minutes || 0) / 60).toFixed(1)
+}
+
 export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean }) {
   const router = useRouter()
   const [timesheets, setTimesheets] = useState<TimesheetListItem[]>([])
@@ -49,6 +54,11 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
   // Filter the list to a single BCBA, so it is obvious whose hours are being sent
   const [bcbaFilterId, setBcbaFilterId] = useState('')
   const [bcbaOptions, setBcbaOptions] = useState<Array<{ id: string; name: string }>>([])
+  // Hours grouped by BCBA for the whole current filter, so it is clear which hours
+  // go under which BCBA before anything is sent or invoiced.
+  const [bcbaTotals, setBcbaTotals] = useState<
+    Array<{ bcbaId: string; bcbaName: string; minutes: number; timesheets: number }>
+  >([])
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -198,6 +208,7 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
       if (res.ok) {
         const data = await res.json()
         setTimesheets(data.timesheets)
+        setBcbaTotals(Array.isArray(data.bcbaTotals) ? data.bcbaTotals : [])
         setTotalPages(data.totalPages)
       }
     } catch (error) {
@@ -754,6 +765,45 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
             {bcbaOptions.find((b) => b.id === bcbaFilterId)?.name || 'this BCBA'}
           </span>
           . Select All and any send or invoice action applies to these hours only.
+        </div>
+      )}
+
+      {bcbaTotals.length > 0 && (
+        <div className="mb-6 bg-white shadow sm:rounded-md p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Hours by BCBA{bcbaFilterId ? '' : ' — all BCBAs in this view'}
+            </h3>
+            <span className="text-xs text-gray-500">
+              {formatHoursFromMinutes(bcbaTotals.reduce((sum, r) => sum + r.minutes, 0))} h total
+              {' · '}
+              {bcbaTotals.reduce((sum, r) => sum + r.timesheets, 0)} timesheet(s)
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {bcbaTotals.map((row) => {
+              const active = row.bcbaId === bcbaFilterId
+              return (
+                <button
+                  key={row.bcbaId}
+                  type="button"
+                  onClick={() => setBcbaFilterId(active ? '' : row.bcbaId)}
+                  title={active ? 'Clear this filter' : `Show only ${row.bcbaName}`}
+                  className={`px-3 py-1.5 rounded-full border text-xs transition-colors ${
+                    active
+                      ? 'bg-primary-600 border-primary-600 text-white'
+                      : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="font-medium">{row.bcbaName}</span>
+                  <span className={active ? 'text-white' : 'text-gray-500'}>
+                    {' '}
+                    — {formatHoursFromMinutes(row.minutes)} h · {row.timesheets} ts
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 

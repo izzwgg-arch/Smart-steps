@@ -209,12 +209,59 @@ export async function GET(request: NextRequest) {
       totalMinutes: totalsById[ts.id] || 0,
     }))
 
+    // Hours grouped by BCBA across the WHOLE filtered set, not just this page, so the
+    // user can see which hours go under which BCBA before sending anything.
+    let bcbaTotals: Array<{ bcbaId: string; bcbaName: string; minutes: number; timesheets: number }> = []
+    try {
+      const allFiltered = await prisma.timesheet.findMany({
+        where,
+        select: { id: true, bcbaId: true },
+      })
+      if (allFiltered.length > 0) {
+        const minuteRows = await prisma.timesheetEntry.groupBy({
+          by: ['timesheetId'],
+          _sum: { minutes: true },
+          where: { timesheetId: { in: allFiltered.map((t) => t.id) } },
+        })
+        const minutesByTimesheet = new Map(
+          minuteRows.map((r) => [r.timesheetId, Number(r._sum.minutes || 0)])
+        )
+
+        const acc = new Map<string, { minutes: number; timesheets: number }>()
+        for (const t of allFiltered) {
+          const cur = acc.get(t.bcbaId) || { minutes: 0, timesheets: 0 }
+          cur.minutes += minutesByTimesheet.get(t.id) || 0
+          cur.timesheets += 1
+          acc.set(t.bcbaId, cur)
+        }
+
+        const names = await prisma.bCBA.findMany({
+          where: { id: { in: Array.from(acc.keys()) } },
+          select: { id: true, name: true },
+        })
+        const nameById = new Map(names.map((n) => [n.id, n.name]))
+
+        bcbaTotals = Array.from(acc.entries())
+          .map(([bcbaId, v]) => ({
+            bcbaId,
+            bcbaName: nameById.get(bcbaId) || 'Unknown BCBA',
+            minutes: v.minutes,
+            timesheets: v.timesheets,
+          }))
+          .sort((a, b) => b.minutes - a.minutes)
+      }
+    } catch (err) {
+      // A summary failure must never break the list itself
+      console.error('[TIMESHEETS] Failed to compute per-BCBA totals:', err)
+    }
+
     const result = NextResponse.json({
       timesheets: timesheetsWithTotals,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+      bcbaTotals,
     })
     perf.end()
     return result

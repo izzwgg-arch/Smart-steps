@@ -611,7 +611,95 @@ export function BCBATimesheetForm({
     })
   }, [defaultTimes, startDate, endDate, timesheet])
 
-  // Overlap checking removed for BCBA timesheets - they allow overlaps
+  // Live overlap flagging. BCBA timesheets used to skip this entirely; they now get the
+  // same treatment as regular ones so a clash shows up while editing rather than only on
+  // save. Several services on one day are fine - their TIMES must not collide.
+  //
+  // The effect depends on a signature of the time-relevant fields, never on dayEntries
+  // itself: it writes overlapConflict back into dayEntries, and depending on the array
+  // would re-trigger itself forever.
+  const overlapSignature = JSON.stringify(
+    dayEntries.map((e) => [
+      e.date ? formatDateOnly(e.date, timezone) : null,
+      e.from ? timeAMPMTo24Hour(e.from) : null,
+      e.to ? timeAMPMTo24Hour(e.to) : null,
+      e.use,
+      e.serviceType || null,
+    ])
+  )
+
+  useEffect(() => {
+    if (!clientId || !bcbaId) return
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const rows = dayEntries
+          .map((e, index) => ({ e, index }))
+          .filter(({ e }) => e.use && e.from && e.to && !e.errors.time)
+
+        const applyConflicts = (byDate: Map<string, string>) => {
+          if (cancelled) return
+          setDayEntries((prev) => {
+            let changed = false
+            const next = prev.map((entry) => {
+              const key = entry.date ? formatDateOnly(entry.date, timezone) : ''
+              const message = byDate.get(key)
+              const current = entry.overlapConflict?.message
+              if (message === current) return entry
+              changed = true
+              return message
+                ? { ...entry, overlapConflict: { message } }
+                : { ...entry, overlapConflict: undefined }
+            })
+            return changed ? next : prev
+          })
+        }
+
+        if (rows.length === 0) {
+          applyConflicts(new Map())
+          return
+        }
+
+        const res = await fetch('/api/timesheets/check-overlaps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            providerId: '', // BCBA timesheets have no real provider
+            clientId,
+            bcbaId,
+            isBCBA: true,
+            excludeTimesheetId: timesheet?.id,
+            entries: rows.map(({ e }) => ({
+              date: formatDateOnly(e.date, timezone),
+              startTime: timeAMPMTo24Hour(e.from as TimeAMPM),
+              endTime: timeAMPMTo24Hour(e.to as TimeAMPM),
+              notes: e.serviceType || null,
+            })),
+          }),
+        })
+
+        if (!res.ok) return
+        const data = await res.json()
+        const byDate = new Map<string, string>()
+        if (data?.hasOverlaps && Array.isArray(data.conflicts)) {
+          for (const c of data.conflicts) {
+            if (c?.date && c?.message && !byDate.has(c.date)) byDate.set(c.date, c.message)
+          }
+        }
+        applyConflicts(byDate)
+      } catch (error) {
+        // Never block editing because the check could not run
+        console.error('[BCBA TIMESHEET] Live overlap check failed:', error)
+      }
+    }, 600)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlapSignature, clientId, bcbaId, timezone, timesheet?.id])
 
   // Bulk selection handlers
   const handleRowSelect = (index: number) => {
