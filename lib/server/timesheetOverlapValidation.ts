@@ -160,15 +160,18 @@ export async function detectTimesheetOverlaps(params: {
   })
 
   // Which existing timesheets can clash with this one:
-  //  - the CLIENT (the child) is matched across BOTH timesheet types - a child cannot
-  //    receive two services at once, whether the other one is a BCBA timesheet or not;
+  //  - the CLIENT (the child) is matched only WITHIN the same timesheet type. A BCBA
+  //    supervising or observing while the tech delivers direct care is normal ABA
+  //    practice, so a BCBA entry legitimately overlaps the child's regular session -
+  //    production has ~1300 such pairs. Flagging those would block real work. Two
+  //    regular sessions at once, or two BCBA services at once, are still conflicts;
   //  - the PROVIDER is matched only between regular timesheets. BCBA timesheets store a
   //    PLACEHOLDER providerId (the first active provider), so matching on it there would
   //    raise false conflicts against a provider who was never involved;
   //  - the BCBA is matched only between BCBA timesheets, where bcbaId is the person who
   //    actually delivered the service. On a regular timesheet the BCBA is a supervisor of
   //    record, not someone present, so it is not a scheduling clash.
-  const timesheetMatch: any[] = [{ clientId }]
+  const timesheetMatch: any[] = [{ clientId, isBCBA }]
   if (isBCBA) {
     if (bcbaId) timesheetMatch.push({ isBCBA: true, bcbaId })
   } else if (providerId) {
@@ -222,7 +225,8 @@ export async function detectTimesheetOverlaps(params: {
       // Check if times actually overlap
       if (!rangesOverlap(inc.startMinutes, inc.endMinutes, exStart, exEnd)) continue
 
-      const clientMatch = ex.timesheet.clientId === clientId
+      // Same type only - cross-type (BCBA supervising during a regular session) is fine
+      const clientMatch = ex.timesheet.clientId === clientId && ex.timesheet.isBCBA === isBCBA
       // Provider only counts between two regular timesheets (BCBA rows carry a placeholder
       // providerId); BCBA only counts between two BCBA timesheets (where it is the doer).
       const providerMatch =
@@ -306,9 +310,7 @@ export async function detectTimesheetOverlaps(params: {
               ? `Overlap detected on ${inc.date}: Provider ${providerLabel} already scheduled ${ex.startTime}–${ex.endTime}.`
               : scope === 'bcba'
                 ? `Overlap detected on ${inc.date}: BCBA ${bcbaLabel} already scheduled ${ex.startTime}–${ex.endTime}.`
-                : `Overlap detected on ${inc.date}: Client ${clientLabel} already scheduled ${ex.startTime}–${ex.endTime}${
-                    ex.timesheet.isBCBA ? ' (BCBA timesheet)' : ''
-                  }.`,
+                : `Overlap detected on ${inc.date}: Client ${clientLabel} already scheduled ${ex.startTime}–${ex.endTime}.`,
       })
     }
   }

@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '25')
     const search = searchParams.get('search') || ''
     const isBCBA = searchParams.get('isBCBA') === 'true' // Filter for BCBA timesheets
+    // Filter to one BCBA - lets the user see exactly whose hours they are about to send
+    const bcbaIdFilter = searchParams.get('bcbaId') || ''
 
     const where: any = { deletedAt: null }
     
@@ -32,6 +34,10 @@ export async function GET(request: NextRequest) {
     // Strict separation: filter by isBCBA flag
     if (isBCBA !== undefined) {
       where.isBCBA = isBCBA === true
+    }
+
+    if (bcbaIdFilter) {
+      where.bcbaId = bcbaIdFilter
     }
     
     // Handle archived field filtering using raw SQL since Prisma may not recognize it
@@ -85,6 +91,7 @@ export async function GET(request: NextRequest) {
             OR: [
               { client: { name: { contains: search, mode: 'insensitive' } } },
               { provider: { name: { contains: search, mode: 'insensitive' } } },
+              { bcba: { name: { contains: search, mode: 'insensitive' } } },
               { timesheetNumber: { contains: search, mode: 'insensitive' } },
             ]
           }
@@ -94,6 +101,7 @@ export async function GET(request: NextRequest) {
         where.OR = [
           { client: { name: { contains: search, mode: 'insensitive' } } },
           { provider: { name: { contains: search, mode: 'insensitive' } } },
+          { bcba: { name: { contains: search, mode: 'insensitive' } } },
           { timesheetNumber: { contains: search, mode: 'insensitive' } },
         ]
       }

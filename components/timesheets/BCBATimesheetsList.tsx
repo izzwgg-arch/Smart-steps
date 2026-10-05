@@ -46,6 +46,9 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
   const [timesheets, setTimesheets] = useState<TimesheetListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  // Filter the list to a single BCBA, so it is obvious whose hours are being sent
+  const [bcbaFilterId, setBcbaFilterId] = useState('')
+  const [bcbaOptions, setBcbaOptions] = useState<Array<{ id: string; name: string }>>([])
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -160,6 +163,25 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
     })
   }, [page, rowsPerPage])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/bcbas?limit=1000')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        const list = Array.isArray(data) ? data : data.bcbas || data.data || []
+        setBcbaOptions(
+          list
+            .filter((b: any) => b && b.id)
+            .map((b: any) => ({ id: b.id, name: b.name || 'Unnamed BCBA' }))
+        )
+      })
+      .catch((err) => console.error('[BCBA TIMESHEETS] Failed to load BCBA list:', err))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const fetchTimesheets = async () => {
     try {
       let url = `/api/timesheets?page=${page}&limit=${rowsPerPage}&search=${debouncedSearchTerm}&isBCBA=true`
@@ -168,6 +190,9 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
       }
       if (selectedUserId) {
         url += `&userId=${selectedUserId}`
+      }
+      if (bcbaFilterId) {
+        url += `&bcbaId=${encodeURIComponent(bcbaFilterId)}`
       }
       const res = await fetch(url)
       if (res.ok) {
@@ -198,7 +223,7 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
     } else {
       setPage(1)
     }
-  }, [debouncedSearchTerm, selectedUserId])
+  }, [debouncedSearchTerm, selectedUserId, bcbaFilterId])
 
   // Maintain focus on search input - use requestAnimationFrame to ensure DOM is ready
   useEffect(() => {
@@ -677,7 +702,7 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="Search by client, provider, or timesheet ID..."
+            placeholder="Search by client, BCBA, provider, or timesheet ID..."
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
             value={searchTerm}
             onChange={(e) => {
@@ -691,7 +716,46 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
             }}
           />
         </div>
+
+        {/* Whose hours am I sending? Pick a BCBA to narrow the list to that person. */}
+        <div className="flex items-center gap-2">
+          <label htmlFor="bcba-filter" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+            BCBA
+          </label>
+          <select
+            id="bcba-filter"
+            value={bcbaFilterId}
+            onChange={(e) => setBcbaFilterId(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+          >
+            <option value="">All BCBAs</option>
+            {bcbaOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          {bcbaFilterId && (
+            <button
+              type="button"
+              onClick={() => setBcbaFilterId('')}
+              className="text-xs text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
+
+      {bcbaFilterId && (
+        <div className="mb-4 rounded-md bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-900">
+          Showing only{' '}
+          <span className="font-semibold">
+            {bcbaOptions.find((b) => b.id === bcbaFilterId)?.name || 'this BCBA'}
+          </span>
+          . Select All and any send or invoice action applies to these hours only.
+        </div>
+      )}
 
       <div className="bg-white shadow sm:rounded-md overflow-x-auto">
         <table className="w-full divide-y divide-gray-200" style={{ tableLayout: 'fixed' }}>

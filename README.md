@@ -216,12 +216,18 @@ timesheet types — it used to be skipped entirely for BCBA timesheets:
 
 | Who | Matched against |
 | --- | --- |
-| **Client** (the child) | **Both** types — a child cannot be in two services at once, even across a regular and a BCBA timesheet |
+| **Client** (the child) | **Same type only** — two regular sessions at once, or two BCBA services at once. **Not** across types: a BCBA supervising while the tech delivers direct care is normal ABA practice (~1300 such pairs exist in production), so that is allowed |
 | **Provider** | Regular ↔ regular only |
 | **BCBA** | BCBA ↔ BCBA only |
 | **Within one timesheet** | Always — this is what stops same-day Treatment Planning and Supervision from overlapping each other |
 
-Two deliberate asymmetries, both load-bearing:
+**Do not widen the client rule to cross-type.** It was briefly implemented that way and
+immediately broke saving: 1,304 existing entry pairs are a BCBA Supervision or Parent
+Training entry overlapping the same child's regular session, which is how the practice
+actually works. Every one of those timesheets became unsavable until the rule was scoped
+back to same-type.
+
+Three deliberate asymmetries, all load-bearing:
 
 - **BCBA timesheets store a placeholder `providerId`** (the first active provider — see
   the POST route). Matching on it would raise conflicts against a provider who was never
@@ -232,6 +238,20 @@ Two deliberate asymmetries, both load-bearing:
 
 Conflicts come back as `code: 'OVERLAP_CONFLICT'` with a `conflicts` array; both forms
 highlight the offending rows and show the reason.
+
+Known pre-existing violations (checked 2026-10-05): 6 pairs where one BCBA is booked with
+two **different** clients at the same time. Those timesheets cannot be saved until the
+times are corrected — which is the point, since one person cannot be in two places.
+
+## Choosing whose hours you are sending
+
+The BCBA timesheets list has a **BCBA** dropdown (defaults to `All BCBAs`) next to the
+search box. Picking one filters the list to that person and shows a banner saying Select
+All and any send or invoice action applies to those hours only — so it is unambiguous
+whose hours are being submitted. The free-text search now matches **BCBA name** too, not
+just client, provider and timesheet ID; on BCBA timesheets the provider is a placeholder,
+so the BCBA was previously not searchable at all. Server side it is a `bcbaId` query
+parameter on `GET /api/timesheets`.
 
 **Fixed alongside this:** the BCBA edit form used to load a day with
 `dayEntries[0]` — it filtered every entry for a date then kept only the first, so a
