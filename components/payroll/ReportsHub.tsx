@@ -48,11 +48,11 @@ export function ReportsHub({ permissions, userRole }: ReportsHubProps) {
             <h3 className="text-lg font-semibold text-gray-900">Employee Monthly Report</h3>
           </div>
           <p className="text-sm text-gray-600 mb-4">
-            Generate a detailed monthly report for a specific employee, including hours worked, pay calculations, and payment history.
+            Generate a detailed report for a specific employee for any date range, including hours worked, pay calculations, and payment history.
           </p>
           <div className="flex items-center text-sm text-blue-600">
             <Calendar className="w-4 h-4 mr-2" />
-            <span>Select employee and month</span>
+            <span>Select employee and date range</span>
           </div>
         </Link>
 
