@@ -184,6 +184,51 @@ export function selectRunLinesForCalendarMonth<
   return [...byPeriod.values()]
 }
 
+export function buildCustomDateRangeSummary(
+  runLines: Array<{
+    totalHours: unknown
+    hourlyRateUsed: unknown
+    grossPay: unknown
+    amountPaid: unknown
+    payments?: Array<{ amount: unknown }>
+  }>,
+  timeEntries: EmployeeMonthlyTimeEntry[],
+  defaultHourlyRate: number
+): EmployeeMonthlyReportPayload['summary'] {
+  // Calculate total hours from actual time entries for the date range
+  const totalHours = timeEntries.reduce((sum, entry) => sum + entry.hours, 0)
+
+  // Get hourly rate from run lines, or use default
+  const hourlyRate = runLines.length > 0
+    ? parseFloat(String(runLines[0].hourlyRateUsed))
+    : defaultHourlyRate
+
+  // Gross pay = actual hours for period × hourly rate
+  const grossPay = totalHours * hourlyRate
+
+  // Total paid from payments
+  const totalPaidFromPayments = runLines.reduce(
+    (sum, line) =>
+      sum +
+      (line.payments ?? []).reduce(
+        (paymentSum, payment) => paymentSum + parseFloat(String(payment.amount)),
+        0
+      ),
+    0
+  )
+
+  const totalPaid = totalPaidFromPayments > 0 ? totalPaidFromPayments : 0
+  const amountOwed = grossPay - totalPaid
+
+  return {
+    totalHours,
+    hourlyRate,
+    grossPay,
+    totalPaid,
+    amountOwed,
+  }
+}
+
 export function buildSummaryFromRunLines(
   runLines: Array<{
     totalHours: unknown
@@ -399,10 +444,14 @@ export async function buildEmployeeMonthlyReport(
 
   const importRows = await fetchImportRowsForEmployeePeriod(employeeId, periodStart, periodEnd)
 
-  const defaultHourlyRate = parseFloat(employee.defaultHourlyRate.toString())
-  const summary = buildSummaryFromRunLines(runLines, defaultHourlyRate)
-
   const timeEntries = importRows.map((row) => buildTimeEntryFromImportRow(row))
+
+  const defaultHourlyRate = parseFloat(employee.defaultHourlyRate.toString())
+  // For custom date ranges, recalculate summary based on actual hours for those dates
+  // For calendar months, use the original summary from runLines
+  const summary = !monthParam && startDateParam && endDateParam
+    ? buildCustomDateRangeSummary(runLines, timeEntries, defaultHourlyRate)
+    : buildSummaryFromRunLines(runLines, defaultHourlyRate)
 
   const payments = runLines
     .flatMap((line) =>
