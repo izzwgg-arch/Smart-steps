@@ -377,7 +377,10 @@ export async function buildEmployeeMonthlyReport(
     orderBy: { run: { periodStart: 'asc' } },
   })
 
-  const runLines = selectRunLinesForCalendarMonth(overlappingRunLines, year, month)
+  // For custom date ranges, use all overlapping lines; for calendar months, filter by month
+  const runLines = monthParam
+    ? selectRunLinesForCalendarMonth(overlappingRunLines, year, month)
+    : overlappingRunLines
 
   if (overlappingRunLines.length > runLines.length) {
     console.warn('[EMPLOYEE MONTHLY REPORT] Filtered duplicate/overlapping payroll runs for summary:', {
