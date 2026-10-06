@@ -61,9 +61,9 @@ export function EmployeeMonthlyReportSelector() {
         Back to Reports
       </Link>
 
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">Employee Monthly Report</h1>
+      <h1 className="text-3xl font-bold text-gray-900 mb-6">Employee Report</h1>
       <p className="text-gray-600 mb-8">
-        Select an employee and month to generate a detailed monthly payroll report.
+        Select an employee and date range to generate a detailed payroll report. Use custom dates for any payroll period, including twice-monthly splits.
       </p>
 
       <div className="bg-white rounded-lg shadow p-6 max-w-2xl">
