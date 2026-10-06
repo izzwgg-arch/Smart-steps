@@ -377,10 +377,16 @@ export async function buildEmployeeMonthlyReport(
     orderBy: { run: { periodStart: 'asc' } },
   })
 
-  // For custom date ranges, use all overlapping lines; for calendar months, filter by month
-  const runLines = monthParam
-    ? selectRunLinesForCalendarMonth(overlappingRunLines, year, month)
-    : overlappingRunLines
+  // For custom date ranges, only include runs that START within the date range
+  // For calendar months, filter by calendar month
+  let runLines: typeof overlappingRunLines
+  if (monthParam) {
+    runLines = selectRunLinesForCalendarMonth(overlappingRunLines, year, month)
+  } else {
+    runLines = overlappingRunLines.filter(line =>
+      line.run.periodStart >= periodStart && line.run.periodStart <= periodEnd
+    )
+  }
 
   if (overlappingRunLines.length > runLines.length) {
     console.warn('[EMPLOYEE MONTHLY REPORT] Filtered duplicate/overlapping payroll runs for summary:', {
