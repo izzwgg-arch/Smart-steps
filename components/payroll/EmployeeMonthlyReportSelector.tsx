@@ -11,7 +11,10 @@ export function EmployeeMonthlyReportSelector() {
   const router = useRouter()
   const [employees, setEmployees] = useState<any[]>([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
-  const [selectedMonth, setSelectedMonth] = useState<Date | null>(new Date())
+  const [startDate, setStartDate] = useState<Date | null>(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  )
+  const [endDate, setEndDate] = useState<Date | null>(new Date())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -33,13 +36,19 @@ export function EmployeeMonthlyReportSelector() {
   }
 
   const handleGenerate = () => {
-    if (!selectedEmployeeId || !selectedMonth) {
-      alert('Please select an employee and month')
+    if (!selectedEmployeeId || !startDate || !endDate) {
+      alert('Please select an employee and date range')
       return
     }
 
-    const monthStr = `${selectedMonth.getFullYear()}-${String(selectedMonth.getMonth() + 1).padStart(2, '0')}`
-    router.push(`/payroll/reports/employee/${selectedEmployeeId}?month=${monthStr}`)
+    if (endDate < startDate) {
+      alert('End date must be after start date')
+      return
+    }
+
+    const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`
+    const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
+    router.push(`/payroll/reports/employee/${selectedEmployeeId}?startDate=${startStr}&endDate=${endStr}`)
   }
 
   return (
@@ -78,17 +87,31 @@ export function EmployeeMonthlyReportSelector() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Month *
-            </label>
-            <DatePicker
-              selected={selectedMonth}
-              onChange={(date) => setSelectedMonth(date)}
-              dateFormat="MMMM yyyy"
-              showMonthYearPicker
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Start Date *
+              </label>
+              <DatePicker
+                selected={startDate}
+                onChange={(date) => setStartDate(date)}
+                dateFormat="MMM d, yyyy"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                End Date *
+              </label>
+              <DatePicker
+                selected={endDate}
+                onChange={(date) => setEndDate(date)}
+                dateFormat="MMM d, yyyy"
+                minDate={startDate || undefined}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-4 pt-4">
@@ -100,7 +123,7 @@ export function EmployeeMonthlyReportSelector() {
             </Link>
             <button
               onClick={handleGenerate}
-              disabled={!selectedEmployeeId || !selectedMonth || loading}
+              disabled={!selectedEmployeeId || !startDate || !endDate || loading}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Generate Report

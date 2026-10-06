@@ -59,6 +59,23 @@ export function parseMonthParam(monthParam: string): { year: number; month: numb
   return { year, month }
 }
 
+export function parseDateRangeParams(startDateStr: string, endDateStr: string): { periodStart: Date; periodEnd: Date } {
+  const startDate = new Date(startDateStr)
+  const endDate = new Date(endDateStr)
+
+  if (Number.isNaN(startDate.getTime())) {
+    throw new Error('Invalid startDate format. Use YYYY-MM-DD')
+  }
+  if (Number.isNaN(endDate.getTime())) {
+    throw new Error('Invalid endDate format. Use YYYY-MM-DD')
+  }
+
+  return {
+    periodStart: startDate,
+    periodEnd: new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59, 999),
+  }
+}
+
 export function getCalendarMonthRange(year: number, month: number): { periodStart: Date; periodEnd: Date } {
   return {
     periodStart: new Date(year, month - 1, 1),
@@ -305,10 +322,35 @@ export async function fetchImportRowsForEmployeePeriod(
 
 export async function buildEmployeeMonthlyReport(
   employeeId: string,
-  monthParam: string
+  monthParam?: string | null,
+  startDateParam?: string | null,
+  endDateParam?: string | null
 ): Promise<EmployeeMonthlyReportPayload> {
-  const { year, month } = parseMonthParam(monthParam)
-  const { periodStart, periodEnd } = getCalendarMonthRange(year, month)
+  let year: number
+  let month: number
+  let periodStart: Date
+  let periodEnd: Date
+
+  if (monthParam) {
+    // Legacy month-based parameter
+    const monthInfo = parseMonthParam(monthParam)
+    year = monthInfo.year
+    month = monthInfo.month
+    const range = getCalendarMonthRange(year, month)
+    periodStart = range.periodStart
+    periodEnd = range.periodEnd
+  } else if (startDateParam && endDateParam) {
+    // New date range parameters
+    const range = parseDateRangeParams(startDateParam, endDateParam)
+    periodStart = range.periodStart
+    periodEnd = range.periodEnd
+
+    // Set month/year to the start date's month for the period object
+    year = periodStart.getFullYear()
+    month = periodStart.getMonth() + 1
+  } else {
+    throw new Error('Either monthParam or both startDateParam and endDateParam must be provided')
+  }
 
   const employee = await prisma.payrollEmployee.findUnique({
     where: { id: employeeId },

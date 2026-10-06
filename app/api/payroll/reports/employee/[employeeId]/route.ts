@@ -5,8 +5,10 @@ import { buildEmployeeMonthlyReport } from '@/lib/payroll/employeeMonthlyReportB
 
 /**
  * GET /api/payroll/reports/employee/[employeeId]?month=YYYY-MM
+ * OR /api/payroll/reports/employee/[employeeId]?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
  *
  * Shared JSON payload for browser preview and PDF export.
+ * Supports both legacy month parameter and new date range parameters.
  */
 export async function GET(
   request: NextRequest,
@@ -28,18 +30,27 @@ export async function GET(
 
     const { employeeId } = await Promise.resolve(params)
     const monthParam = request.nextUrl.searchParams.get('month')
+    const startDateParam = request.nextUrl.searchParams.get('startDate')
+    const endDateParam = request.nextUrl.searchParams.get('endDate')
 
-    if (!monthParam) {
-      return NextResponse.json({ error: 'Month parameter is required (format: YYYY-MM)' }, { status: 400 })
+    // Support both month and date range parameters
+    if (monthParam) {
+      const report = await buildEmployeeMonthlyReport(employeeId, monthParam)
+      return NextResponse.json(report)
+    } else if (startDateParam && endDateParam) {
+      const report = await buildEmployeeMonthlyReport(employeeId, undefined, startDateParam, endDateParam)
+      return NextResponse.json(report)
+    } else {
+      return NextResponse.json(
+        { error: 'Either month parameter (YYYY-MM) or both startDate and endDate parameters (YYYY-MM-DD) are required' },
+        { status: 400 }
+      )
     }
-
-    const report = await buildEmployeeMonthlyReport(employeeId, monthParam)
-    return NextResponse.json(report)
   } catch (error: any) {
     if (error?.message === 'Employee not found') {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
-    if (error?.message?.includes('Invalid month format')) {
+    if (error?.message?.includes('Invalid') && error?.message?.includes('format')) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 

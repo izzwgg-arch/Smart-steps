@@ -10,23 +10,36 @@ import type { EmployeeMonthlyReportPayload } from '@/lib/payroll/employeeMonthly
 interface EmployeeMonthlyReportProps {
   employeeId: string
   month?: string
+  startDate?: string
+  endDate?: string
 }
 
-export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyReportProps) {
+export function EmployeeMonthlyReport({ employeeId, month, startDate, endDate }: EmployeeMonthlyReportProps) {
   const [data, setData] = useState<EmployeeMonthlyReportPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
+  // Determine if we're using month or date range
+  const useMonth = month && !startDate && !endDate
+  const useDateRange = startDate && endDate && !month
+
   useEffect(() => {
-    if (employeeId && month) {
+    if (employeeId && (useMonth || useDateRange)) {
       fetchReportData()
     }
-  }, [employeeId, month])
+  }, [employeeId, month, startDate, endDate, useMonth, useDateRange])
 
   const fetchReportData = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/payroll/reports/employee/${employeeId}?month=${month}`)
+      let url = `/api/payroll/reports/employee/${employeeId}?`
+      if (useMonth) {
+        url += `month=${month}`
+      } else if (useDateRange) {
+        url += `startDate=${startDate}&endDate=${endDate}`
+      }
+
+      const response = await fetch(url)
       if (!response.ok) {
         const error = await response.json()
         throw new Error(error.error || 'Failed to load report data')
@@ -47,14 +60,21 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
   }
 
   const handleExportPDF = async () => {
-    if (!employeeId || !month) {
+    if (!employeeId || (!month && (!startDate || !endDate))) {
       toast.error('Missing required parameters')
       return
     }
 
     setExporting(true)
     try {
-      const response = await fetch(`/api/payroll/reports/employee/${employeeId}/pdf?month=${month}`)
+      let url = `/api/payroll/reports/employee/${employeeId}/pdf?`
+      if (useMonth) {
+        url += `month=${month}`
+      } else if (useDateRange) {
+        url += `startDate=${startDate}&endDate=${endDate}`
+      }
+
+      const response = await fetch(url)
 
       if (!response.ok) {
         const error = await response.json()
@@ -62,13 +82,21 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
       }
 
       const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
+      const blobUrl = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url
-      a.download = `employee-monthly-${data?.employee.fullName.replace(/\s+/g, '-')}-${month}.pdf`
+      a.href = blobUrl
+
+      let filename = `employee-monthly-${data?.employee.fullName.replace(/\s+/g, '-')}`
+      if (useMonth) {
+        filename += `-${month}.pdf`
+      } else if (useDateRange) {
+        filename += `-${startDate}-to-${endDate}.pdf`
+      }
+
+      a.download = filename
       document.body.appendChild(a)
       a.click()
-      window.URL.revokeObjectURL(url)
+      window.URL.revokeObjectURL(blobUrl)
       document.body.removeChild(a)
 
       toast.success('PDF exported successfully')
@@ -139,9 +167,9 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
         </button>
       </div>
 
-      <h1 className="text-3xl font-bold text-gray-900 mb-2">Employee Monthly Report</h1>
+      <h1 className="text-3xl font-bold text-gray-900 mb-2">Employee Report</h1>
       <p className="text-gray-600 mb-8">
-        {data.employee.fullName} - {data.period.monthName} {data.period.year}
+        {data.employee.fullName} - {useDateRange ? `${startDate} to ${endDate}` : `${data.period.monthName} ${data.period.year}`}
       </p>
 
       {data.validation.warnings.length > 0 && (
@@ -164,7 +192,9 @@ export function EmployeeMonthlyReport({ employeeId, month }: EmployeeMonthlyRepo
           </div>
           <div>
             <span className="text-sm font-medium text-gray-700">Period:</span>
-            <span className="ml-2 text-sm text-gray-900">{data.period.monthName} {data.period.year}</span>
+            <span className="ml-2 text-sm text-gray-900">
+              {useDateRange ? `${startDate} to ${endDate}` : `${data.period.monthName} ${data.period.year}`}
+            </span>
           </div>
           {data.employee.email && (
             <div>

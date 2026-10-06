@@ -10,7 +10,7 @@ export default async function EmployeeMonthlyReportPage({
   searchParams,
 }: {
   params: Promise<{ employeeId: string }> | { employeeId: string }
-  searchParams: Promise<{ month?: string }> | { month?: string }
+  searchParams: Promise<{ month?: string; startDate?: string; endDate?: string }> | { month?: string; startDate?: string; endDate?: string }
 }) {
   const session = await getServerSession(authOptions)
   if (!session) {
@@ -19,7 +19,7 @@ export default async function EmployeeMonthlyReportPage({
 
   const permissions = await getUserPermissions(session.user.id)
   const canView = permissions['PAYROLL_REPORTS_EXPORT']?.canView === true ||
-                  session.user.role === 'ADMIN' || 
+                  session.user.role === 'ADMIN' ||
                   session.user.role === 'SUPER_ADMIN'
 
   if (!canView) {
@@ -29,12 +29,14 @@ export default async function EmployeeMonthlyReportPage({
   const { employeeId } = await Promise.resolve(params)
   const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : searchParams
   const month = resolvedSearchParams?.month
+  const startDate = resolvedSearchParams?.startDate
+  const endDate = resolvedSearchParams?.endDate
 
   return (
     <div className="min-h-screen">
       <DashboardNav userRole={session.user.role} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <EmployeeMonthlyReport employeeId={employeeId} month={month} />
+        <EmployeeMonthlyReport employeeId={employeeId} month={month} startDate={startDate} endDate={endDate} />
       </main>
     </div>
   )
