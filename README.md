@@ -11,6 +11,14 @@ A comprehensive web application for managing ABA (Applied Behavior Analysis) ope
 - **BCBA Management**: Manage Board Certified Behavior Analysts
 - **Insurance Management**: Configure insurance rates (rate changes don't affect existing invoices)
 - **Timesheet System**: Create, submit, approve, and lock timesheets with workflow
+  - **Unapprove to correct mistakes**: an APPROVED or EMAILED timesheet (regular or
+    BCBA) can be unapproved from its row menu by admins or users with the
+    `timesheets.unapprove` / `bcbaTimesheets.unapprove` permission. It goes back to
+    DRAFT and becomes editable. If it is on a DRAFT/READY invoice with no payments,
+    its lines are removed from that invoice and the total is recalculated (an invoice
+    left with no lines is soft-deleted); its entries are marked un-invoiced so it can be
+    re-invoiced after re-approval. Timesheets on a SENT/PAID/partially-paid invoice are
+    refused — use an invoice adjustment for those.
 - **Parent ABC notes**: Per-row behavior tracking (Antecedent / Behavior /
   Consequence on every line, not one behavior per sheet)
 - **Multiple services per day**: A BCBA can log Treatment Planning and Supervision on the

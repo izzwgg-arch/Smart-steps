@@ -338,7 +338,11 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
   }
 
   const handleUnapprove = async (id: string) => {
-    const confirmed = confirm('Unapprove this BCBA timesheet and return it to DRAFT?')
+    const confirmed = confirm(
+      'Unapprove this BCBA timesheet and return it to DRAFT so it can be edited?\n\n' +
+      'If it is on a draft invoice, its lines will be removed from that invoice. ' +
+      'After fixing it, approve it again and re-generate the invoice.'
+    )
     if (!confirmed) return
 
     try {
@@ -356,7 +360,14 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
       })
 
       if (res.ok && data.ok !== false) {
-        toast.success('Timesheet moved back to draft')
+        const removed: { invoiceNumber: string; deleted: boolean }[] = data.removedFromInvoices || []
+        toast.success(
+          removed.length > 0
+            ? `Timesheet moved back to draft and removed from invoice ${removed
+                .map((i) => i.invoiceNumber + (i.deleted ? ' (now empty, deleted)' : ''))
+                .join(', ')}`
+            : 'Timesheet moved back to draft — you can edit it now'
+        )
         fetchTimesheets()
       } else {
         const errorMsg = data.message || data.error || `Failed to unapprove timesheet (${res.status})`
@@ -1000,7 +1011,7 @@ export function BCBATimesheetsList({ isArchive = false }: { isArchive?: boolean 
                         )}
                       </>
                     )}
-                    {timesheet.status === 'APPROVED' && (canUnapproveTimesheets || isAdmin) && (
+                    {(timesheet.status === 'APPROVED' || timesheet.status === 'EMAILED') && (canUnapproveTimesheets || isAdmin) && (
                       <button
                         onClick={() => handleUnapprove(timesheet.id)}
                         className="flex items-center w-full px-4 py-2 text-sm text-yellow-700 hover:bg-gray-100"
