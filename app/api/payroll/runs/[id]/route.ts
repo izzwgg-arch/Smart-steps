@@ -151,6 +151,11 @@ export async function DELETE(
       )
     }
 
+    // Delete associated reports first
+    await prisma.payrollReportArtifact.deleteMany({
+      where: { runId: id },
+    })
+
     // Delete the run (cascade will delete lines and payments)
     await prisma.payrollRun.delete({
       where: { id },
