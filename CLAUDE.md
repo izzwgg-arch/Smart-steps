@@ -99,7 +99,8 @@ clone, but:
 - its `origin` is **`git@github.com:izzwgg-arch/aplus.git`** — the other repo;
 - it is on branch **`feature/ops-center-logging`** at `fcc9e90`, level with
   `origin/feature/ops-center-logging`;
-- it has **17 uncommitted changes** (modified payroll routes, dashboard, PDF
+- it has uncommitted changes — **17 on 2026-09-23, 45 by 2026-11-17** as
+  targeted merge deploys add files (initially modified payroll routes, dashboard, PDF
   helpers, `middleware.ts`, `next.config.js`, plus added
   `lib/payroll/employeeMonthlyReportBuilder.ts` and an untracked
   `app/api/payroll/reports/employee/[employeeId]/route.ts`);
@@ -237,7 +238,14 @@ Production runs from `/var/www/aplus-center` under PM2 process `aplus-center`.
 **Always confirm with the user before deploying**, and never deploy a change
 that has not been built locally first (`npm run build`).
 
-### Targeted merge deploy — the procedure that works today (used 2026-09-23)
+### Targeted merge deploy — the procedure that works today (used 2026-09-23, 2026-11-17)
+
+Last used 2026-11-17 for the timesheet-unapprove change (3 files, all identical to
+base on the server so a clean fast-forward; server files are CRLF, uploads were
+converted to CRLF). Backup at `/root/deploy-backups/20261117_160929_unapprove/`.
+`Failed to update scheduled job record for INVOICE_GENERATION` appears during
+`npm run build` and hundreds of times in the PM2 error log — it predates that
+deploy and is not caused by it.
 
 Until the clone is re-pointed, this is how a change actually reaches production.
 It never runs `git pull` and never overwrites the server's unsaved work.
