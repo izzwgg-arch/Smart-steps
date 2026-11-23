@@ -245,18 +245,24 @@ Last used 2026-11-23 for the admin-set-password fix (`dee786d`; 2 files,
 `app/api/users/[id]/route.ts` and `components/users/UserFormEnhanced.tsx`, both
 identical to base on the server and CRLF, so a clean fast-forward). Server
 `git status --porcelain` went 45 → 47. Backup at
-`/root/deploy-backups/20261123_184223_setpassword/`. The recurring
-`Failed to update scheduled job record for INVOICE_GENERATION` error is Prisma
-**P2022: column `ScheduledJob.metadata` does not exist** in the live database —
-the schema has the column, the DB does not. Fixing it is a schema change that
-needs user approval (see the migration section).
+`/root/deploy-backups/20261123_184223_setpassword/`.
+
+**`Failed to update scheduled job record for INVOICE_GENERATION` — fixed
+2026-11-23.** It was Prisma P2022: the schema had `ScheduledJob.metadata` but
+the live table did not. The column was added via psql
+(`prisma/migrations/add_scheduled_job_metadata.sql`, user-approved; DB dump at
+`/root/deploy-backups/20261123_190558_scheduledjob_metadata/`). If the error
+shows up again it is a new problem, not the old noise. It never blocked the
+Tuesday invoice job, which runs before that record is written. Two things left
+as they are: the row's `schedule` text still reads `0 16 * * 5` because
+`updateScheduledJobRecord` never rewrites it (cosmetic — the real schedule is
+the constant in `lib/cron.ts`), and the Tuesday runs from 2026-10-13 to
+2026-11-17 all logged `0 invoice(s) created for 0 client(s)` — invoices are
+being created manually on other days; whether that is intended is unconfirmed.
 
 Before that, used 2026-11-17 for the timesheet-unapprove change (3 files, all identical to
 base on the server so a clean fast-forward; server files are CRLF, uploads were
 converted to CRLF). Backup at `/root/deploy-backups/20261117_160929_unapprove/`.
-`Failed to update scheduled job record for INVOICE_GENERATION` appears during
-`npm run build` and hundreds of times in the PM2 error log — it predates that
-deploy and is not caused by it.
 
 Until the clone is re-pointed, this is how a change actually reaches production.
 It never runs `git pull` and never overwrites the server's unsaved work.
