@@ -99,7 +99,7 @@ clone, but:
 - its `origin` is **`git@github.com:izzwgg-arch/aplus.git`** — the other repo;
 - it is on branch **`feature/ops-center-logging`** at `fcc9e90`, level with
   `origin/feature/ops-center-logging`;
-- it has uncommitted changes — **17 on 2026-09-23, 45 by 2026-11-17, 47 by
+- it has uncommitted changes — **17 on 2026-09-23, 45 by 2026-11-17, 49 by
   2026-11-23** as
   targeted merge deploys add files (initially modified payroll routes, dashboard, PDF
   helpers, `middleware.ts`, `next.config.js`, plus added
@@ -245,7 +245,11 @@ Last used 2026-11-23 for the admin-set-password fix (`dee786d`; 2 files,
 `app/api/users/[id]/route.ts` and `components/users/UserFormEnhanced.tsx`, both
 identical to base on the server and CRLF, so a clean fast-forward). Server
 `git status --porcelain` went 45 → 47. Backup at
-`/root/deploy-backups/20261123_184223_setpassword/`.
+`/root/deploy-backups/20261123_184223_setpassword/`. A second deploy the same
+day shipped the optional password on Create New User (`00803a1`; 3 files,
+`app/api/users/route.ts`, `components/users/UserFormEnhanced.tsx`,
+`lib/email.ts`, again all identical to base and CRLF). Server count went
+47 → 49; backup at `/root/deploy-backups/20261123_194029_createpassword/`.
 
 **`Failed to update scheduled job record for INVOICE_GENERATION` — fixed
 2026-11-23.** It was Prisma P2022: the schema had `ScheduledJob.metadata` but
