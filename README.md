@@ -364,8 +364,13 @@ User passwords must:
 ### Setting a password for an invited user
 
 Creating a user emails them a temporary password (valid 72 hours, must be
-changed on first login). An admin can skip that at any time: **Users → Edit →
-Password**. Saving a password there cancels the pending invitation — the
+changed on first login). An admin can instead set the password themselves:
+
+- **At creation** — fill in the optional **Password** field on **Users → Create
+  New User**. No temporary password is issued and no change is forced on first
+  login. The invitation email still goes out, but it does **not** contain the
+  password; the admin gives it to the user directly.
+- **Afterwards** — **Users → Edit → Password**. Saving a password on the Edit page cancels the pending invitation — the
 temporary password and its expiry are cleared, the forced change on first login
 is turned off, and any login lockout is reset — so the user can log in with the
 admin-set password immediately.

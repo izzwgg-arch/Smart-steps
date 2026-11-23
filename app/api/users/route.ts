@@ -6,7 +6,13 @@ import bcrypt from 'bcryptjs'
 import { validatePassword } from '@/lib/utils'
 import { logCreate } from '@/lib/audit'
 import { generateTemporaryPassword } from '@/lib/security'
-import { sendMailSafe, getNewUserInviteEmailHtml, getNewUserInviteEmailText } from '@/lib/email'
+import {
+  sendMailSafe,
+  getNewUserInviteEmailHtml,
+  getNewUserInviteEmailText,
+  getNewUserWelcomeEmailHtml,
+  getNewUserWelcomeEmailText,
+} from '@/lib/email'
 import { generateSecureToken } from '@/lib/security'
 
 export async function GET(request: NextRequest) {
@@ -113,7 +119,7 @@ export async function POST(request: NextRequest) {
     const {
       username,
       email,
-      password, // Ignored for new users - always generate temp password
+      password, // Optional - if given, the admin sets the password and no temp password is issued
       role,
       active,
       activationStart,
@@ -164,19 +170,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Always use temp password for new users (password field is not used in UI)
-    // Admin does not enter password - system generates temp password
+    // The admin may set the password up front. If they do, no temp password is
+    // issued and the user is not forced to change it on first login.
+    const adminSetPassword = typeof password === 'string' && password !== ''
+    if (adminSetPassword) {
+      const passwordValidation = validatePassword(password)
+      if (!passwordValidation.valid) {
+        return NextResponse.json(
+          {
+            error: 'VALIDATION_ERROR',
+            message: passwordValidation.errors.join(', '),
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Otherwise the system generates a temp password and emails it
     const tempPassword = generateTemporaryPassword()
-    const tempPasswordHash = await bcrypt.hash(tempPassword, 10)
-    
+    const tempPasswordHash = adminSetPassword ? null : await bcrypt.hash(tempPassword, 10)
+
     // Set temp password expiration (72 hours from now)
-    const tempPasswordExpiresAt = new Date()
-    const ttlHours = parseInt(process.env.TEMP_PASSWORD_TTL_HOURS || '72')
-    tempPasswordExpiresAt.setHours(tempPasswordExpiresAt.getHours() + ttlHours)
-    
-    // Create a placeholder password hash (user must set password on first login)
-    // This prevents login until password is set
-    const placeholderPassword = await bcrypt.hash(generateSecureToken(32), 10)
+    let tempPasswordExpiresAt: Date | null = null
+    if (!adminSetPassword) {
+      tempPasswordExpiresAt = new Date()
+      const ttlHours = parseInt(process.env.TEMP_PASSWORD_TTL_HOURS || '72')
+      tempPasswordExpiresAt.setHours(tempPasswordExpiresAt.getHours() + ttlHours)
+    }
+
+    // Without an admin-set password, store a placeholder hash (user must set
+    // a password on first login) - this prevents login until password is set
+    const placeholderPassword = await bcrypt.hash(
+      adminSetPassword ? password : generateSecureToken(32),
+      10
+    )
 
     // Normalize email to lowercase for consistency
     const normalizedEmail = email.trim().toLowerCase()
@@ -225,8 +252,8 @@ export async function POST(request: NextRequest) {
         data: {
           username: username.trim(),
           email: normalizedEmail, // Use normalized lowercase email
-          password: placeholderPassword, // Placeholder - cannot login with this
-          tempPasswordHash: tempPasswordHash, // Actual temp password for first login
+          password: placeholderPassword, // Admin-set password, or a placeholder that cannot be logged in with
+          tempPasswordHash: tempPasswordHash, // Actual temp password for first login (null if admin set one)
           tempPasswordExpiresAt: tempPasswordExpiresAt,
           role: role || 'USER',
           // Allow USERs to be assigned a custom role as well (role permissions drive access)
@@ -234,7 +261,7 @@ export async function POST(request: NextRequest) {
           active: active !== undefined ? active : true,
           activationStart: activationStart ? new Date(activationStart) : null,
           activationEnd: activationEnd ? new Date(activationEnd) : null,
-          mustChangePassword: true, // Always force password change on first login
+          mustChangePassword: !adminSetPassword, // Force a change on first login only for temp passwords
         },
         select: {
           id: true,
@@ -323,8 +350,9 @@ export async function POST(request: NextRequest) {
       email: user.email,
       role: user.role,
       active: user.active,
-      mustChangePassword: true,
-      tempPasswordGenerated: true, // Only log that temp password was generated, not the password itself
+      mustChangePassword: !adminSetPassword,
+      tempPasswordGenerated: !adminSetPassword, // Only log that temp password was generated, not the password itself
+      passwordSetByAdmin: adminSetPassword,
     })
 
     // Send invite email with temp password
@@ -336,8 +364,13 @@ export async function POST(request: NextRequest) {
       const emailResult = await sendMailSafe({
         to: user.email,
         subject: 'You\'ve been invited to Smart Steps ABA',
-        html: getNewUserInviteEmailHtml(user.email, tempPassword, loginUrl, user.username),
-        text: getNewUserInviteEmailText(user.email, tempPassword, loginUrl),
+        // An admin-set password is never emailed - the admin hands it over directly
+        html: adminSetPassword
+          ? getNewUserWelcomeEmailHtml(user.email, loginUrl, user.username)
+          : getNewUserInviteEmailHtml(user.email, tempPassword, loginUrl, user.username),
+        text: adminSetPassword
+          ? getNewUserWelcomeEmailText(user.email, loginUrl)
+          : getNewUserInviteEmailText(user.email, tempPassword, loginUrl),
       }, {
         action: 'USER_CREATED',
         entityType: 'User',

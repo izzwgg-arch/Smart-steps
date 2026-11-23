@@ -81,11 +81,13 @@ export function UserFormEnhanced({ user }: UserFormProps) {
   }
 
   const validatePasswordOnChange = (pwd: string) => {
-    if (!user || pwd) {
+    // Password is optional on both create and edit - only validate when typed
+    if (pwd) {
       const validation = validatePassword(pwd)
       setPasswordErrors(validation.errors)
       return validation.valid
     }
+    setPasswordErrors([])
     return true
   }
 
@@ -102,8 +104,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
       return
     }
 
-    // Only validate password if editing existing user and password is provided
-    if (user && password) {
+    // Only validate password if one is provided (optional on create and edit)
+    if (password) {
       const validation = validatePassword(password)
       if (!validation.valid) {
         toast.error(validation.errors.join(', '))
@@ -142,8 +144,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
         body.customRoleId = customRoleId
       }
 
-      // Only include password if editing existing user and password is provided
-      if (user && password) {
+      // Only include password if one is provided (optional on create and edit)
+      if (password) {
         body.password = password
       }
 
@@ -183,7 +185,14 @@ export function UserFormEnhanced({ user }: UserFormProps) {
         if (!user) {
           // New user created
           if (data.emailSent) {
-            toast.success('User created. Invitation email sent.')
+            toast.success(
+              password
+                ? 'User created with your password. Invitation email sent (without the password).'
+                : 'User created. Invitation email sent.',
+              { duration: 6000 }
+            )
+          } else if (password) {
+            toast.success('User created with your password, but the invitation email failed. The user can still log in with the password you set.', { duration: 6000 })
           } else {
             toast.success('User created, but invitation email failed. You can resend the invitation from the user list.', { duration: 6000 })
           }
@@ -292,10 +301,22 @@ export function UserFormEnhanced({ user }: UserFormProps) {
           />
         </div>
 
-        {user ? (
-          <div>
+        {!user && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <p className="text-sm text-blue-800">
+              <strong>Invite User:</strong> An invitation email is sent when you create the user.
+              Leave the password blank and a temporary password is generated and emailed; the user
+              must set a new password on first login. Or enter a password below to set it yourself.
+            </p>
+          </div>
+        )}
+
+        <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Password <span className="text-gray-500 text-xs ml-2">(leave blank to keep current)</span>
+              Password{' '}
+              <span className="text-gray-500 text-xs ml-2">
+                {user ? '(leave blank to keep current)' : '(optional - leave blank to email a temporary password)'}
+              </span>
             </label>
             <input
               type="password"
@@ -308,7 +329,8 @@ export function UserFormEnhanced({ user }: UserFormProps) {
               className={`w-full px-3 py-2 border rounded-md focus:ring-primary-500 focus:border-primary-500 ${
                 passwordErrors.length > 0 ? 'border-red-500' : 'border-gray-300'
               }`}
-              placeholder="Enter new password"
+              placeholder={user ? 'Enter new password' : 'Set a password for this user'}
+              autoComplete="new-password"
             />
             {passwordErrors.length > 0 && (
               <ul className="mt-1 text-sm text-red-600 list-disc list-inside">
@@ -321,18 +343,11 @@ export function UserFormEnhanced({ user }: UserFormProps) {
               Password must be 10-15 characters with uppercase, lowercase, and special character
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              Setting a password here replaces any pending invitation: the emailed temporary password stops
-              working and the user can log in with this password right away.
+              {user
+                ? 'Setting a password here replaces any pending invitation: the emailed temporary password stops working and the user can log in with this password right away.'
+                : 'If you set a password, the invitation email does not include it - give it to the user yourself. They can log in with it right away and are not asked to change it.'}
             </p>
-          </div>
-        ) : (
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-            <p className="text-sm text-blue-800">
-              <strong>Invite User:</strong> A temporary password will be generated and emailed to the user. 
-              They will be required to set a new password on first login.
-            </p>
-          </div>
-        )}
+        </div>
 
         <div>
           <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">

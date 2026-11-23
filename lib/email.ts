@@ -709,6 +709,74 @@ If you did not expect this email, please contact your administrator.
   `.trim()
 }
 
+/**
+ * Invite email for a user whose password was set by the admin at creation.
+ * Deliberately does NOT contain the password - the admin hands it over directly.
+ */
+export function getNewUserWelcomeEmailHtml(
+  email: string,
+  loginUrl: string,
+  userName?: string
+): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Welcome to Smart Steps</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;">
+        <h1 style="color: #2563eb; margin-top: 0;">Smart Steps</h1>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <h2 style="color: #1f2937; margin-top: 0;">Welcome to Smart Steps!</h2>
+
+        <p>${userName ? `Hello ${userName},` : 'Hello,'}</p>
+
+        <p>Your account has been created and is ready to use.</p>
+
+        <div style="background-color: #fef3c7; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+          <p style="margin: 5px 0;"><strong>Your Login Email:</strong> ${email}</p>
+          <p style="margin: 5px 0;"><strong>Password:</strong> your administrator set your password and will give it to you directly.</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${loginUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Login to Smart Steps</a>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+
+        <p style="color: #6b7280; font-size: 12px; margin-bottom: 0;">
+          If you did not expect this email, please contact your administrator.
+        </p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; color: #6b7280; font-size: 12px;">
+        <p>&copy; ${new Date().getFullYear()} Smart Steps. All rights reserved.</p>
+      </div>
+    </body>
+    </html>
+  `
+}
+
+export function getNewUserWelcomeEmailText(email: string, loginUrl: string): string {
+  return `
+Welcome to Smart Steps!
+
+Your account has been created and is ready to use.
+
+Your Login Email: ${email}
+Password: your administrator set your password and will give it to you directly.
+
+Login URL: ${loginUrl}
+
+If you did not expect this email, please contact your administrator.
+  `.trim()
+}
+
 // Batch Approval Email Template
 
 export interface QueuedTimesheetItem {
