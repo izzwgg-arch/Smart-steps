@@ -99,7 +99,8 @@ clone, but:
 - its `origin` is **`git@github.com:izzwgg-arch/aplus.git`** — the other repo;
 - it is on branch **`feature/ops-center-logging`** at `fcc9e90`, level with
   `origin/feature/ops-center-logging`;
-- it has uncommitted changes — **17 on 2026-09-23, 45 by 2026-11-17** as
+- it has uncommitted changes — **17 on 2026-09-23, 45 by 2026-11-17, 47 by
+  2026-11-23** as
   targeted merge deploys add files (initially modified payroll routes, dashboard, PDF
   helpers, `middleware.ts`, `next.config.js`, plus added
   `lib/payroll/employeeMonthlyReportBuilder.ts` and an untracked
@@ -238,9 +239,19 @@ Production runs from `/var/www/aplus-center` under PM2 process `aplus-center`.
 **Always confirm with the user before deploying**, and never deploy a change
 that has not been built locally first (`npm run build`).
 
-### Targeted merge deploy — the procedure that works today (used 2026-09-23, 2026-11-17)
+### Targeted merge deploy — the procedure that works today (used 2026-09-23, 2026-11-17, 2026-11-23)
 
-Last used 2026-11-17 for the timesheet-unapprove change (3 files, all identical to
+Last used 2026-11-23 for the admin-set-password fix (`dee786d`; 2 files,
+`app/api/users/[id]/route.ts` and `components/users/UserFormEnhanced.tsx`, both
+identical to base on the server and CRLF, so a clean fast-forward). Server
+`git status --porcelain` went 45 → 47. Backup at
+`/root/deploy-backups/20261123_184223_setpassword/`. The recurring
+`Failed to update scheduled job record for INVOICE_GENERATION` error is Prisma
+**P2022: column `ScheduledJob.metadata` does not exist** in the live database —
+the schema has the column, the DB does not. Fixing it is a schema change that
+needs user approval (see the migration section).
+
+Before that, used 2026-11-17 for the timesheet-unapprove change (3 files, all identical to
 base on the server so a clean fast-forward; server files are CRLF, uploads were
 converted to CRLF). Backup at `/root/deploy-backups/20261117_160929_unapprove/`.
 `Failed to update scheduled job record for INVOICE_GENERATION` appears during
