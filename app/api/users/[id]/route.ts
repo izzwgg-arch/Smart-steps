@@ -129,6 +129,14 @@ export async function PUT(
         )
       }
       updateData.password = await bcrypt.hash(password, 10)
+      // An admin-set password replaces any pending invitation: drop the temp
+      // password (its expiry would otherwise block login entirely once it
+      // passes), stop forcing a change on first login, and clear any lockout.
+      updateData.tempPasswordHash = null
+      updateData.tempPasswordExpiresAt = null
+      updateData.mustChangePassword = false
+      updateData.failedLoginAttempts = 0
+      updateData.lockedUntil = null
     }
 
     if (role !== undefined) {

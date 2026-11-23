@@ -361,6 +361,15 @@ User passwords must:
 - Contain at least 1 lowercase letter
 - Contain at least 1 special character
 
+### Setting a password for an invited user
+
+Creating a user emails them a temporary password (valid 72 hours, must be
+changed on first login). An admin can skip that at any time: **Users → Edit →
+Password**. Saving a password there cancels the pending invitation — the
+temporary password and its expiry are cleared, the forced change on first login
+is turned off, and any login lockout is reset — so the user can log in with the
+admin-set password immediately.
+
 ## Scheduled Jobs
 
 The application includes automatic invoice generation:

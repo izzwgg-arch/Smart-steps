@@ -320,6 +320,10 @@ export function UserFormEnhanced({ user }: UserFormProps) {
             <p className="mt-1 text-xs text-gray-500">
               Password must be 10-15 characters with uppercase, lowercase, and special character
             </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Setting a password here replaces any pending invitation: the emailed temporary password stops
+              working and the user can log in with this password right away.
+            </p>
           </div>
         ) : (
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
